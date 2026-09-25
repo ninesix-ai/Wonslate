@@ -77,15 +77,18 @@ def run_dotnet_tests() -> int:
 
 
 def run_ffi_smoke() -> int:
-    script = ROOT / "tests" / "test_phase1_ffi.py"
-    if shutil.which("python") is None:
-        print("  [SKIP] python not on PATH", flush=True)
-        return 0
-    if not script.exists():
-        print("  [SKIP] tests/test_phase1_ffi.py not present", flush=True)
-        return 0
-    print("  -- Python FFI smoke --", flush=True)
-    return run([sys.executable or "python", str(script)], cwd=ROOT)
+    rc = 0
+    for name in ("test_phase1_ffi.py", "test_sidecar_e2e.py"):
+        script = ROOT / "tests" / name
+        if not script.exists():
+            print(f"  [SKIP] tests/{name} not present", flush=True)
+            continue
+        if shutil.which("python") is None:
+            print("  [SKIP] python not on PATH", flush=True)
+            return rc
+        print(f"  -- {name} --", flush=True)
+        rc |= run([sys.executable or "python", str(script)], cwd=ROOT)
+    return rc
 
 
 def main() -> int:
