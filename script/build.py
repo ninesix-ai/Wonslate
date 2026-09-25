@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ENGINE = ROOT / "translator-engine"
-APP = ROOT / "LocalTranslator"
+APP = ROOT / "Wonslate.UI"
 IS_WIN = os.name == "nt"
 
 
@@ -65,12 +65,12 @@ def run_rust_tests() -> int:
 
 
 def run_dotnet_tests() -> int:
-    proj = ROOT / "LocalTranslator.Tests" / "LocalTranslator.Tests.csproj"
+    proj = ROOT / "Wonslate.UI.Tests" / "Wonslate.UI.Tests.csproj"
     if not IS_WIN:
         print("  [SKIP] .NET tests require Windows", flush=True)
         return 0
     if not proj.exists():
-        print("  [SKIP] LocalTranslator.Tests not present", flush=True)
+        print("  [SKIP] Wonslate.UI.Tests not present", flush=True)
         return 0
     print("  -- .NET xUnit tests (dotnet test) --", flush=True)
     return run(["dotnet", "test", str(proj), "-c", "Release", "--nologo"])

@@ -36,7 +36,7 @@ def _p(*args, **kw):
 
 def _find_dll() -> pathlib.Path:
     here = pathlib.Path(__file__).resolve().parent
-    root = here.parent                              # local-translator/
+    root = here.parent                              # repo root
     candidates = [
         root / "translator-engine" / "target" / "release" / "translator_engine.dll",
         root / "translator-engine" / "target" / "release" / "libtranslator_engine.so",

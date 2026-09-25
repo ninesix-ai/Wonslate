@@ -33,7 +33,7 @@ updates). The hook only runs checks for staged files that touch the relevant sub
 |---|---|
 | `translator-engine/` | `cargo test --release --lib` |
 | `translator-engine/` license files (`Cargo.lock`, `deny.toml`, `license_gate.rs`, `engine/`) | `license_gate` unit tests |
-| `LocalTranslator/`, `LocalTranslator.Tests/` | `dotnet test` (Release) |
+| `Wonslate.UI/`, `Wonslate.UI.Tests/` | `dotnet test` (Release) |
 | `tests/`, `sidecar/` (`*.py`) | `python -m py_compile` |
 
 Bypass in an emergency (do not make it a habit):

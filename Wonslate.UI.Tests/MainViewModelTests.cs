@@ -4,7 +4,7 @@ using System.ComponentModel;
 using Wonslate.ViewModels;
 using Xunit;
 
-namespace LocalTranslator.Tests;
+namespace Wonslate.UI.Tests;
 
 /// <summary>
 /// MainViewModel 状态机测试。仅覆盖不触发 FFI 的路径：

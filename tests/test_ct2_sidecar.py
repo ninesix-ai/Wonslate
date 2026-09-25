@@ -6,7 +6,7 @@
 后端抽象、HTTP 契约（/health、/translate）、缺依赖时的优雅降级。
 真实 CT2 推理需装 ctranslate2 + 下模型，属需授权的环境步骤，不在此单测内。
 
-运行：  cd local-translator && python -m unittest tests.test_ct2_sidecar -v
+运行：  python -m unittest tests.test_ct2_sidecar -v
 """
 import http.client
 import json

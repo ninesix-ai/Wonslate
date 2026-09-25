@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\LocalTranslator\LocalTranslator.csproj" />
+    <ProjectReference Include="..\Wonslate.UI\Wonslate.UI.csproj" />
   </ItemGroup>
 
   <!-- 复制 Rust 引擎 DLL 到测试输出目录（为极少数需要 P/Invoke 的用例准备） -->

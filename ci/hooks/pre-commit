@@ -33,10 +33,10 @@ if echo "$STAGED" | grep -qE "^translator-engine/(Cargo\.lock|deny\.toml|src/lic
 fi
 
 # 2) .NET xUnit (only when C# sources or a csproj changed; requires dotnet on PATH).
-if echo "$STAGED" | grep -qE "^LocalTranslator(\.Tests)?/"; then
+if echo "$STAGED" | grep -qE "^Wonslate\.UI(\.Tests)?/"; then
     if command -v dotnet >/dev/null 2>&1; then
         echo "  - dotnet test (xUnit)"
-        dotnet test LocalTranslator.Tests/LocalTranslator.Tests.csproj \
+        dotnet test Wonslate.UI.Tests/Wonslate.UI.Tests.csproj \
             -c Release --nologo --verbosity quiet 2>&1 | tail -n 5
     fi
 fi

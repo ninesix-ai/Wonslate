@@ -27,10 +27,11 @@ Wonslate/
 │  └─ src/
 │     ├─ lib.rs                # C ABI exports + panic guard
 │     └─ engine/               # Translator trait + engine registry + demo engine
-├─ LocalTranslator/            # .NET 10 WPF client
+├─ Wonslate.UI/                # .NET 10 WPF client (builds Wonslate.exe)
 │  ├─ Interop/EngineNative.cs  # P/Invoke bindings
-│  ├─ Routing/Router.cs        # static routing (privacy -> coverage -> quality)
+│  ├─ Sidecar/                 # local sidecar process manager
 │  └─ ViewModels/MainViewModel.cs
+├─ Wonslate.UI.Tests/          # xUnit tests for the .NET client
 ├─ build.bat                   # Windows one-click entry (forwards to script/build.py)
 ├─ build.sh                    # Linux/macOS one-click entry
 └─ script/build.py             # cross-platform build/test core (Python)

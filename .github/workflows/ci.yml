@@ -54,9 +54,9 @@ jobs:
         run: cargo build --release
         working-directory: translator-engine
       - name: Build WPF app
-        run: dotnet build LocalTranslator -c Release
+        run: dotnet build Wonslate.UI -c Release
       - name: Run .NET tests
-        run: dotnet test LocalTranslator.Tests -c Release --nologo
+        run: dotnet test Wonslate.UI.Tests -c Release --nologo
 
   license-audit:
     name: License compliance gate

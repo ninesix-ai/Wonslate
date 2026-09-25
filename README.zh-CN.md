@@ -27,10 +27,11 @@ Wonslate/
 │  └─ src/
 │     ├─ lib.rs                # C ABI 导出 + panic 兜底
 │     └─ engine/               # Translator trait + 引擎注册表 + demo 引擎
-├─ LocalTranslator/            # .NET 10 WPF 客户端
+├─ Wonslate.UI/                # .NET 10 WPF 客户端（产出 Wonslate.exe）
 │  ├─ Interop/EngineNative.cs  # P/Invoke 绑定
-│  ├─ Routing/Router.cs        # 静态路由（隐私 -> 覆盖 -> 质量）
+│  ├─ Sidecar/                 # 本机 sidecar 进程管理
 │  └─ ViewModels/MainViewModel.cs
+├─ Wonslate.UI.Tests/          # .NET 客户端 xUnit 测试
 ├─ build.bat                   # Windows 一键入口（转发到 script/build.py）
 ├─ build.sh                    # Linux/macOS 一键入口
 └─ script/build.py             # 跨平台构建/测试核心（Python）

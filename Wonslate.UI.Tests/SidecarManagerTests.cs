@@ -3,7 +3,7 @@
 using Wonslate.Sidecar;
 using Xunit;
 
-namespace LocalTranslator.Tests;
+namespace Wonslate.UI.Tests;
 
 /// <summary>
 /// SidecarManager 生命周期状态机测试。进程启动/健康探测用注入的假委托驱动，

@@ -9,4 +9,4 @@ using System.Runtime.CompilerServices;
 )]
 
 // 允许 xUnit 测试项目访问 internal 类型（EngineNative / DTOs 等）
-[assembly: InternalsVisibleTo("LocalTranslator.Tests")]
+[assembly: InternalsVisibleTo("Wonslate.UI.Tests")]

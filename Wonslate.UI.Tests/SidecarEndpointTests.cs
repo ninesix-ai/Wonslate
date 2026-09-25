@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using Wonslate.Sidecar;
 using Xunit;
 
-namespace LocalTranslator.Tests;
+namespace Wonslate.UI.Tests;
 
 /// <summary>
 /// SidecarSpecFactory：从环境变量推导 argos/madlad 端点规格。纯逻辑、注入 env 读取器，

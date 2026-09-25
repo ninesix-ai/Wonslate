@@ -3,7 +3,7 @@
 using Wonslate.Interop;
 using Xunit;
 
-namespace LocalTranslator.Tests;
+namespace Wonslate.UI.Tests;
 
 /// <summary>
 /// EngineNative DTO 反序列化测试（纯逻辑，不触发 P/Invoke）。
