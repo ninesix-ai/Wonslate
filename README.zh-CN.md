@@ -40,6 +40,10 @@ Wonslate/
 
 依赖：Rust 1.98+、.NET SDK 10.0+。构建将产出原生引擎库（`translator_engine.dll` 等，已在 `.gitignore` 中排除、由本地/CI 构建生成，不入库）。
 
+## 安全
+
+Wonslate 隐私优先：翻译数据不出设备。如果你认为发现了安全问题，请通过私密渠道报告——见 [SECURITY.md](SECURITY.md)，**不要**开公开 Issue。
+
 ## 许可与版权
 
 Copyright (c) 2026 ninesix-ai studio
