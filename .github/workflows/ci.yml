@@ -55,3 +55,51 @@ jobs:
         run: dotnet build LocalTranslator -c Release
       - name: Run .NET tests
         run: dotnet test LocalTranslator.Tests -c Release --nologo
+
+  license-audit:
+    name: License compliance gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Layer 1 (crate deps): cargo-deny scans Cargo.lock against deny.toml's allow-list.
+      # Uses the prebuilt binary action (no `cargo install`), and points config at the
+      # non-root deny.toml under translator-engine.
+      - name: cargo-deny (crate licenses)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses
+          manifestPath: translator-engine/Cargo.toml
+          configPath: translator-engine/deny.toml
+
+      # Layer 2 (models/components): license_gate unit tests enforce the model/component
+      # license allow-list, which cargo-deny cannot see (not crates.io entries).
+      - uses: dtolnay/rust-toolchain@stable
+      - name: license_gate audit (model/component layer)
+        run: cargo test --release --lib license_gate
+        working-directory: translator-engine
+
+  coverage:
+    name: Rust coverage baseline
+    runs-on: ubuntu-latest
+    continue-on-error: true   # baseline only; does not block the pipeline
+    defaults:
+      run:
+        working-directory: translator-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: translator-engine
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage
+        run: cargo llvm-cov --release --lcov --output-path lcov.info
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: translator-engine/lcov.info
+          flags: rust
+          fail_ci_if_error: false
