@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Wonslate pre-commit hook
+#
+# Purpose: run the fastest high-signal regression checks (~5-10s) before a commit,
+# to keep obviously broken changes out of history. For the full suite run manually:
+#   python script/build.py --test
+#
+# Install (once per clone):  python script/install_hooks.py
+# Bypass (temporary):        git commit --no-verify
+
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+# Inspect only staged files; let unrelated commits pass straight through.
+STAGED=$(git diff --cached --name-only)
+if [ -z "$STAGED" ]; then
+    exit 0
+fi
+
+echo "[pre-commit] Wonslate quick regression..."
+
+# 1) Rust unit tests (lib only, fastest; typically <5s) when the engine changed.
+if echo "$STAGED" | grep -q "^translator-engine/"; then
+    echo "  - cargo test --release --lib (Rust unit)"
+    (cd translator-engine && cargo test --release --lib --quiet 2>&1 | tail -n 5)
+fi
+
+# 1.5) License gate: run license_gate when dependency / license / engine files change.
+if echo "$STAGED" | grep -qE "^translator-engine/(Cargo\.lock|deny\.toml|src/license_gate\.rs|src/engine/)"; then
+    echo "  - license compliance gate (license_gate)"
+    (cd translator-engine && cargo test --release --lib license_gate --quiet 2>&1 | tail -n 5)
+    # Crate-layer cargo-deny runs in CI (GitHub Actions), not here (see deny.toml).
+fi
+
+# 2) .NET xUnit (only when C# sources or a csproj changed; requires dotnet on PATH).
+if echo "$STAGED" | grep -qE "^LocalTranslator(\.Tests)?/"; then
+    if command -v dotnet >/dev/null 2>&1; then
+        echo "  - dotnet test (xUnit)"
+        dotnet test LocalTranslator.Tests/LocalTranslator.Tests.csproj \
+            -c Release --nologo --verbosity quiet 2>&1 | tail -n 5
+    fi
+fi
+
+# 3) Python syntax check for staged test/sidecar scripts.
+PY=$(echo "$STAGED" | grep -E "^(tests|sidecar)/.*\.py$" || true)
+if [ -n "$PY" ]; then
+    for f in $PY; do
+        python -m py_compile "$f"
+    done
+    echo "  - python -m py_compile OK"
+fi
+
+echo "[pre-commit] all checks passed"
+exit 0
