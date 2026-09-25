@@ -1,0 +1,35 @@
+root = true
+
+# Defaults: UTF-8, LF, newline at EOF, 2-space indent, trim trailing spaces.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# C# / XAML / MSBuild use 4-space indent.
+[*.{cs,xaml,csproj,manifest}]
+indent_size = 4
+
+# Rust uses 4-space indent (rustfmt default).
+[*.rs]
+indent_size = 4
+
+# Python uses 4-space indent (PEP 8).
+[*.py]
+indent_size = 4
+
+# PowerShell uses 4-space indent.
+[*.ps1]
+indent_size = 4
+
+# Markup / structured data.
+[*.{xml,xaml}]
+indent_size = 2
+
+# Markdown: keep trailing whitespace (line-break semantics).
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off

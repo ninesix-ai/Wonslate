@@ -1,0 +1,65 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (c) 2026 ninesix-ai studio -->
+
+<Window x:Class="Wonslate.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Wonslate · 万邦译"
+        Width="640" Height="480"
+        WindowStartupLocation="CenterScreen">
+    <DockPanel Margin="12">
+
+        <!-- 顶部：引擎版本 + 路由说明 -->
+        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" Foreground="#666">
+            Rust 引擎版本: <Run Text="{Binding EngineVersion, Mode=OneWay}" /> · 路由决策:
+            <Run Text="{Binding EngineLabel, Mode=OneWay}" Foreground="#0a7d33" />
+        </TextBlock>
+
+        <!-- 输入区 -->
+        <GroupBox DockPanel.Dock="Top" Header="输入（Source）" Margin="0,0,0,8">
+            <TextBox Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
+                     AcceptsReturn="True" TextWrapping="Wrap"
+                     Height="80" VerticalScrollBarVisibility="Auto"
+                     FontSize="16" Padding="6" />
+        </GroupBox>
+
+        <!-- 语言对选择（① 解耦）-->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="源语言:" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <ComboBox Width="130" ItemsSource="{Binding Languages}" DisplayMemberPath="DisplayName"
+                      SelectedValuePath="Code" SelectedValue="{Binding SourceLang, Mode=TwoWay}" />
+            <Button Content="⇄ 交换" Width="72" Margin="10,0" Click="ExchangeButton_Click"
+                    ToolTip="交换源/目标语言" />
+            <TextBlock Text="目标语言:" VerticalAlignment="Center" Margin="6,0,6,0" />
+            <ComboBox Width="130" ItemsSource="{Binding Languages}" DisplayMemberPath="DisplayName"
+                      SelectedValuePath="Code" SelectedValue="{Binding TargetLang, Mode=TwoWay}" />
+        </StackPanel>
+
+        <!-- 控制区 -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="模式:" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <ComboBox Width="120" SelectedIndex="0" SelectionChanged="ModeComboBox_SelectionChanged">
+                <ComboBoxItem Content="实时档（Realtime）"/>
+                <ComboBoxItem Content="精译档（Full）"/>
+            </ComboBox>
+
+            <CheckBox Content="隐私模式（强制离线）"
+                      IsChecked="{Binding PrivacySensitive}"
+                      VerticalAlignment="Center" Margin="24,0,0,0" />
+
+            <Button Content="翻译" Width="110" Margin="24,0,0,0"
+                    Click="TranslateButton_Click" />
+        </StackPanel>
+
+        <!-- 输出区 -->
+        <GroupBox DockPanel.Dock="Top" Header="输出（Target）" Margin="0,0,0,8">
+            <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True"
+                     AcceptsReturn="True" TextWrapping="Wrap"
+                     Height="120" VerticalScrollBarVisibility="Auto"
+                     FontSize="16" Padding="6" Foreground="#0a7d33" />
+        </GroupBox>
+
+        <TextBlock DockPanel.Dock="Bottom" Text="当前离线引擎支持 英↔中（demo 词表）；更多语言对需接入 Argos/MADLAD（Phase 2）或本机 Ollama 后生效。"
+                   Foreground="#888" TextWrapping="Wrap" Margin="0,8,0,0" />
+    </DockPanel>
+</Window>

@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust engine (build + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: translator-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: translator-engine
+      - run: cargo build --release
+      - run: cargo test --release
+
+  python-ffi:
+    name: Python FFI smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build engine (cdylib)
+        run: cargo build --release
+        working-directory: translator-engine
+      - name: FFI smoke
+        run: python tests/test_phase1_ffi.py
+
+  dotnet:
+    name: .NET WPF (build + test)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build Rust engine (dll for FFI)
+        run: cargo build --release
+        working-directory: translator-engine
+      - name: Build WPF app
+        run: dotnet build LocalTranslator -c Release
+      - name: Run .NET tests
+        run: dotnet test LocalTranslator.Tests -c Release --nologo

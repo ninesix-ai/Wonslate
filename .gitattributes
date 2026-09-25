@@ -1,0 +1,41 @@
+# Normalize line endings: store LF in the repository, check out LF by default (cross-platform).
+* text=auto eol=lf
+
+# Windows batch files must keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must keep LF.
+*.sh  text eol=lf
+
+# Never rewrite binary files.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.onnx  binary
+*.bin   binary
+*.dll   binary
+*.so    binary
+*.dylib binary
+*.ttf   binary
+*.woff  binary
+*.woff2 binary
+
+# Treat these explicitly as text (safety net).
+.gitattributes text
+.gitignore     text
+.editorconfig  text
+*.cs    text
+*.rs    text
+*.py    text
+*.md    text
+*.toml  text
+*.json  text
+*.yaml  text
+*.yml   text
+*.xaml  text
+*.xml   text
+*.ps1   text

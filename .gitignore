@@ -1,0 +1,26 @@
+# Build output
+bin/
+obj/
+target/
+
+# Native binaries (produced by build/CI, not committed)
+*.dll
+*.so
+*.dylib
+
+# Python cache
+__pycache__/
+
+# Logs
+*.log
+
+# User / IDE files
+*.user
+*.suo
+.vs/
+
+# Local test data & coverage
+.lt-test-data/
+lt-data/
+coverage/
+*.tmp

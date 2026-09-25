@@ -1,0 +1,42 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (c) 2026 ninesix-ai studio -->
+
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Wonslate</AssemblyName>
+    <RootNamespace>Wonslate</RootNamespace>
+    <Authors>ninesix-ai studio</Authors>
+    <Company>ninesix-ai studio</Company>
+    <Copyright>© 2026 ninesix-ai studio. All rights reserved.</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/ninesix-ai/Wonslate</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- 引擎 DLL 输出策略：Rust 编译产物复制到本目录 -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 将 Rust cdylib 复制到输出目录 -->
+    <None Include="..\translator-engine\target\release\translator_engine.dll"
+          Link="translator_engine.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\translator-engine\target\release\translator_engine.dll')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 本地离线 ASR：sherpa-onnx (SenseVoice) -->
+    <PackageReference Include="org.k2fsa.sherpa.onnx" Version="1.13.8" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.win-x64" Version="1.13.8" />
+  </ItemGroup>
+
+</Project>

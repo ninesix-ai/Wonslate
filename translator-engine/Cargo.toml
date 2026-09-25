@@ -1,0 +1,18 @@
+[package]
+name = "translator-engine"
+version = "0.1.0"
+edition = "2021"
+authors = ["ninesix-ai studio"]
+description = "Wonslate local translation engine (zero-dependency cdylib)"
+license = "Apache-2.0"
+repository = "https://github.com/ninesix-ai/Wonslate"
+keywords = ["translation", "offline", "engine"]
+categories = ["text-processing"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde_json = "1.0"
+# v2.0 全部用 std + serde_json 实现，零新增外部依赖
+# （避免 Smart App Control 拦截 proc-macro/build-script 重编译）
