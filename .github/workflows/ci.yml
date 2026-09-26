@@ -88,14 +88,17 @@ jobs:
       - uses: actions/checkout@v4
 
       # Layer 1 (crate deps): cargo-deny scans Cargo.lock against deny.toml's allow-list.
-      # Uses the prebuilt binary action (no `cargo install`), and points config at the
-      # non-root deny.toml under translator-engine.
+      # Uses the prebuilt binary action (no `cargo install`). Note the action's inputs are
+      # kebab-case and it has no config-path input at all: an unknown key is silently
+      # replaced by the action default (`./Cargo.toml`, which does not exist here), so the
+      # manifest goes through `manifest-path` and deny.toml is passed explicitly via
+      # `--config` rather than relying on implicit discovery.
       - name: cargo-deny (crate licenses)
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses
-          manifestPath: translator-engine/Cargo.toml
-          configPath: translator-engine/deny.toml
+          manifest-path: translator-engine/Cargo.toml
+          arguments: --all-features --config translator-engine/deny.toml
 
       # Layer 2 (models/components): license_gate unit tests enforce the model/component
       # license allow-list, which cargo-deny cannot see (not crates.io entries).
