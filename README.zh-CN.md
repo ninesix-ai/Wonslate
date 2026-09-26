@@ -39,7 +39,33 @@ Wonslate/
 
 ## 构建
 
-依赖：Rust 1.98+、.NET SDK 10.0+。构建将产出原生引擎库（`translator_engine.dll` 等，已在 `.gitignore` 中排除、由本地/CI 构建生成，不入库）。
+依赖：Rust 1.98+、.NET SDK 10.0+（WPF 客户端仅 Windows 可构建）。跨平台构建/测试入口与 FFI 冒烟脚本使用 Python 3。
+
+```bash
+python script/build.py            # 构建：Rust 引擎（release）+ Windows 上的 WPF 应用
+python script/build.py --test     # 构建并跑全部测试层（Rust / .NET / Python FFI / sidecar e2e）
+python script/build.py --unit     # 构建并只跑 Rust + .NET 测试
+python script/build.py --ffi      # 构建并只跑 Python FFI 冒烟
+python script/build.py --run      # 构建后启动 Wonslate.exe（Windows）
+```
+
+`build.bat`（Windows）与 `build.sh`（Linux/macOS）是各平台薄入口，把所有参数转发给 `script/build.py`。产物位于 `translator-engine/target/release/`（原生引擎库，如 `translator_engine.dll`）与 `Wonslate.UI/bin/Release/net10.0-windows/`（`Wonslate.exe`）；均由本地或 CI 构建生成，不入库。
+
+## 快速体验（demo 引擎）
+
+内置 `demo` 引擎带一张小型中英词表，**无需下载任何模型**即可跑通 `WPF → FFI → Rust` 全链路。启动程序、保持隐私模式开启，用下面几条输入核对——每条输出都是对已发布二进制的实测结果（`mode=realtime`、`privacy=true`、`engine=demo`），不是期望值：
+
+| 输入 | 语言对 | 输出 |
+|---|---|---|
+| `hello` | en → zh | `你好` |
+| `hello there` | en → zh | `你好` |
+| `good morning` | en → zh | `早上好` |
+| `good night` | en → zh | `晚安` |
+| `i love the world` | en → zh | `i love 这个 世界` |
+| `你好` | zh → en | `hello` |
+| `你好世界` | zh → en | `hello world` |
+
+`i love the world` 是刻意保留的例子：词表未收录的词按原样透传，因此 demo 引擎展示的是词级替换而非真正翻译。其余已注册引擎各有前置条件：`argos` 与 `madlad` 通过本机 sidecar 通信（`sidecar/ct2_sidecar.py` 目前只提供 mock 后端，接入真实 CTranslate2/Argos 权重尚未完成），`ollama` 需要本机运行 Ollama 并已拉取模型。
 
 ## 安全
 
