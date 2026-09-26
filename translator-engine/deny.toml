@@ -1,39 +1,34 @@
-# cargo-deny 配置：仅管【crate 依赖】这一层的许可证红线。
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 #
-# 注意：本项目 crate 侧几乎零依赖（Cargo.lock 仅 serde_json 树），真正的
-# 模型/组件许可红线（Qwen/SenseVoice/Kokoro/sherpa-onnx 及被禁的 NLLB/
-# SeamlessM4T/LibreTranslate）不在 crates.io 里，cargo-deny 看不到——
-# 那部分由 Rust 单元测试 license_gate 随 `cargo test` 在 CI 自动门禁。
+# cargo-deny covers exactly one layer: crate dependency licenses.
 #
-# 本机因 Smart App Control 会拦 `cargo install cargo-deny` 的新 EXE，
-# 故本工具只在 CI（GitHub runner 无 SAC）运行；本机用 cargo test license_gate 校验。
+# The crate side is effectively dependency-free (Cargo.lock is just the serde_json
+# tree), so the real model/component red lines - Qwen / SenseVoice / Kokoro /
+# sherpa-onnx, plus the commercially banned NLLB-200 / SeamlessM4T / LibreTranslate -
+# are not crates.io entries and are invisible here. Those are enforced by the
+# `license_gate` unit tests, which run with `cargo test` in CI.
 #
-# CI 用法：cargo deny check licenses
-
-[graph]
-all-features = true
+# Where each layer runs: this crate-layer check is executed by CI only; on a dev
+# machine use `cargo test --release --lib license_gate` for the model/component layer.
+#
+# Keep this file to the field set that upstream's own deny.toml proves cargo-deny
+# accepts (`allow`, `confidence-threshold`). An unknown key makes cargo-deny fail to
+# deserialize the whole config, and a config that never loaded is not a gate: the
+# previous revision carried `[licenses.bans]`, `copyleft` and `allow-osi-fsf-free`
+# from a template and the licenses check had therefore never run.
+#
+# Anything not listed under `allow` fails the check (fail-closed), which mirrors
+# ALLOWED_LICENSES in src/license_gate.rs. Banning a license by name is redundant
+# here; the explicit blacklist lives in license_gate.rs (DENIED_LICENSES).
 
 [licenses]
-# 未在白名单内的许可证 → 报错（默认拒绝，与 Rust ALLOWED_LICENSES 对齐）
 allow = [
     "Apache-2.0",
     "MIT",
     "ISC",
     "BSD-3-Clause",
     "CC0-1.0",
-    "Unicode-DFS-2016",  # unicode-ident 传递依赖所用，宽松可商用
+    "Unicode-DFS-2016",
 ]
-copyleft = "deny"
-allow-osi-fsf-free = "neither"
 confidence-threshold = 0.93
-
-# 明确坐标的许可证覆盖（防止上游 manifest 未声明 license 时误判）
-[[licenses.clarify]]
-name = "ring"
-expression = "MIT AND ISC AND OpenSSL"
-license-files = [{ path = "LICENSE", hash = 0xbd0eedca }]
-
-[licenses.bans]
-# 这些许可一旦出现即硬失败（与 Rust DENIED_LICENSES 对齐）
-"GCC-exception-3.1" = { reason = "禁止：与闭源商用冲突" }
-"AGPL-3.0" = { reason = "禁止：LibreTranslate 服务端网络传染性 copyleft" }
