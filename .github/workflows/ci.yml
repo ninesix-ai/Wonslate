@@ -10,8 +10,18 @@ permissions:
 
 jobs:
   rust:
-    name: Rust engine (build + test)
-    runs-on: ubuntu-latest
+    name: Rust engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false   # report every OS result instead of stopping at the first
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      CARGO_TERM_COLOR: always
+      # No Ollama / sidecar in CI: keep the documented degradation path fast.
+      LT_OLLAMA_TIMEOUT_MS: 5000
+      # Keep TM and config writes inside the job workspace, not the runner profile.
+      LT_DATA_DIR: ${{ github.workspace }}/.ci-data
     defaults:
       run:
         working-directory: translator-engine
@@ -23,10 +33,23 @@ jobs:
           workspaces: translator-engine
       - run: cargo build --release
       - run: cargo test --release
+      # Per-OS native engine library: the building block for portable builds and
+      # pre-release packages (the WPF client consumes the Windows dll).
+      - name: Upload native engine library
+        uses: actions/upload-artifact@v4
+        with:
+          name: translator-engine-${{ matrix.os }}
+          path: |
+            translator-engine/target/release/translator_engine.dll
+            translator-engine/target/release/libtranslator_engine.so
+            translator-engine/target/release/libtranslator_engine.dylib
+          if-no-files-found: ignore
 
   python-ffi:
     name: Python FFI smoke
     runs-on: ubuntu-latest
+    env:
+      LT_DATA_DIR: ${{ github.workspace }}/.ci-data
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

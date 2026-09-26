@@ -22,5 +22,6 @@ __pycache__/
 # Local test data & coverage
 .lt-test-data/
 lt-data/
+.ci-data/
 coverage/
 *.tmp
