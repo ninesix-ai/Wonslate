@@ -94,8 +94,13 @@ jobs:
       # readable in the PR instead of only in the log. Pinned to the v3.0.0 commit
       # (a43b3a5f, 2026-03-21) rather than a moving tag: this is third-party code
       # running with check-write on our repo. always() so a red test still reports.
+      # continue-on-error: pull_request from a fork always gets a read-only token,
+      # so checks: write cannot be honoured there and the report cannot be created.
+      # The previous step already decides pass/fail; a missing report stays a
+      # convenience loss, never a false red for an outside contributor.
       - name: Publish .NET test report
         if: always()
+        continue-on-error: true
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: .NET WPF tests

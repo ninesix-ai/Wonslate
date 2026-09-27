@@ -14,7 +14,9 @@ request, and can also be triggered by hand from the Actions tab (`workflow_dispa
   (`tests/test_sidecar_e2e.py`), sidecar unit tests (`tests/test_ct2_sidecar.py`) and the
   XAML lint rules (`tests/test_xaml_lint.py`)
 - .NET WPF build + xUnit (Windows runner); `.trx` results are published as a check run
-  with per-test annotations, so a failing case is readable in the PR itself
+  with per-test annotations, so a failing case is readable in the PR itself. Pull
+  requests from forks get a read-only token, so there the report is skipped rather than
+  failing the build - `dotnet test` alone still decides pass/fail everywhere.
 - Two-layer license gate:
   - **crate layer** — `cargo-deny` checks `Cargo.lock` against the allow-list in
     [`translator-engine/deny.toml`](../translator-engine/deny.toml)
