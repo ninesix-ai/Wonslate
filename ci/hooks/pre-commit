@@ -9,6 +9,11 @@
 # Bypass (temporary):        git commit --no-verify
 
 set -e
+# Without pipefail, `cargo test ... | tail` and `dotnet test ... | tail` below report
+# the status of tail (always 0), so every test check in this hook was advisory only -
+# a failing xUnit case committed cleanly. Measured on 2026-09-27 before this line was
+# added; tests/test_pre_commit_hook.py keeps the pipeline from silently regressing.
+set -o pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 # Inspect only staged files; let unrelated commits pass straight through.
