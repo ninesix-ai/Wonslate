@@ -110,6 +110,14 @@ def is_thumbprint(value: str) -> bool:
     return len(value) == 40 and all(c in "0123456789ABCDEFabcdef" for c in value)
 
 
+def path_is_quote_safe(path) -> bool:
+    """Reject paths containing a single quote before interpolating into a
+    PowerShell snippet. The quote would terminate the '-...' literal early and
+    turn the remainder of the path into PowerShell syntax -- local-only impact,
+    but needless ambiguity. Refuse such paths loudly instead of mis-signing."""
+    return "'" not in str(path)
+
+
 def trust_cert(thumb: str) -> None:
     """Put the certificate where Authenticode looks, so local launches are quiet.
 
@@ -219,7 +227,13 @@ def main(argv: list[str] | None = None) -> int:
         "signtool not found; using Set-AuthenticodeSignature")
 
     failed = []
+    refused = []
     for p in targets:
+        if not path_is_quote_safe(p):
+            say("sign", f"FAIL  {p.name:24s} path contains a single quote; refusing to "
+                        f"interpolate it into PowerShell (move the build output)")
+            refused.append(p.name)
+            continue
         ok = sign_one(tool, thumb, p)
         state = verify_one(p)
         say("sign", f"{'PASS' if ok and state.lower().startswith('valid') else 'FAIL'}"
@@ -227,6 +241,9 @@ def main(argv: list[str] | None = None) -> int:
         if not ok:
             failed.append(p.name)
 
+    if refused:
+        say("*", f"FAIL  refused quote-unsafe path(s): {', '.join(refused)}")
+        return 1
     if failed:
         say("*", f"FAIL  could not sign: {', '.join(failed)}")
         return 1
