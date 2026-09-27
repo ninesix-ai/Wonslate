@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
+version: 2
+updates:
+  # Pinned action SHAs (see .github/workflows/ci.yml header): Dependabot
+  # raises PRs that move the SHA while keeping the trailing tag comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: cargo
+    directory: /translator-engine
+    schedule:
+      interval: weekly
+
+  # NuGet lock files are not committed yet; ecosystem pings still watch the
+  # PackageReference versions declared in the .csproj files.
+  - package-ecosystem: nuget
+    directory: /Wonslate.UI
+    schedule:
+      interval: weekly

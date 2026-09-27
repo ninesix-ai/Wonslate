@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 name: CI
 
 on:
@@ -6,6 +8,10 @@ on:
   pull_request:
   workflow_dispatch:   # re-run the gate on demand, without pushing a placeholder commit
 
+# Third-party actions are pinned to full commit SHAs (verified against the
+# upstream tag at audit time), not moving major tags; Dependabot
+# (.github/dependabot.yml) raises pin-update PRs. The comment after each SHA
+# records the tag that SHA was released under.
 permissions:
   contents: read
 
@@ -21,15 +27,18 @@ jobs:
       CARGO_TERM_COLOR: always
       # No Ollama / sidecar in CI: keep the documented degradation path fast.
       LT_OLLAMA_TIMEOUT_MS: 5000
-      # Keep TM and config writes inside the job workspace, not the runner profile.
+      WONSLATE_OLLAMA_TIMEOUT_MS: 5000
+      # Keep TM and config writes inside the job workspace, not the runner
+      # profile. Both the legacy LT_ and the brand WONSLATE_ spelling are set.
       LT_DATA_DIR: ${{ github.workspace }}/.ci-data
+      WONSLATE_DATA_DIR: ${{ github.workspace }}/.ci-data
     defaults:
       run:
         working-directory: translator-engine
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           workspaces: translator-engine
       - run: cargo build --release
@@ -51,22 +60,25 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LT_DATA_DIR: ${{ github.workspace }}/.ci-data
+      WONSLATE_DATA_DIR: ${{ github.workspace }}/.ci-data
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.x'
       - name: Build engine (cdylib)
         run: cargo build --release
         working-directory: translator-engine
-      - name: Python smoke (FFI, sidecar e2e + unit, XAML lint, hook guards)
+      - name: Python smoke (FFI, sidecar e2e + unit, XAML + source lint, hook guards)
         run: |
           python tests/test_phase1_ffi.py
           python tests/test_sidecar_e2e.py
           python tests/test_ct2_sidecar.py
           python tests/test_xaml_lint.py
           python tests/test_pre_commit_hook.py
+          python tests/test_component_licenses.py
+          python tests/test_source_lint.py
 
   dotnet:
     name: .NET WPF (build + test)
@@ -76,9 +88,9 @@ jobs:
       contents: read
       checks: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.x'
       - name: Build Rust engine (dll for FFI)
@@ -118,7 +130,7 @@ jobs:
     name: License compliance gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Layer 1 (crate deps): cargo-deny scans Cargo.lock against deny.toml's allow-list.
       # Uses the prebuilt binary action (no `cargo install`). Note the action's inputs are
@@ -127,7 +139,7 @@ jobs:
       # manifest goes through `manifest-path` and deny.toml is passed explicitly via
       # `--config` rather than relying on implicit discovery.
       - name: cargo-deny (crate licenses)
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@b66acf5e9fe20f8aba065be86778a8a4c846f902 # v2
         with:
           command: check licenses
           manifest-path: translator-engine/Cargo.toml
@@ -140,6 +152,16 @@ jobs:
         run: cargo test --release --lib license_gate
         working-directory: translator-engine
 
+      # Layer 3 (NuGet / shipped components): cargo-deny and license_gate
+      # cannot see the .csproj PackageReferences on their own; this stdlib
+      # lint fails closed unless every package id is registered in
+      # license_gate.rs with an allowed license and a provenance note.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.x'
+      - name: component license gate (NuGet / models / python deps)
+        run: python tests/test_component_licenses.py
+
   coverage:
     name: Rust coverage baseline
     runs-on: ubuntu-latest
@@ -148,18 +170,20 @@ jobs:
       run:
         working-directory: translator-engine
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           workspaces: translator-engine
-      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
+        with:
+          tool: cargo-llvm-cov
       - name: Generate coverage
         run: cargo llvm-cov --release --lcov --output-path lcov.info
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         with:
           files: translator-engine/lcov.info
           flags: rust
