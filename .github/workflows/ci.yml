@@ -46,7 +46,7 @@ jobs:
       # Per-OS native engine library: the building block for portable builds and
       # pre-release packages (the WPF client consumes the Windows dll).
       - name: Upload native engine library
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: translator-engine-${{ matrix.os }}
           path: |
