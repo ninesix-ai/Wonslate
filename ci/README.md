@@ -5,7 +5,7 @@ Wonslate keeps itself healthy through two complementary layers.
 ## Server-side CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull
-request:
+request, and can also be triggered by hand from the Actions tab (`workflow_dispatch`):
 
 - Rust engine build + tests (`cargo test --release`) on **three OSes**
   (`ubuntu-latest`, `windows-latest`, `macos-latest`); each job publishes its native

@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:   # re-run the gate on demand, without pushing a placeholder commit
 
 permissions:
   contents: read
