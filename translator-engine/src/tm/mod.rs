@@ -45,11 +45,11 @@ pub fn lookup(text: &str, source_lang: &str, target_lang: &str)
     -> Result<Option<TmEntry>, EngineError>
 {
     let hash = compute_hash(text, source_lang, target_lang);
-    // L1: 内存
+    // L1: in-memory cache
     if let Some(entry) = cache::TM_CACHE.get().and_then(|c| c.get(&hash)) {
         return Ok(Some(entry));
     }
-    // L2: SQLite
+    // L2: on-disk JSON store (translator_tm.json), then warm the cache
     let store = TmStore::instance()
         .ok_or_else(|| EngineError::TmError("not initialized".into()))?;
     if let Some(entry) = store.tm_get(&hash)? {

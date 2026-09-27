@@ -34,7 +34,8 @@ public partial class App : Application
         _argos?.Stop();
         _madlad?.Stop();
 
-        // 关闭 Rust 核心层（刷新 SQLite WAL，停止蒸馏线程）
+        // Flush pending TM / glossary JSON writes in the Rust core. The distill
+        // worker is not stopped here; its inbox closes with the process.
         EngineNative.Shutdown();
         base.OnExit(e);
     }
