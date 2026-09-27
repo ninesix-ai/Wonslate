@@ -51,6 +51,8 @@ python script/build.py --run      # 构建后启动 Wonslate.exe（Windows）
 
 `build.bat`（Windows）与 `build.sh`（Linux/macOS）是各平台薄入口，把所有参数转发给 `script/build.py`。产物位于 `translator-engine/target/release/`（原生引擎库，如 `translator_engine.dll`）与 `Wonslate.UI/bin/Release/net10.0-windows/`（`Wonslate.exe`）；均由本地或 CI 构建生成，不入库。
 
+本机验证门：`verify.bat` / `verify.sh` 会跑 XAML 静态 lint（两类"编译能过、加载即崩"的写法）与启动冒烟（等到真实窗口出现再结束进程）；Windows 上 `sign.bat` 可对构建产物自签，让本机冒烟可重复。详见 [ci/README.md](ci/README.md)。
+
 ## 快速体验（demo 引擎）
 
 内置 `demo` 引擎带一张小型中英词表，**无需下载任何模型**即可跑通 `WPF → FFI → Rust` 全链路。启动程序、保持隐私模式开启，用下面几条输入核对——每条输出都是对已发布二进制的实测结果（`mode=realtime`、`privacy=true`、`engine=demo`），不是期望值：

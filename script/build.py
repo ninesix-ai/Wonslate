@@ -9,7 +9,7 @@
 #   python script/build.py --run      # build, then launch the app (Windows)
 #   python script/build.py --test     # build + run all tests (Rust + .NET + Python FFI)
 #   python script/build.py --unit     # build + Rust & .NET tests only
-#   python script/build.py --ffi      # build + Python FFI smoke only
+#   python script/build.py --ffi      # build + Python smoke only (FFI, sidecar e2e, ct2 unit, XAML lint)
 import argparse
 import os
 import shutil
@@ -78,7 +78,8 @@ def run_dotnet_tests() -> int:
 
 def run_ffi_smoke() -> int:
     rc = 0
-    for name in ("test_phase1_ffi.py", "test_sidecar_e2e.py"):
+    for name in ("test_phase1_ffi.py", "test_sidecar_e2e.py",
+                 "test_ct2_sidecar.py", "test_xaml_lint.py"):
         script = ROOT / "tests" / name
         if not script.exists():
             print(f"  [SKIP] tests/{name} not present", flush=True)

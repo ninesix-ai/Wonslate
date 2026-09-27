@@ -50,6 +50,32 @@ For the full suite, use the one-click entrypoint:
 python script/build.py --test
 ```
 
+## Local verification gate
+
+`script/verify/build_check.py` (entrypoints `verify.bat` / `verify.sh`) covers two things
+the automated suite cannot:
+
+1. **XAML static lint** - two patterns that compile fine in BAML and only blow up when
+   WPF loads the window: `DynamicResource` nested inside a `Binding` (R1), and
+   `<Run Text="{Binding ...}">` without an explicit `Mode=OneWay` (R2 - `Run.Text`
+   defaults to TwoWay and throws in `InitializeComponent` when the source is read-only).
+2. **Launch smoke** - starts the built `Wonslate.exe`, waits for a *visible top-level
+   window owned by that process*, requires it to stay alive, then kills the process tree.
+   If an instance is already running the stage SKIPs: the app has no single-instance
+   mutex, so a second launch would prove nothing.
+
+Machine policy is never treated as a verdict: when code integrity refuses to start a
+freshly built binary, the smoke stage reports `SKIP` (and prints the host's application
+control state) instead of `FAIL`, so a locked-down developer machine neither blocks CI
+semantics nor hides a real regression. This stage needs an interactive session and is
+deliberately **not** part of the workflow.
+
+`script/misc/sign_wonslate.py` (`sign.bat`, Windows) is the companion: it creates or
+reuses a self-signed code-signing certificate, trusts it for the current user
+(machine-wide when elevated), and signs `Wonslate.exe`, `Wonslate.dll` and
+`translator_engine.dll` - our own artifacts only, never third-party native libraries.
+Self-signed trust is host-local; distributed builds need a real certificate.
+
 ## Known gaps
 
 A green pipeline is not "everything is tested". What these gates deliberately do **not**
@@ -57,7 +83,7 @@ cover, so the boundary is explicit:
 
 | Gap | Why it is open | Current mitigation |
 |---|---|---|
-| GUI end-to-end (XAML bindings, real window) | No UI-driver stack chosen yet (WinAppDriver / Appium) | `MainViewModel` is covered headless by xUnit; a human smoke pass against the `demo` glossary table in the README exercises the real window |
+| GUI end-to-end (bindings resolve, clicks do the right thing) | No UI-driver stack chosen yet (WinAppDriver / Appium) | `MainViewModel` is covered headless by xUnit; `verify`/`build_check.py` proves a real window appears and survives (and its lint catches "builds but never shows a window"), but neither asserts on live control values |
 | Real model inference (CT2 / Argos / MADLAD checkpoints) | Shipping and downloading model weights is out of scope for CI | the HTTP contract and the absence-fallback path are covered end-to-end against the mock backend (`tests/test_sidecar_e2e.py`) |
 | Engine absence behaviour on the .NET side | Needs a live sidecar | Rust-side behaviour is asserted in `translator-engine/tests/pipeline_e2e.rs`; the .NET sidecar manager is tested with injected fake delegates (no real process) |
 | Coverage on a developer machine | the local coverage toolchain is not available on every host | the `coverage` job produces the number on ubuntu and is intentionally non-blocking (baseline, not a gate) |

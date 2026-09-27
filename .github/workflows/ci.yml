@@ -59,10 +59,12 @@ jobs:
       - name: Build engine (cdylib)
         run: cargo build --release
         working-directory: translator-engine
-      - name: FFI + sidecar e2e smoke
+      - name: Python smoke (FFI contract, sidecar e2e, ct2 unit, XAML lint)
         run: |
           python tests/test_phase1_ffi.py
           python tests/test_sidecar_e2e.py
+          python tests/test_ct2_sidecar.py
+          python tests/test_xaml_lint.py
 
   dotnet:
     name: .NET WPF (build + test)
