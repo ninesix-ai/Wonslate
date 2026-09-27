@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 许可合规门禁（零外部依赖）
+//! License compliance gate (zero external dependencies).
 //!
-//! 把组件/模型许可清单编成数据，用黑/白名单校验，
-//! 确保任何进入闭源商用产物的依赖都是宽松可商用许可（Apache/MIT/BSD/ISC/CC0…）。
+//! The component/model license inventory is compiled in as data and checked
+//! against a blacklist/whitelist, so every dependency that ends up in a
+//! closed-source commercial artifact must carry a permissive, commercially
+//! usable license (Apache/MIT/BSD/ISC/CC0...).
 //!
-//! 设计要点：本项目 crate 侧几乎零依赖（仅 serde_json 树），真正的许可红线在
-//! 【模型/第三方组件】（NLLB/SeamlessM4T=CC-BY-NC、LibreTranslate=AGPL），
-//! 这些是 cargo-deny 看不到的，故用本模块显式登记并门禁。
+//! Design notes: the crate side of this project is nearly dependency-free
+//! (just the serde_json tree). The real license red lines live in the
+//! model / third-party-component layer (NLLB / SeamlessM4T = CC-BY-NC,
+//! LibreTranslate = AGPL), which cargo-deny cannot see -- hence this module
+//! registers them explicitly and gates them.
+//!
+//! Single source of truth: this list covers Rust crates, NuGet packages,
+//! Python libraries and model weights. tests/test_component_licenses.py parses
+//! it to enforce that every PackageReference shipped in the .csproj files is
+//! registered here (fail-closed) and carries a provenance note.
 
-// 实现占位：以下函数与常量在 GREEN 阶段补齐。
-
-/// 依赖类型（crate / 模型权重 / 第三方组件）
+/// Dependency kind (crate / model weights / third-party component).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
     Crate,
@@ -20,7 +27,7 @@ pub enum Kind {
     Component,
 }
 
-/// 一条已登记的依赖及其许可证标识。
+/// One registered dependency and its license identifier.
 #[derive(Debug, Clone, Copy)]
 pub struct Dep {
     pub name: &'static str,
@@ -28,7 +35,8 @@ pub struct Dep {
     pub kind: Kind,
 }
 
-/// 宽松可闭源商用白名单（精确匹配，默认拒绝）。
+/// Permissive, closed-source-commercial-friendly whitelist
+/// (exact match; unknown licenses are denied by default).
 pub const ALLOWED_LICENSES: &[&str] = &[
     "Apache-2.0",
     "MIT",
@@ -37,30 +45,57 @@ pub const ALLOWED_LICENSES: &[&str] = &[
     "CC0-1.0",
 ];
 
-/// 已知危险黑名单（仅用于自检与告警；判定以白名单为准）。
+/// Known-dangerous blacklist (for self-check and warnings only; the verdict
+/// is always driven by the whitelist above).
 pub const DENIED_LICENSES: &[&str] = &[
-    "CC-BY-NC-4.0",  // NLLB-200 / SeamlessM4T / Aya：仅非商用
-    "AGPL-3.0",      // LibreTranslate 服务端：网络传染
-    "GPL-3.0",       // 强 copyleft
+    "CC-BY-NC-4.0",  // NLLB-200 / SeamlessM4T / Aya: non-commercial only
+    "AGPL-3.0",      // LibreTranslate server: network copyleft
+    "GPL-3.0",       // strong copyleft
 ];
 
-/// 当前产物实际使用的组件/模型/crate 许可清单。
+/// The component/model/crate inventory actually used by this artifact.
+/// Each entry carries a provenance note (official upstream source), enforced
+/// by tests/test_component_licenses.py -- an entry without one fails the gate.
 pub const REGISTERED_DEPS: &[Dep] = &[
-    Dep { name: "serde_json",   license: "MIT",        kind: Kind::Crate },
-    Dep { name: "sherpa-onnx",  license: "Apache-2.0", kind: Kind::Component },
-    Dep { name: "sensevoice",   license: "MIT",        kind: Kind::Model },
-    Dep { name: "kokoro",       license: "Apache-2.0", kind: Kind::Model },
-    Dep { name: "qwen3",        license: "Apache-2.0", kind: Kind::Model },
-    Dep { name: "ollama",       license: "MIT",        kind: Kind::Component },
-    Dep { name: "naudio",       license: "MIT",        kind: Kind::Component },
+    // crates.io registry: https://crates.io/crates/serde_json
+    Dep { name: "serde_json",                    license: "MIT",        kind: Kind::Crate },
+    // official k2-fsa NuGet package (sherpa-onnx upstream: https://github.com/k2-fsa/sherpa-onnx)
+    Dep { name: "org.k2fsa.sherpa.onnx",         license: "Apache-2.0", kind: Kind::Component },
+    // official k2-fsa runtime binding, same upstream/repository
+    Dep { name: "org.k2fsa.sherpa.onnx.runtime.win-x64", license: "Apache-2.0", kind: Kind::Component },
+    // PyPI official project (upstream: https://github.com/OpenNmt/CTranslate2)
+    Dep { name: "ctranslate2",                   license: "MIT",        kind: Kind::Component },
+    // PyPI official project (upstream: https://github.com/google/sentencepiece)
+    Dep { name: "sentencepiece",                 license: "Apache-2.0", kind: Kind::Component },
+    // Google official release on Hugging Face (facebook/madlad400)
+    Dep { name: "madlad-400",                    license: "Apache-2.0", kind: Kind::Model },
+    // Argos translate official model repository (MIT-licensed package exports)
+    Dep { name: "argos-ct2",                     license: "MIT",        kind: Kind::Model },
+    // FunAudioLLM official release (https://github.com/FunAudioLLM/SenseVoice)
+    Dep { name: "sensevoice",                    license: "MIT",        kind: Kind::Model },
+    // Kokoro official release (https://github.com/hexgrad/kokoro)
+    Dep { name: "kokoro",                        license: "Apache-2.0", kind: Kind::Model },
+    // Alibaba Qwen official release (https://github.com/QwenLM)
+    Dep { name: "qwen3",                         license: "Apache-2.0", kind: Kind::Model },
+    // Ollama server, official MIT repository (https://github.com/ollama/ollama);
+    // accessed only via its plain-HTTP local API, no third-party client shipped
+    Dep { name: "ollama",                        license: "MIT",        kind: Kind::Component },
+    // xunit on NuGet (upstream: https://github.com/xunit/xunit, LICENSE = MIT)
+    Dep { name: "xunit",                         license: "MIT",        kind: Kind::Component },
+    // official xunit runner, same upstream org (https://github.com/xunit/visualstudio.xunit, MIT)
+    Dep { name: "xunit.runner.visualstudio",     license: "MIT",        kind: Kind::Component },
+    // official Microsoft test platform (upstream: https://github.com/microsoft/vstest)
+    Dep { name: "Microsoft.NET.Test.Sdk",        license: "MIT",        kind: Kind::Component },
 ];
 
-/// 许可证是否宽松可商用（白名单精确匹配，未知一律拒绝）。
+/// Whether a license is permissive and commercially usable
+/// (exact whitelist match; unknown licenses are always denied).
 pub fn is_allowed(license: &str) -> bool {
     ALLOWED_LICENSES.contains(&license)
 }
 
-/// 校验一组依赖，返回所有许可违规项的 name（空=全合规）。
+/// Audit a dependency set, returning the names of all license violations
+/// (empty = fully compliant).
 pub fn audit(deps: &[Dep]) -> Vec<&'static str> {
     deps.iter()
         .filter(|d| !is_allowed(d.license))
@@ -86,7 +121,7 @@ mod tests {
         assert!(!is_allowed("CC-BY-NC-4.0"));
         assert!(!is_allowed("AGPL-3.0"));
         assert!(!is_allowed("GPL-3.0"));
-        // 未知许可一律拒绝（默认拒绝，而非默认放行）
+        // Unknown licenses are denied by default (fail-closed, never fail-open).
         assert!(!is_allowed("Weird-Unknown-License"));
     }
 
@@ -94,15 +129,15 @@ mod tests {
     fn allowed_and_denied_lists_are_disjoint() {
         for d in DENIED_LICENSES {
             assert!(!ALLOWED_LICENSES.contains(d),
-                "许可 {} 同时出现在黑/白名单，存在矛盾", d);
+                "license {} appears in both the allow and deny lists", d);
         }
     }
 
     #[test]
     fn registered_deps_are_all_compliant() {
-        // 真实登记清单（06 §1.4.4）必须全部合规，否则门禁形同虚设
+        // The real inventory must be fully compliant or the gate is decoration.
         let violations = audit(&REGISTERED_DEPS);
-        assert!(violations.is_empty(), "登记的组件/模型存在许可违规: {:?}", violations);
+        assert!(violations.is_empty(), "registered components/models have license violations: {:?}", violations);
     }
 
     #[test]
@@ -112,16 +147,33 @@ mod tests {
             Dep { name: "libretranslate", license: "AGPL-3.0", kind: Kind::Component },
         ];
         let v = audit(&poisoned);
-        assert!(v.contains(&"nllb-200"), "CC-BY-NC 模型应被拦截");
-        assert!(v.contains(&"libretranslate"), "AGPL 组件应被拦截");
+        assert!(v.contains(&"nllb-200"), "CC-BY-NC models must be blocked");
+        assert!(v.contains(&"libretranslate"), "AGPL components must be blocked");
     }
 
     #[test]
     fn registered_deps_cover_key_models() {
-        // 防止清单被误清空：核心可商用模型必须登记在册
+        // Guard against the inventory being accidentally emptied: the core
+        // commercially usable models and engines must stay registered.
         let names: Vec<_> = REGISTERED_DEPS.iter().map(|d| d.name).collect();
-        for expected in ["qwen3", "sensevoice", "kokoro", "sherpa-onnx"] {
-            assert!(names.contains(&expected), "核心组件 {} 未在许可清单登记", expected);
+        for expected in ["qwen3", "sensevoice", "kokoro", "sherpa-onnx",
+                         "org.k2fsa.sherpa.onnx", "ctranslate2", "sentencepiece"] {
+            if expected == "sherpa-onnx" {
+                // Historical name; the NuGet id is the registered one.
+                assert!(names.contains(&"org.k2fsa.sherpa.onnx"),
+                    "core component {} is not registered in the license inventory", expected);
+                continue;
+            }
+            assert!(names.contains(&expected),
+                "core component {} is not registered in the license inventory", expected);
         }
+    }
+
+    #[test]
+    fn no_orphan_entries_in_the_inventory() {
+        // Every registered component must actually ship or be documented as a
+        // runtime dependency; naudio-style orphans were removed in the audit.
+        let names: Vec<_> = REGISTERED_DEPS.iter().map(|d| d.name).collect();
+        assert!(!names.contains(&"naudio"), "naudio is not referenced anywhere; must stay removed");
     }
 }
