@@ -11,8 +11,9 @@ request, and can also be triggered by hand from the Actions tab (`workflow_dispa
   (`ubuntu-latest`, `windows-latest`, `macos-latest`); each job publishes its native
   library (`dll` / `so` / `dylib`) as a `translator-engine-<os>` build artifact
 - Python smoke: FFI contract (`tests/test_phase1_ffi.py`), sidecar end-to-end
-  (`tests/test_sidecar_e2e.py`), sidecar unit tests (`tests/test_ct2_sidecar.py`) and the
-  XAML lint rules (`tests/test_xaml_lint.py`)
+  (`tests/test_sidecar_e2e.py`), sidecar unit tests (`tests/test_ct2_sidecar.py`), the
+  XAML lint rules (`tests/test_xaml_lint.py`) and the hook guards
+  (`tests/test_pre_commit_hook.py`)
 - .NET WPF build + xUnit (Windows runner); `.trx` results are published as a check run
   with per-test annotations, so a failing case is readable in the PR itself. Pull
   requests from forks run with a read-only token and cannot create check runs, so there
@@ -49,6 +50,13 @@ Bypass in an emergency (do not make it a habit):
 ```bash
 git commit --no-verify
 ```
+
+Every check above is piped into `tail` to keep commit output short, so the hook needs
+`set -o pipefail`: without it a pipeline reports `tail`'s status (always `0`) and no
+test failure can ever refuse a commit. That was not theoretical - until 2026-09-27 the
+hook printed the failing-test summary and let the commit through anyway.
+`tests/test_pre_commit_hook.py` guards the flag, the paths and the LF endings so the
+gate cannot rot back into a printout.
 
 For the full suite, use the one-click entrypoint:
 
