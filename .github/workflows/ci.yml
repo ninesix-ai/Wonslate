@@ -71,13 +71,8 @@ jobs:
     name: .NET WPF (build + test)
     runs-on: windows-latest
     # Only this job publishes test results, so only this job gets check-write.
-    # actions: read is required as well: test-reporter resolves the current workflow
-    # run through the Actions API to attach its check run to that run's suite. Omitting
-    # it failed silently - the action parsed the .trx, printed the summary and exited
-    # without error, yet the commit ended up with no report check run.
     permissions:
       contents: read
-      actions: read
       checks: write
     steps:
       - uses: actions/checkout@v4
@@ -98,23 +93,25 @@ jobs:
           dotnet test Wonslate.UI.Tests -c Release --nologo
           --logger "trx;LogFileName=wonslate-tests.trx"
           --results-directory TestResults
-      # Publish the .trx as a check with per-test annotations, so a failing case is
+      # Publish the .trx as a check run with per-test annotations, so a failing case is
       # readable in the PR instead of only in the log. Pinned to the v3.0.0 commit
       # (a43b3a5f, 2026-03-21) rather than a moving tag: this is third-party code
       # running with check-write on our repo. always() so a red test still reports.
-      # continue-on-error applies to fork pull requests only: those always run with a
-      # read-only token, so no report can be created there and failing the step would
-      # be a false red for an outside contributor. Everywhere else the step must pass,
-      # because an unconditional flag once hid a real misconfiguration behind a green
-      # job. The previous step already decides whether the tests passed.
+      #
+      # use-actions-summary must be turned off explicitly: since v3 it defaults to true,
+      # which writes the report into the job summary and never calls checks.create - the
+      # reason the first two runs of this step went green without ever producing a check
+      # run. Fork pull requests are the exception kept on the job summary on purpose:
+      # they always run with a read-only token and cannot create check runs, so falling
+      # back there keeps the report visible to outside contributors instead of failing.
       - name: Publish .NET test report
         if: always()
-        continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: .NET WPF tests
           path: TestResults/*.trx
           reporter: dotnet-trx
+          use-actions-summary: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}
 
   license-audit:
     name: License compliance gate

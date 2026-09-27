@@ -14,10 +14,10 @@ request, and can also be triggered by hand from the Actions tab (`workflow_dispa
   (`tests/test_sidecar_e2e.py`), sidecar unit tests (`tests/test_ct2_sidecar.py`) and the
   XAML lint rules (`tests/test_xaml_lint.py`)
 - .NET WPF build + xUnit (Windows runner); `.trx` results are published as a check run
-  with per-test annotations, so a failing case is readable in the PR itself. That report
-  is only tolerated-as-missing on pull requests from forks, which run with a read-only
-  token and cannot create check runs at all; on pushes and same-repo PRs a failed report
-  step goes red. `dotnet test` is what decides pass/fail everywhere.
+  with per-test annotations, so a failing case is readable in the PR itself. Pull
+  requests from forks run with a read-only token and cannot create check runs, so there
+  the same report falls back to the workflow job summary - it stays visible without ever
+  turning an outside contributor's build red. `dotnet test` decides pass/fail either way.
 - Two-layer license gate:
   - **crate layer** — `cargo-deny` checks `Cargo.lock` against the allow-list in
     [`translator-engine/deny.toml`](../translator-engine/deny.toml)
