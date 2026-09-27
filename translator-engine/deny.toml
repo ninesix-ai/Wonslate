@@ -12,6 +12,11 @@
 # Where each layer runs: this crate-layer check is executed by CI only; on a dev
 # machine use `cargo test --release --lib license_gate` for the model/component layer.
 #
+# 本机因 Smart App Control 会拦 `cargo install cargo-deny` 的新 EXE，
+# 故本工具只在 CI（GitHub runner 无 SAC）运行；本机用 cargo test license_gate 校验。
+#
+# CI 用法：cargo deny check licenses
+#
 # Keep this file to the field set that upstream's own deny.toml proves cargo-deny
 # accepts (`allow`, `confidence-threshold`). An unknown key makes cargo-deny fail to
 # deserialize the whole config, and a config that never loaded is not a gate: the
