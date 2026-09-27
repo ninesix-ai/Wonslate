@@ -37,6 +37,21 @@ if echo "$STAGED" | grep -qE "^translator-engine/(Cargo\.lock|deny\.toml|src/lic
     # Crate-layer cargo-deny runs in CI (GitHub Actions), not here (see deny.toml).
 fi
 
+# 1.6) Component license gate: every NuGet PackageReference must be registered
+# in license_gate.rs (fail-closed, stdlib Python). Fires on csproj / gate / gate
+# changes so the inventory cannot drift silently.
+if echo "$STAGED" | grep -qE "\.csproj$|license_gate\.rs|tests/test_component_licenses\.py"; then
+    echo "  - component license gate (test_component_licenses)"
+    python tests/test_component_licenses.py
+fi
+
+# 1.7) Source-comment hygiene lint: comments must be English (open-source rule).
+if echo "$STAGED" | grep -qE "\.(rs|cs|py|toml|yml|bat|xaml)$"; then
+    echo "  - source comment lint (English-only)"
+    echo "$STAGED" | grep -E "\.(rs|cs|py|toml|yml|bat|xaml)$" | tr '\n' '\0' \
+        | xargs -0 python tests/test_source_lint.py
+fi
+
 # 2) .NET xUnit (only when C# sources or a csproj changed; requires dotnet on PATH).
 if echo "$STAGED" | grep -qE "^Wonslate\.UI(\.Tests)?/"; then
     if command -v dotnet >/dev/null 2>&1; then
