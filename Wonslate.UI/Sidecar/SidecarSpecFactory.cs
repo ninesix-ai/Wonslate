@@ -4,15 +4,22 @@
 namespace Wonslate.Sidecar;
 
 /// <summary>
-/// 从环境变量推导 argos / madlad 的 SidecarSpec。
+/// Derives the argos / madlad SidecarSpec from environment variables.
 ///
-/// 端口默认值必须与 Rust engine/sidecar.rs 一致（argos=11435、madlad=11436），
-/// 否则 .NET 侧探测的端口与 Rust 引擎实际调用的端口会错位。env 读取器可注入，便于测试。
+/// Port defaults must stay aligned with Rust engine/sidecar.rs
+/// (argos=11435, madlad=11436); otherwise the port probed on the .NET side and
+/// the port the Rust engine actually dials would silently diverge. The env
+/// reader is injectable to keep this factory hermetic in tests.
 ///
-/// 环境变量约定：
-///   LT_ARGOS_URL / LT_MADLAD_URL           覆盖 base url
-///   LT_ARGOS_EXE / LT_MADLAD_EXE           sidecar 可执行路径（空=只探测外部已启动服务，不拉起进程）
-///   LT_SIDECAR_HEALTH_TIMEOUT_MS / _POLL_MS 健康等待超时 / 轮询间隔
+/// Prefix chain per key (shared rule with the Rust config layer): legacy LT_*
+/// wins for backward compatibility, then the brand spelling WONSLATE_*.
+///
+///   WONSLATE_ARGOS_URL / WONSLATE_MADLAD_URL           base-url override
+///   WONSLATE_ARGOS_EXE / WONSLATE_MADLAD_EXE           sidecar executable path
+///                                                       (empty = probe an already
+///                                                       running external service,
+///                                                       never spawn a process)
+///   WONSLATE_SIDECAR_HEALTH_TIMEOUT_MS / _POLL_MS      health-wait timeout / poll interval
 /// </summary>
 internal static class SidecarSpecFactory
 {
@@ -30,17 +37,35 @@ internal static class SidecarSpecFactory
     public static SidecarSpec Madlad(Func<string, string?> env) =>
         Build("madlad", "LT_MADLAD_URL", $"http://127.0.0.1:{DefaultMadladPort}", env);
 
-    private static SidecarSpec Build(
-        string name, string urlKey, string defaultUrl, Func<string, string?> env)
+    /// Resolve one logical key through the prefix chain: LT_* (legacy) first,
+    /// then WONSLATE_* (brand). Empty/whitespace values count as unset.
+    private static string? Env(Func<string, string?> env, string legacyKey, string brandKey) =>
+        First(env(legacyKey), env(brandKey));
+
+    private static string? First(params string?[] values)
     {
-        var url = env(urlKey);
-        var baseUrl = string.IsNullOrWhiteSpace(url) ? defaultUrl : url!.Trim();
+        foreach (var v in values)
+            if (!string.IsNullOrWhiteSpace(v)) return v;
+        return null;
+    }
 
-        var exe = env($"LT_{name.ToUpperInvariant()}_EXE");
-        var args = env($"LT_{name.ToUpperInvariant()}_ARGS") ?? "";
+    private static SidecarSpec Build(
+        string name, string legacyUrlKey, string defaultUrl, Func<string, string?> env)
+    {
+        string brandUrlKey = "WONSLATE_" + legacyUrlKey["LT_".Length..];
+        var baseUrl = Env(env, legacyUrlKey, brandUrlKey) ?? defaultUrl;
+        baseUrl = baseUrl.Trim();
 
-        var timeout = ParseInt(env("LT_SIDECAR_HEALTH_TIMEOUT_MS"), DefaultHealthTimeoutMs);
-        var poll = ParseInt(env("LT_SIDECAR_POLL_MS"), DefaultPollMs);
+        string upper = name.ToUpperInvariant();
+        var exe = Env(env, $"LT_{upper}_EXE", $"WONSLATE_{upper}_EXE");
+        var args = Env(env, $"LT_{upper}_ARGS", $"WONSLATE_{upper}_ARGS") ?? "";
+
+        var timeout = ParseInt(
+            Env(env, "LT_SIDECAR_HEALTH_TIMEOUT_MS", "WONSLATE_SIDECAR_HEALTH_TIMEOUT_MS"),
+            DefaultHealthTimeoutMs);
+        var poll = ParseInt(
+            Env(env, "LT_SIDECAR_POLL_MS", "WONSLATE_SIDECAR_POLL_MS"),
+            DefaultPollMs);
 
         return new SidecarSpec(name, baseUrl, exe ?? "", args, timeout, poll);
     }

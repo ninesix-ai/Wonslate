@@ -7,9 +7,11 @@ using Xunit;
 namespace Wonslate.UI.Tests;
 
 /// <summary>
-/// SidecarSpecFactory：从环境变量推导 argos/madlad 端点规格。纯逻辑、注入 env 读取器，
-/// 无真实环境变量副作用。约束：baseUrl 必须与 Rust engine/sidecar.rs 的默认端口一致，
-/// 否则 .NET 侧探测的端口与 Rust 引擎实际调用的端口会错位。
+/// SidecarSpecFactory: derives argos/madlad endpoint specs from environment
+/// variables. Pure logic with an injected env reader, no real-env side effects.
+/// Constraint: baseUrl defaults must match Rust engine/sidecar.rs ports,
+/// otherwise the port probed on the .NET side and the port the Rust engine
+/// actually dials would silently diverge.
 /// </summary>
 public class SidecarEndpointTests
 {
@@ -24,7 +26,7 @@ public class SidecarEndpointTests
     {
         var spec = Argos(new Dictionary<string, string>());
         Assert.Equal("argos", spec.Name);
-        Assert.Equal("http://127.0.0.1:11435", spec.BaseUrl);   // 与 Rust DEFAULT_ARGOS_URL 对齐
+        Assert.Equal("http://127.0.0.1:11435", spec.BaseUrl);   // aligns with the Rust DEFAULT_ARGOS_URL
     }
 
     [Fact]
@@ -32,7 +34,7 @@ public class SidecarEndpointTests
     {
         var spec = Madlad(new Dictionary<string, string>());
         Assert.Equal("madlad", spec.Name);
-        Assert.Equal("http://127.0.0.1:11436", spec.BaseUrl);   // 与 Rust DEFAULT_MADLAD_URL 对齐
+        Assert.Equal("http://127.0.0.1:11436", spec.BaseUrl);   // aligns with the Rust DEFAULT_MADLAD_URL
     }
 
     [Fact]
@@ -53,13 +55,13 @@ public class SidecarEndpointTests
     public void EmptyUrlEnv_FallsBackToDefault()
     {
         var spec = Argos(new Dictionary<string, string> { ["LT_ARGOS_URL"] = "   " });
-        Assert.Equal("http://127.0.0.1:11435", spec.BaseUrl);   // 空/空白视为未设置
+        Assert.Equal("http://127.0.0.1:11435", spec.BaseUrl);   // empty / whitespace counts as unset
     }
 
     [Fact]
     public void ExePath_DefaultsEmpty_MeaningProbeOnly()
     {
-        // 默认不配 exe → 视为复用外部已启动服务（App 接线不强行拉起进程）
+        // No exe configured by default -> reuse an externally started service (the app wiring never force-launches)
         var spec = Argos(new Dictionary<string, string>());
         Assert.Equal("", spec.ExePath);
     }
@@ -82,13 +84,47 @@ public class SidecarEndpointTests
     public void HealthTimeout_BadValue_UsesDefault()
     {
         var spec = Argos(new Dictionary<string, string> { ["LT_SIDECAR_HEALTH_TIMEOUT_MS"] = "not-a-number" });
-        Assert.Equal(5000, spec.healthTimeoutMs);   // 解析失败回落默认，不抛
+        Assert.Equal(5000, spec.healthTimeoutMs);   // parse failure falls back to the default without throwing
     }
 
     [Fact]
     public void HealthUrl_IsDerivedFromBaseUrl()
     {
         var spec = Argos(new Dictionary<string, string> { ["LT_ARGOS_URL"] = "http://127.0.0.1:11435/" });
-        Assert.Equal("http://127.0.0.1:11435/health", spec.HealthUrl);  // 去尾斜杠再拼
+        Assert.Equal("http://127.0.0.1:11435/health", spec.HealthUrl);  // strip trailing slash before joining
+    }
+
+    [Fact]
+    public void Argos_WonslateUrlEnvOverridesDefault()
+    {
+        // Brand spelling: WONSLATE_ARGOS_URL is honored like its LT_ predecessor.
+        var spec = Argos(new Dictionary<string, string> { ["WONSLATE_ARGOS_URL"] = "http://127.0.0.1:19998" });
+        Assert.Equal("http://127.0.0.1:19998", spec.BaseUrl);
+    }
+
+    [Fact]
+    public void LegacyLtPrefixWinsOverWonslateForBackwardCompat()
+    {
+        // Documented prefix chain: LT_* (legacy) > WONSLATE_* (brand).
+        var spec = Argos(new Dictionary<string, string>
+        {
+            ["LT_ARGOS_URL"] = "http://127.0.0.1:11111",
+            ["WONSLATE_ARGOS_URL"] = "http://127.0.0.1:22222",
+        });
+        Assert.Equal("http://127.0.0.1:11111", spec.BaseUrl);
+    }
+
+    [Fact]
+    public void ExePath_ReadFromWonslateEnv_WhenProvided()
+    {
+        var spec = Argos(new Dictionary<string, string> { ["WONSLATE_ARGOS_EXE"] = "C:\\sidecar\\argos.exe" });
+        Assert.Equal("C:\\sidecar\\argos.exe", spec.ExePath);
+    }
+
+    [Fact]
+    public void HealthTimeout_ReadFromWonslateEnv()
+    {
+        var spec = Argos(new Dictionary<string, string> { ["WONSLATE_SIDECAR_HEALTH_TIMEOUT_MS"] = "2345" });
+        Assert.Equal(2345, spec.healthTimeoutMs);
     }
 }
