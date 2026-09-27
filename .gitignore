@@ -23,5 +23,6 @@ __pycache__/
 .lt-test-data/
 lt-data/
 .ci-data/
+TestResults/
 coverage/
 *.tmp

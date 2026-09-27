@@ -70,6 +70,10 @@ jobs:
   dotnet:
     name: .NET WPF (build + test)
     runs-on: windows-latest
+    # Only this job publishes test results, so only this job gets check-write.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -82,7 +86,21 @@ jobs:
       - name: Build WPF app
         run: dotnet build Wonslate.UI -c Release
       - name: Run .NET tests
-        run: dotnet test Wonslate.UI.Tests -c Release --nologo
+        run: >-
+          dotnet test Wonslate.UI.Tests -c Release --nologo
+          --logger trx;LogFileName=wonslate-tests.trx
+          --results-directory TestResults
+      # Publish the .trx as a check with per-test annotations, so a failing case is
+      # readable in the PR instead of only in the log. Pinned to the v3.0.0 commit
+      # (a43b3a5f, 2026-03-21) rather than a moving tag: this is third-party code
+      # running with check-write on our repo. always() so a red test still reports.
+      - name: Publish .NET test report
+        if: always()
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        with:
+          name: .NET WPF tests
+          path: TestResults/*.trx
+          reporter: dotnet-trx
 
   license-audit:
     name: License compliance gate

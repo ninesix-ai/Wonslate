@@ -10,8 +10,11 @@ request, and can also be triggered by hand from the Actions tab (`workflow_dispa
 - Rust engine build + tests (`cargo test --release`) on **three OSes**
   (`ubuntu-latest`, `windows-latest`, `macos-latest`); each job publishes its native
   library (`dll` / `so` / `dylib`) as a `translator-engine-<os>` build artifact
-- Python FFI smoke (`tests/test_phase1_ffi.py` + `tests/test_sidecar_e2e.py`)
-- .NET WPF build + xUnit (Windows runner)
+- Python smoke: FFI contract (`tests/test_phase1_ffi.py`), sidecar end-to-end
+  (`tests/test_sidecar_e2e.py`), sidecar unit tests (`tests/test_ct2_sidecar.py`) and the
+  XAML lint rules (`tests/test_xaml_lint.py`)
+- .NET WPF build + xUnit (Windows runner); `.trx` results are published as a check run
+  with per-test annotations, so a failing case is readable in the PR itself
 - Two-layer license gate:
   - **crate layer** — `cargo-deny` checks `Cargo.lock` against the allow-list in
     [`translator-engine/deny.toml`](../translator-engine/deny.toml)
