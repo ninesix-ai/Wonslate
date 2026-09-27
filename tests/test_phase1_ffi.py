@@ -81,7 +81,7 @@ class Engine:
         self.lib.tt_health.restype = ctypes.c_void_p
 
     def _take(self, ptr) -> str:
-        """Read the string from a c_void_p and free it; a null pointer yields \"\"\."""
+        """Read the string from a c_void_p and free it; a null pointer returns empty."""
         if not ptr:
             return ""
         try:
