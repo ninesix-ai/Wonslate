@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 ninesix-ai studio
-"""真 sidecar 服务（CT2/Argos）契约测试。
+"""Contract tests for the real sidecar service (CT2 / Argos).
 
-用 stdlib unittest，零第三方依赖，本机可跑。聚焦"不依赖真模型"即可验证的部分：
-后端抽象、HTTP 契约（/health、/translate）、缺依赖时的优雅降级。
-真实 CT2 推理需装 ctranslate2 + 下模型，属需授权的环境步骤，不在此单测内。
+Pure stdlib unittest, zero third-party deps, runs on a dev machine. Focuses on
+everything verifiable WITHOUT a real model: the backend abstraction, the HTTP
+contract (/health, /translate), and graceful degradation when dependencies are
+missing. Real CT2 inference needs ctranslate2 installed plus a model download
+-- authorized environment steps outside this unit test.
 
-运行：  python -m unittest tests.test_ct2_sidecar -v
+Run:  python -m unittest tests.test_ct2_sidecar -v
 """
 import http.client
 import json
@@ -21,7 +23,7 @@ from sidecar.ct2_sidecar import (  # noqa: E402
 )
 
 
-# ── 后端抽象（纯逻辑，无网络）──────────────────────────────────────
+# ---- Backend abstraction (pure logic, no network) ---------------------------
 
 class MockBackendTests(unittest.TestCase):
     def test_translate_returns_target_tagged_text(self):
@@ -48,16 +50,17 @@ class BackendFactoryTests(unittest.TestCase):
         self.assertEqual(make_backend("mock").name, "mock")
 
     def test_ct2_backend_without_deps_raises_missing_dependency(self):
-        # 本机未装 ctranslate2 → 应明确抛 MissingDependency（带安装指引），而非裸 ImportError
+        # With ctranslate2 not installed locally, make_backend must raise
+        # MissingDependency (with install guidance), not a bare ImportError.
         try:
             import ctranslate2  # noqa: F401
-            self.skipTest("ctranslate2 已安装，跳过缺依赖分支")
+            self.skipTest("ctranslate2 is installed; skipping the missing-dep branch")
         except ImportError:
             with self.assertRaises(MissingDependency):
                 make_backend("ct2", model_dir=None)
 
 
-# ── HTTP 契约（起真 server，随机端口，mock 后端）───────────────────
+# ---- HTTP contract (real server, random port, mock backend) -----------------
 
 class HttpContractTests(unittest.TestCase):
     def setUp(self):

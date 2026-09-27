@@ -7,7 +7,7 @@ using System.Net.Http;
 
 namespace Wonslate.Sidecar;
 
-/// <summary>sidecar 生命周期状态。</summary>
+/// <summary>Sidecar lifecycle state.</summary>
 internal enum SidecarState
 {
     Stopped,
@@ -15,7 +15,7 @@ internal enum SidecarState
     Failed,
 }
 
-/// <summary>一个 sidecar 端点的规格。BaseUrl 空串/ExePath 空串有专门语义（见 SidecarManager）。</summary>
+/// <summary>Spec for one sidecar endpoint. An empty BaseUrl or ExePath carries dedicated meaning (see SidecarManager).</summary>
 internal sealed record SidecarSpec(
     string Name,
     string BaseUrl,
@@ -24,18 +24,18 @@ internal sealed record SidecarSpec(
     int healthTimeoutMs = 5000,
     int pollIntervalMs = 100)
 {
-    /// <summary>健康探测地址：BaseUrl 去尾斜杠 + /health（与 Rust engine/sidecar.rs 约定一致）。</summary>
+    /// <summary>Health endpoint: BaseUrl without a trailing slash + /health (matches the Rust engine/sidecar.rs convention).</summary>
     public string HealthUrl => BaseUrl.TrimEnd('/') + "/health";
 }
 
 /// <summary>
-/// 管理单个本机 sidecar 端点（argos / madlad）的拉起→健康轮询→就绪/失败→停止生命周期。
+/// Manages one local sidecar endpoint (argos / madlad) through launch -> health polling -> ready/failed -> stop.
 ///
-/// 关键契约：
-///  - Start 失败（进程起不来 / 健康超时 / 探测异常）一律返回 false 且【不抛】，转入 Failed，
-///    由 Rust 侧 is_available/路由缺席时显式回落 demo，翻译功能不因 sidecar 缺席而崩。
-///  - ExePath 为空 → 视为"复用外部已启动的 sidecar"，跳过拉起、只做健康探测。
-///  - 进程启动 / 健康探测 / 睡眠 均可注入，便于 hermetic 单元测试；默认用 Process + HttpClient。
+/// Key contracts:
+///  - Any Start failure (process will not launch / health timeout / probe exception) returns false and NEVER throws,
+///    transitioning to Failed; the Rust side then falls back to demo explicitly, so translation never breaks on an absent sidecar.
+///  - An empty ExePath means "reuse an externally started sidecar": launch is skipped, only the probe runs.
+///  - Launch / probe / sleep are all injectable for hermetic unit tests; defaults use Process + HttpClient.
 /// </summary>
 internal sealed class SidecarManager
 {
@@ -52,7 +52,7 @@ internal sealed class SidecarManager
 
     public SidecarState State { get; private set; } = SidecarState.Stopped;
 
-    /// <summary>测试/自定义构造：注入各步委托。</summary>
+    /// <summary>Test / custom constructor: inject each step's delegate.</summary>
     public SidecarManager(
         SidecarSpec spec,
         Func<SidecarSpec, bool> launch,
@@ -67,24 +67,24 @@ internal sealed class SidecarManager
         _kill = kill ?? (_ => { });
     }
 
-    /// <summary>生产构造：内置 Process 拉起 + HttpClient 健康探测。</summary>
+    /// <summary>Production constructor: built-in Process launch + HttpClient health probe.</summary>
     public SidecarManager(SidecarSpec spec)
         : this(spec, launch: null!, healthProbe: null!, sleep: null!, kill: null!)
     {
     }
 
-    /// <summary>为 argos / madlad 端点建生产实例。</summary>
+    /// <summary>Build production instances for the argos / madlad endpoints.</summary>
     public static SidecarManager ForEndpoint(SidecarSpec spec) => new(spec);
 
-    // 生产委托的落地实现（当未注入时使用）——用懒替换。
+    // Concrete production delegates (used when nothing was injected) -- swapped lazily.
     static SidecarManager() { }
 
-    /// <summary>启动并等待就绪。返回 true=Ready；false=Failed（不抛异常）。</summary>
+    /// <summary>Start and wait for readiness. true = Ready; false = Failed (never throws).</summary>
     public bool Start()
     {
-        if (State == SidecarState.Ready) return true;   // 幂等
+        if (State == SidecarState.Ready) return true;   // idempotent
 
-        // 仅在配了可执行文件时才尝试拉起进程
+        // Only try to launch a process when an executable is configured
         if (!string.IsNullOrWhiteSpace(_spec.ExePath))
         {
             bool ok = _launch is { } ? _launch(_spec) : LaunchProcess(_spec);
@@ -92,7 +92,7 @@ internal sealed class SidecarManager
             _processOwned = true;
         }
 
-        // 轮询健康直到就绪或超时（探测异常按不健康处理，绝不外抛）
+        // Poll health until ready or timeout (probe exceptions count as unhealthy; never rethrown)
         long deadline = Environment.TickCount64 + _spec.healthTimeoutMs;
         while (true)
         {
@@ -100,14 +100,14 @@ internal sealed class SidecarManager
             if (Environment.TickCount64 >= deadline)
             {
                 State = SidecarState.Failed;
-                ReleaseOwnedProcess();   // 起不来就别留着僵尸进程
+                ReleaseOwnedProcess();   // do not leave a zombie process behind if it will not come up
                 return false;
             }
             Sleep(_spec.pollIntervalMs);
         }
     }
 
-    /// <summary>停止：仅在确实由本实例拉起进程时才 kill；无论何种状态都转 Stopped。</summary>
+    /// <summary>Stop: kill only a process this instance really launched; every state transitions to Stopped.</summary>
     public void Stop()
     {
         if (_processOwned)
@@ -121,7 +121,7 @@ internal sealed class SidecarManager
     private bool SafeProbe()
     {
         try { return _probe is { } ? _probe(_spec.HealthUrl) : DefaultProbe(_spec.HealthUrl); }
-        catch { return false; }   // 缺席/拒连/超时 → 视为不健康，不 crash
+        catch { return false; }   // absent / refused / timeout -> treated as unhealthy, no crash
     }
 
     private void Sleep(int ms)

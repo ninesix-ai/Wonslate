@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 蒸馏管道（异步后台线程，AI 精译完成后自动提取术语对）
+//! Distillation pipeline (async background thread; extracts term pairs after each AI translation)
 
 pub mod term_extractor;
 
@@ -11,7 +11,7 @@ use crate::types::{DistillTask, GlossaryEntry};
 
 static SENDER: OnceLock<mpsc::Sender<DistillTask>> = OnceLock::new();
 
-/// 初始化蒸馏后台线程（在 tt_init 中调用一次）
+/// Initialize the distillation background thread (called once from tt_init)
 pub fn init() {
     let (tx, rx) = mpsc::channel::<DistillTask>();
     let _ = SENDER.set(tx);
@@ -65,7 +65,7 @@ fn process_task(
     process_pairs(pairs.into_iter(), upsert)
 }
 
-/// 提交蒸馏任务（非阻塞，无界 channel 上 send 实际不阻塞）
+/// Submit a distillation task (non-blocking; send never blocks on the unbounded channel)
 pub fn submit(task: DistillTask) {
     if let Some(tx) = SENDER.get() {
         let _ = tx.send(task);

@@ -6,16 +6,16 @@ using Xunit;
 namespace Wonslate.UI.Tests;
 
 /// <summary>
-/// SidecarManager 生命周期状态机测试。进程启动/健康探测用注入的假委托驱动，
-/// 完全 hermetic：不拉起真实进程、不发真实 HTTP，只验证状态迁移与"失败不抛"契约。
-/// 缺席/超时的真实兜底由 Rust 侧 is_available + 路由回落 demo 承担，这里只确保 .NET 侧不崩。
+/// SidecarManager lifecycle state-machine tests. Launch and health probe run on injected fake delegates,
+/// fully hermetic: no real process, no real HTTP; only state transitions and the"the never-throw"contract are verified.
+/// Real absence / timeout fallback is the Rust side's job (is_available + routing to demo); here we only assert the .NET side never crashes.
 /// </summary>
 public class SidecarManagerTests
 {
     private static SidecarSpec Spec(string baseUrl, string exe = "sidecar.exe") =>
         new("argos", baseUrl, exe, "--port 11435", healthTimeoutMs: 500, pollIntervalMs: 10);
 
-    // ── Start：健康探测成功 → Ready ────────────────────────────────
+    // ---- Start: health probe succeeds -> Ready --------------------------------
 
     [Fact]
     public void Start_HealthyOnFirstProbe_BecomesReady()
@@ -47,7 +47,7 @@ public class SidecarManagerTests
         Assert.Equal(3, probes);
     }
 
-    // ── Start：始终不健康 → Failed，且不抛 ────────────────────────
+    // ---- Start: never healthy -> Failed, without throwing ------------------------
 
     [Fact]
     public void Start_NeverHealthy_BecomesFailed_AndDoesNotThrow()
@@ -58,7 +58,7 @@ public class SidecarManagerTests
             healthProbe: _ => false,
             sleep: _ => { });
 
-        // 超时窗口很小（healthTimeoutMs=500, poll=10），应在有限轮询后判失败
+        // a tiny timeout window (healthTimeoutMs=500, poll=10) must fail after a bounded number of polls
         Assert.False(mgr.Start());
         Assert.Equal(SidecarState.Failed, mgr.State);
     }
@@ -76,24 +76,24 @@ public class SidecarManagerTests
         Assert.Equal(SidecarState.Failed, mgr.State);
     }
 
-    // ── 无 ExePath：视为复用外部已启动服务，跳过 launch 只探测 ──────
+    // ---- No ExePath: reuse an external service, skip launch and only probe ------------
 
     [Fact]
     public void Start_NoExePath_SkipsLaunch_StillProbes()
     {
         int launches = 0;
         var mgr = new SidecarManager(
-            Spec("http://127.0.0.1:11435", exe: ""),   // 空 = 不拉起进程
+            Spec("http://127.0.0.1:11435", exe: ""),   // empty = never launch
             launch: _ => { launches++; return true; },
             healthProbe: _ => true,
             sleep: _ => { });
 
         Assert.True(mgr.Start());
         Assert.Equal(SidecarState.Ready, mgr.State);
-        Assert.Equal(0, launches);   // 没有 exe 就不该尝试启动进程
+        Assert.Equal(0, launches);   // without an exe no launch should be attempted
     }
 
-    // ── Stop：就绪后停止 → Stopped 且调用 kill ────────────────────
+    // ---- Stop: stopping a ready sidecar -> Stopped with kill called ------------------------
 
     [Fact]
     public void Stop_AfterReady_BecomesStopped_AndKillsProcess()
@@ -123,10 +123,10 @@ public class SidecarManagerTests
 
         mgr.Stop();
         Assert.Equal(SidecarState.Stopped, mgr.State);
-        Assert.Equal(0, kills);   // 从未启动，无需 kill
+        Assert.Equal(0, kills);   // never launched, nothing to kill
     }
 
-    // ── 幂等 / 重试 ───────────────────────────────────────────────
+    // ---- Idempotence / retry ------------------------------------------------------
 
     [Fact]
     public void Start_WhenAlreadyReady_IsIdempotent()
@@ -138,14 +138,14 @@ public class SidecarManagerTests
             healthProbe: _ => true, sleep: _ => { });
 
         Assert.True(mgr.Start());
-        Assert.True(mgr.Start());   // 再次 Start 直接返回，不重复拉起
+        Assert.True(mgr.Start());   // a second Start returns straight away, no relaunch
         Assert.Equal(1, launches);
     }
 
     [Fact]
     public void Start_AfterFailed_CanRetry()
     {
-        int probeResult = 0;   // 首轮失败，第二轮成功
+        int probeResult = 0;   // first round fails, second round succeeds
         var mgr = new SidecarManager(
             Spec("http://127.0.0.1:11435"),
             launch: _ => true,
@@ -155,12 +155,12 @@ public class SidecarManagerTests
         Assert.False(mgr.Start());
         Assert.Equal(SidecarState.Failed, mgr.State);
 
-        probeResult = 1;               // 模拟 sidecar 随后起来了
+        probeResult = 1;               // the sidecar comes up shortly after
         Assert.True(mgr.Start());
         Assert.Equal(SidecarState.Ready, mgr.State);
     }
 
-    // ── 健康探测的 URL 约定：BaseUrl + /health ─────────────────────
+    // ---- Health-probe URL convention: BaseUrl + /health --------------------------
 
     [Fact]
     public void Start_ProbesHealthEndpoint_OfBaseUrl()

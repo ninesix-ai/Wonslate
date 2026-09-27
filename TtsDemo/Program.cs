@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
-// TtsDemo: 本地离线 TTS 命令行 demo（sherpa-onnx + Kokoro v1.1 多语言模型，含中文普通话）
+// TtsDemo: offline TTS command-line demo (sherpa-onnx + Kokoro v1.1 multilingual model, incl. Mandarin)
 //
-// 用法:
-//   dotnet run -c Release                 # 跑内置 3 条测试文本，输出到当前目录 wav
-//   dotnet run -c Release -- --text "<文本>" [--sid N] [--speed 1.0] [--out <路径.wav>]
+// Usage:
+//   dotnet run -c Release                 # run the 3 built-in test texts, writing wavs to the current dir
+//   dotnet run -c Release -- --text "<text>" [--sid N] [--speed 1.0] [--out <path.wav>]
 //   dotnet run -c Release -- --text "hello" --out out.wav
 //
-// 中文普通话音色参考 sid（Kokoro 多语言 v1.0/v1.1 一致）:
-//   45/46/47/48/49/50/51/52 均为中文女/男声，52 对中英混排支持最好
+// Mandarin speaker reference (same ids in Kokoro multilingual v1.0/v1.1):
+//     45-52 are Mandarin female/male voices; 52 handles mixed CJK/Latin text best
 //
 using SherpaOnnx;
 using System.Runtime.InteropServices;
 
 class TtsDemo
 {
-    // 模型目录（M2 固定指向本机落盘路径，可被 args 覆盖）
+    // Model dir (M2 points at the local on-disk path; overridable by args)
     static string ModelDir = Environment.GetEnvironmentVariable("TTS_MODEL_DIR") ?? "models/kokoro-int8-multi-lang-v1_1";
 
     static int Main(string[] args)
     {
-        // ---- 解析简单命令行 ----
+        // ---- Parse the simple command line ----
         Dictionary<string, string> kv = new();
         for (int i = 0; i < args.Length - 1; i++)
         {
@@ -48,14 +48,14 @@ class TtsDemo
 
         if (!string.IsNullOrEmpty(text))
         {
-            // 单条合成（--text）
+            // Single synthesis (--text)
             string savePath = string.IsNullOrEmpty(outPath)
                 ? Path.Combine(Environment.CurrentDirectory, $"tts_sid{sid}.wav")
                 : outPath;
             return SynthesizeOne(tts, text, sid, speed, savePath) ? 0 : 2;
         }
 
-        // ---- 默认回归：3 条（含中英混排）----
+        // ---- Default regression: 3 texts (incl. mixed CJK/Latin)----
         var cases = new (string text, int sid)[]
         {
             ("你好，欢迎使用本地离线语音合成。这是第一条中文测试。", 50),
@@ -130,7 +130,7 @@ class TtsDemo
             return false;
         }
 
-        // ---- 校验：时长 / 采样率 / RMS 非静音 ----
+        // ---- Validate: duration / sample rate / non-silent RMS ----
         var fi = new FileInfo(outPath);
         double duration = (double)audio.Samples.Length / audio.SampleRate;
         float rms = MathF.Sqrt(audio.Samples.Sum(f => f * f) / Math.Max(1, audio.Samples.Length));

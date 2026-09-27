@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 ninesix-ai studio
-"""极简 mock sidecar 翻译服务（仅 Python 标准库，零第三方依赖）。
+"""Minimal mock sidecar translation service (Python stdlib only, zero deps).
 
-用途：在【没有真实 Argos/MADLAD 模型】时，演示并手测 Rust sidecar 引擎
-（engine/sidecar.rs）→ 本机 HTTP → 返回 的完整链路。它不做真翻译，
-只是把输入按目标语言做一个可辨识的回显，便于断言链路打通。
+Purpose: with NO real Argos/MADLAD model available, demonstrate and manually
+test the full chain Rust sidecar engine (engine/sidecar.rs) -> local HTTP ->
+result. It does not really translate; it echoes the input tagged with the
+target language so the chain can be asserted end to end.
 
-启动：
+Start it:
     python tests/mock_sidecar_server.py --port 11435
 
-然后让 Rust 引擎指向它（环境变量约定见 engine/sidecar.rs）：
-    $env:LT_ARGOS_URL   = "http://127.0.0.1:11435"   # PowerShell
-    powershell -File build.ps1 -Test                 # 或跑 GUI/FFI
+Then point the Rust engine at it (env-var convention, see engine/sidecar.rs;
+LT_ARGOS_URL is the legacy spelling, WONSLATE_ARGOS_URL the brand one):
+    $env:WONSLATE_ARGOS_URL = "http://127.0.0.1:11435"   # PowerShell
+    python script/build.py --test                        # or run the GUI / FFI smoke
 
-契约（与 engine/sidecar.rs 对齐）：
+Contract (aligned with engine/sidecar.rs):
     POST /translate   body {"text","source","target"[,"glossary":[{src,tgt}]]}
-    200 -> {"text": "<标记后的译文>"}
+    200 -> {"text": "<tagged pseudo-translation>"}
     GET  /health      -> {"status":"ok"}
 """
 import argparse
@@ -48,11 +50,12 @@ class Handler(BaseHTTPRequestHandler):
         text = req.get("text", "")
         target = req.get("target", "?")
         has_gloss = "glossary" in req and req["glossary"]
-        # 可辨识的伪译文，便于肉眼/断言确认链路走通且 glossary 已透传
+        # An identifiable pseudo-translation so humans and assertions can
+        # confirm the chain went through and the glossary was forwarded.
         pseudo = f"[{target}] {text}" + (" +gloss" if has_gloss else "")
         self._send(200, {"text": pseudo})
 
-    def log_message(self, *_):  # 静音访问日志
+    def log_message(self, *_):  # silence the access log
         pass
 
 

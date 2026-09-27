@@ -10,18 +10,18 @@ namespace Wonslate;
 
 public partial class App : Application
 {
-    // Phase 2 sidecar 引擎（argos 实时档 / madlad 冷门兜底）的进程与生命周期管理。
-    // 未就绪/缺席不影响启动：Rust 路由会显式回落 demo，翻译功能不崩。
+    // Process / lifecycle management for the Phase 2 sidecar engines (argos realtime slot / madlad rare fallback).
+    // Not-ready / absent never blocks startup: the Rust router falls back to demo explicitly, translation keeps working.
     private SidecarManager? _argos;
     private SidecarManager? _madlad;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        // 初始化 Rust 核心层（打开 TM DB、加载配置、启动蒸馏线程）
+        // Initialize the Rust core (open the TM store, load config, start the distill thread)
         EngineNative.Init();
 
-        // 后台拉起/探测 sidecar，绝不阻塞 UI 启动；失败仅记状态，不抛。
+        // Bring up / probe sidecars in the background; never block UI startup; failures only set state, never throw.
         _argos = new SidecarManager(SidecarSpecFactory.Argos());
         _madlad = new SidecarManager(SidecarSpecFactory.Madlad());
         Task.Run(() => _argos.Start());
@@ -30,7 +30,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        // 回收 sidecar 子进程（仅当确由本实例拉起时才 kill），再关 Rust 核心。
+        // Reap sidecar child processes (kill only what this instance launched), then shut the Rust core down.
         _argos?.Stop();
         _madlad?.Stop();
 

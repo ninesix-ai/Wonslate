@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 统一错误类型（所有模块共用）
+//! Unified error type shared by all modules.
 
 use std::fmt;
 
@@ -35,7 +35,7 @@ impl fmt::Display for EngineError {
 impl std::error::Error for EngineError {}
 
 impl EngineError {
-    /// 转换为 JSON（供 FFI 返回错误时使用）
+    /// Serialize to JSON (used when returning errors across the FFI boundary).
     pub fn to_json(&self) -> serde_json::Value {
         let code = match self {
             Self::InvalidInput(_) => "INVALID_INPUT",

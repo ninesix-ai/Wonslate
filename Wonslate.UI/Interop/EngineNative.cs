@@ -6,14 +6,14 @@ using System.Runtime.InteropServices;
 namespace Wonslate.Interop;
 
 /// <summary>
-/// Rust 引擎 DLL（translator_engine.dll）的 C ABI 绑定。
-/// 所有返回字符串由 Rust 侧分配，必须调用 tt_free_string 释放，防止内存泄漏。
+/// C ABI bindings for the Rust engine DLL (translator_engine.dll).
+/// Every returned string is allocated on the Rust side and must be released via tt_free_string to avoid leaks.
 /// </summary>
 internal static partial class EngineNative
 {
     private const string DllName = "translator_engine.dll";
 
-    // ── 稳定接口（P0 签名不变）──────────────────────────────────────
+    // ---- Stable API (P0 signatures unchanged)--------------------------------------------
 
     [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
     private static partial IntPtr tt_version();
@@ -24,7 +24,7 @@ internal static partial class EngineNative
     [LibraryImport(DllName)]
     private static partial void tt_free_string(IntPtr ptr);
 
-    // ── v2.0 新接口 ─────────────────────────────────────────────────
+    // ---- v2.0 API --------------------------------------------------
 
     [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
     private static partial IntPtr tt_init(string configJson);
@@ -44,19 +44,19 @@ internal static partial class EngineNative
     [LibraryImport(DllName)]
     private static partial IntPtr tt_health();
 
-    // ── 公开封装 ────────────────────────────────────────────────────
+    // ---- Public wrappers --------------------------------------------------------
 
-    /// <summary>初始化 Rust 核心（应用启动时调一次）。</summary>
+    /// <summary>Initialize the Rust core (call once at app start).</summary>
     public static void Init(string configJson = "{}")
     {
         IntPtr ptr = tt_init(configJson);
         if (ptr != IntPtr.Zero) tt_free_string(ptr);
     }
 
-    /// <summary>关闭 Rust 核心（应用退出时调）。</summary>
+    /// <summary>Shut the Rust core down (call at app exit).</summary>
     public static void Shutdown() => tt_shutdown();
 
-    /// <summary>引擎版本号。</summary>
+    /// <summary>Engine version string.</summary>
     public static string Version()
     {
         IntPtr raw = tt_version();
@@ -64,7 +64,7 @@ internal static partial class EngineNative
         finally { tt_free_string(raw); }
     }
 
-    /// <summary>基础翻译（向后兼容，不含 TM/蒸馏）。</summary>
+    /// <summary>Basic translation (backward compatible; no TM / distillation).</summary>
     public static string Translate(string engineId, string input, string langPair)
     {
         IntPtr raw = tt_translate(engineId, input, langPair);
@@ -72,7 +72,7 @@ internal static partial class EngineNative
         finally { tt_free_string(raw); }
     }
 
-    /// <summary>全功能翻译（含 TM + 路由 + 蒸馏，新代码推荐用此接口）。</summary>
+    /// <summary>Full-featured translation (TM + routing + distillation; preferred by new code).</summary>
     public static string TranslateFull(string requestJson)
     {
         IntPtr raw = tt_translate_full(requestJson);
@@ -80,7 +80,7 @@ internal static partial class EngineNative
         finally { tt_free_string(raw); }
     }
 
-    /// <summary>查询 TM（不触发翻译，返回 TmEntry JSON 或 "null"）。</summary>
+    /// <summary>Look up the TM (no translation triggered; returns TmEntry JSON or "null").</summary>
     public static string TmLookup(string text, string sourceLang, string targetLang)
     {
         IntPtr raw = tt_tm_lookup(text, sourceLang, targetLang);
@@ -88,7 +88,7 @@ internal static partial class EngineNative
         finally { tt_free_string(raw); }
     }
 
-    /// <summary>列出可用引擎（JSON 数组字符串）。</summary>
+    /// <summary>List available engines (JSON array string).</summary>
     public static string Engines()
     {
         IntPtr raw = tt_engines();
@@ -96,7 +96,7 @@ internal static partial class EngineNative
         finally { tt_free_string(raw); }
     }
 
-    /// <summary>健康检查（JSON 字符串）。</summary>
+    /// <summary>Health check (JSON string).</summary>
     public static string Health()
     {
         IntPtr raw = tt_health();
@@ -104,7 +104,7 @@ internal static partial class EngineNative
         finally { tt_free_string(raw); }
     }
 
-    // ── 向后兼容的 EngineResult（旧接口用）────────────────────────
+    // ---- Backward-compatible EngineResult (legacy API)------------------------
 
     public sealed record EngineResult(
         bool Ok, string Engine, string SourceLang, string TargetLang,
@@ -137,7 +137,7 @@ internal static partial class EngineNative
             v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() : null;
     }
 
-    // ── v2.0 全功能响应 DTO ─────────────────────────────────────────
+    // ---- v2.0 full-feature response DTO ------------------------------------------
 
     public sealed record TranslateResponseDto(
         bool Ok, string Engine, string SourceLang, string TargetLang,
@@ -147,8 +147,8 @@ internal static partial class EngineNative
         private static readonly System.Text.Json.JsonSerializerOptions Opts = new()
         {
             PropertyNameCaseInsensitive = true,
-            // Rust 端 JSON 是 snake_case（source_lang / latency_ms），
-            // C# 是 PascalCase（SourceLang / LatencyMs），必须显式声明命名策略
+            // Rust's JSON is snake_case (source_lang / latency_ms),
+            // while C# is PascalCase (SourceLang / LatencyMs); the naming policy must be declared explicitly
             PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower,
             DictionaryKeyPolicy   = System.Text.Json.JsonNamingPolicy.SnakeCaseLower,
         };

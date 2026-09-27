@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 术语对提取算法（MVP：N-gram + 线性对齐 + 停用词过滤）
+//! Term-pair extraction algorithm (MVP: N-gram + linear alignment + stop-word filter)
 //!
-//! 远期升级路径：jieba-rs 分词 → GIZA++ 词对齐 → 神经术语提取
+//! Longer-term upgrade path: jieba-rs tokenization -> GIZA++ alignment -> neural term extraction
 
 use crate::types::GlossaryEntry;
 
 const ZH_STOP: &[&str] = &["的","了","是","在","有","和","我","你","他","她","这","那","也","都","而","与"];
 const EN_STOP: &[&str] = &["the","a","an","is","are","was","were","it","to","of","and","in","that","this","for","on"];
 
-/// 从 (source_text, target_text) 对中提取候选术语对
+/// Extract candidate term pairs from a (source_text, target_text) pair
 pub fn extract_term_pairs(
     source_text: &str,
     source_lang: &str,
@@ -19,7 +19,7 @@ pub fn extract_term_pairs(
 ) -> Vec<GlossaryEntry> {
     let mut results = vec![];
 
-    // 只对 zh→en / en→zh 提取（其他语言对 MVP 跳过）
+    // Extract only for zh->en / en->zh (other pairs are skipped in the MVP)
     if source_lang != "zh" && source_lang != "en" {
         return results;
     }
@@ -33,7 +33,7 @@ pub fn extract_term_pairs(
     }
 
     if source_lang == "zh" {
-        // 中文 2/3/4-gram，线性对齐估算英文位置
+        // Chinese 2/3/4-grams; estimate the English span by linear alignment
         let chars: Vec<char> = source_text.chars().collect();
         if chars.is_empty() { return results; }
         let ratio = chars.len() as f32 / tgt_words.len() as f32;
@@ -42,9 +42,9 @@ pub fn extract_term_pairs(
             if chars.len() < n { break; }
             for i in 0..=(chars.len() - n) {
                 let ngram: String = chars[i..i + n].iter().collect();
-                // 过滤含停用词的 ngram
+                // drop n-grams containing stop words
                 if ZH_STOP.iter().any(|s| ngram == *s) { continue; }
-                // 估算英文位置
+                // estimate the English position
                 let ts = ((i as f32) / ratio).floor() as usize;
                 let te = ((i + n) as f32 / ratio).ceil() as usize;
                 if ts >= tgt_words.len() { continue; }
@@ -62,7 +62,7 @@ pub fn extract_term_pairs(
             }
         }
     } else {
-        // 英文 → 中文：按 1-3 词 N-gram
+        // English -> Chinese: word N-grams of length 1-3
         let en_words: Vec<&str> = source_text.split_whitespace().collect();
         let zh_chars: Vec<char> = target_text.chars().collect();
         if en_words.is_empty() || zh_chars.is_empty() { return results; }
@@ -101,14 +101,15 @@ mod tests {
     #[test]
     fn zh_en_basic_extraction() {
         let pairs = extract_term_pairs("深度学习很好", "zh", "deep learning is great", "en");
-        // 应至少提取到一些术语对
+        // at least some term pairs should be extracted
         assert!(!pairs.is_empty());
     }
 
     #[test]
     fn stopword_not_extracted() {
         let pairs = extract_term_pairs("我们", "zh", "the", "en");
-        // "我们" 不在停用词表，但对应 "the" 是英文停用词，不入库
+        // "我们" is not a stop word, but its aligned English word "the" is one,
+        // so nothing gets stored for it.
         for p in &pairs {
             assert_ne!(p.target_term, "the");
         }

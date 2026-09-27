@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-// ── 轻量日志宏（零外部依赖，stderr 输出）────────────────────────
+// ---- Lightweight logging macros (zero deps, stderr output)------------------------
 
 #[macro_use]
 mod logging {
-    /// info 级：stderr 输出
+    /// info level: stderr output
     #[macro_export]
     macro_rules! lt_info  { ($($a:tt)*) => { eprintln!("[INFO ] {}", format!($($a)*)) } }
-    /// warn 级
+    /// warn level
     #[macro_export]
     macro_rules! lt_warn  { ($($a:tt)*) => { eprintln!("[WARN ] {}", format!($($a)*)) } }
-    /// error 级
+    /// error level
     #[macro_export]
     macro_rules! lt_error { ($($a:tt)*) => { eprintln!("[ERROR] {}", format!($($a)*)) } }
-    /// debug 级（release 模式静默，零开销）
+    /// debug level (silent in release, zero cost)
     #[macro_export]
     macro_rules! lt_debug { ($($a:tt)*) => { } }
 }
 
-// 内部模块声明（pub 供 rlib 消费者：集成测试 / 未来 CLI / REST API 使用；
-// 不影响 cdylib 动态导出符号——只由 #[no_mangle] extern "C" 决定）
+// Internal module declarations (pub for rlib consumers: integration tests, the future CLI / REST API;
+// they do not affect cdylib exports -- those are decided only by #[no_mangle] extern "C")
 pub mod engine;
 pub mod error;
 pub mod types;
@@ -43,7 +43,7 @@ use types::TranslateRequest;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PANIC_JSON: &str = r#"{"ok":false,"engine":"unknown","error":"PANIC","message":"engine panicked","source":"fallback","latency_ms":0,"confidence":0.0}"#;
 
-// ── 内部工具函数 ──────────────────────────────────────────────────
+// ---- Internal helpers ----------------------------------------------------
 
 fn to_c_string(s: &str) -> *mut c_char {
     match CString::new(s) {
@@ -57,7 +57,7 @@ unsafe fn read_cstr(ptr: *const c_char) -> Option<String> {
     CStr::from_ptr(ptr).to_str().ok().map(|s| s.to_string())
 }
 
-/// 从 FFI 返回的错误响应字符串（统一格式）
+/// Error-response string returned across FFI (unified shape).
 fn err_response(err: EngineError) -> String {
     serde_json::json!({
         "ok": false,
@@ -71,16 +71,16 @@ fn err_response(err: EngineError) -> String {
     }).to_string()
 }
 
-// ── 稳定接口（P0 首版定型，签名永不改变）─────────────────────────
+// ---- Stable API (frozen at P0; signatures never change)--------------------------
 
-/// 返回引擎版本号。
+/// Return the engine version.
 #[no_mangle]
 pub extern "C" fn tt_version() -> *mut c_char {
     to_c_string(VERSION)
 }
 
-/// 基础翻译入口（向后兼容，不含 TM/蒸馏）。
-/// 新代码推荐用 tt_translate_full。
+/// Basic translation entry (backward compatible; no TM / distillation).
+/// New code should prefer tt_translate_full.
 #[no_mangle]
 pub extern "C" fn tt_translate(
     engine_id: *const c_char,
@@ -99,21 +99,21 @@ pub extern "C" fn tt_translate(
     to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))
 }
 
-/// 释放由本 DLL 分配的字符串内存。
+/// Free a string allocated by this DLL.
 #[no_mangle]
 pub extern "C" fn tt_free_string(ptr: *mut c_char) {
     if ptr.is_null() { return; }
     unsafe { drop(CString::from_raw(ptr)); }
 }
 
-// ── v2.0 新接口 ────────────────────────────────────────────────────
+// ---- v2.0 API --------------------------------------------------------
 
-/// 初始化引擎（应用启动时调一次，打开 TM DB、加载配置、启动蒸馏线程）。
-/// config_json 传 "{}" 即使用默认配置。
+/// Initialize the engine (call once at app start: open the TM store, load config, start the distill thread).
+/// Pass "{}" as config_json to use default settings.
 #[no_mangle]
 pub extern "C" fn tt_init(config_json: *const c_char) -> *mut c_char {
     let result = catch_unwind(AssertUnwindSafe(|| {
-        // 读取可选的自定义 config_json（MVP 先忽略，直接用文件/内嵌默认值）
+        // Read the optional custom config_json (ignored in the MVP; file/embedded defaults are used directly)
         let _raw = unsafe { read_cstr(config_json) }.unwrap_or_else(|| "{}".into());
 
         config::ensure_dirs().ok();
@@ -132,7 +132,7 @@ pub extern "C" fn tt_init(config_json: *const c_char) -> *mut c_char {
     to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))
 }
 
-/// 关闭引擎（退出应用时调用，刷新所有待写入数据）。
+/// Shut the engine down (call at app exit; flush all pending writes).
 #[no_mangle]
 pub extern "C" fn tt_shutdown() {
     if let Some(store) = tm::TmStore::instance() {
@@ -140,9 +140,9 @@ pub extern "C" fn tt_shutdown() {
     }
 }
 
-/// 全功能翻译（含 TM + 路由 + 蒸馏，新代码推荐用此接口）。
+/// Full-featured translation (TM + routing + distillation; preferred entry for new code).
 ///
-/// request_json 格式见 TranslateRequest，所有字段均有默认值：
+/// request_json follows TranslateRequest; every field has a default:
 /// ```json
 /// {
 ///   "input": "你好世界",
@@ -173,8 +173,8 @@ pub extern "C" fn tt_translate_full(request_json: *const c_char) -> *mut c_char 
     to_c_string(&s)
 }
 
-/// 查询 TM（不触发翻译，只检查是否有历史记录）。
-/// 命中返回 TmEntry JSON；未命中返回 "null"。
+/// Look up the TM (never triggers translation; only checks history).
+/// Returns TmEntry JSON on a hit; "null" on a miss.
 #[no_mangle]
 pub extern "C" fn tt_tm_lookup(
     text: *const c_char,
@@ -194,8 +194,8 @@ pub extern "C" fn tt_tm_lookup(
     to_c_string(&result.unwrap_or_else(|_| "null".to_string()))
 }
 
-/// 将一条翻译对写入 TM（用户确认或手动导入时使用）。
-/// entry_json 格式：{"source_text":"...","source_lang":"zh","target_text":"...","target_lang":"en","engine":"manual","quality":1.0}
+/// Write one translation pair into the TM (user-confirmed or manual import).
+/// entry_json shape: {"source_text":"...","source_lang":"zh","target_text":"...","target_lang":"en","engine":"manual","quality":1.0}
 #[no_mangle]
 pub extern "C" fn tt_tm_put(entry_json: *const c_char) -> *mut c_char {
     let result = catch_unwind(AssertUnwindSafe(|| {
@@ -212,7 +212,7 @@ pub extern "C" fn tt_tm_put(entry_json: *const c_char) -> *mut c_char {
     to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))
 }
 
-/// 列出可用引擎（返回 JSON 数组）。
+/// List available engines (JSON array).
 #[no_mangle]
 pub extern "C" fn tt_engines() -> *mut c_char {
     let list: Vec<_> = engine::available_engines()
@@ -222,7 +222,7 @@ pub extern "C" fn tt_engines() -> *mut c_char {
     to_c_string(&serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()))
 }
 
-/// 健康检查（返回版本、TM 条目数等）。
+/// Health check (version, TM entry count, ...).
 #[no_mangle]
 pub extern "C" fn tt_health() -> *mut c_char {
     let tm_count = tm::total_entries().unwrap_or(0);
@@ -235,7 +235,7 @@ pub extern "C" fn tt_health() -> *mut c_char {
     to_c_string(&json.to_string())
 }
 
-/// 获取术语表（JSON 数组）。
+/// Fetch the glossary (JSON array).
 #[no_mangle]
 pub extern "C" fn tt_glossary_list(
     source_lang: *const c_char,

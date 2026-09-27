@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 配置管理（内嵌默认值 + 环境变量覆盖，零外部依赖）
+//! Configuration management (embedded defaults + environment overrides,
+//! zero external dependencies).
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-// ── 配置结构体 ──────────────────────────────────────────────────────
+// ---- Config struct ----------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
@@ -41,7 +42,7 @@ impl Default for Config {
     }
 }
 
-// ── 全局单例 ────────────────────────────────────────────────────────
+// ---- Global singleton --------------------------------------------------------
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
@@ -54,19 +55,23 @@ pub fn load(_config_path: &std::path::Path) {
     lt_info!("[config] loaded");
 }
 
+/// Environment override lookup with the project's prefix chain:
+/// legacy `LT_*` wins (backward compatibility), then the brand spelling
+/// `WONSLATE_*`, then the bare legacy name (e.g. `OLLAMA_URL`) for
+/// out-of-the-box third-party compatibility.
+pub fn first_env(lookup: &dyn Fn(&str) -> Option<String>, candidates: &[&str]) -> Option<String> {
+    candidates.iter().find_map(|k| lookup(k))
+}
+
 /// Pure, testable: overlay environment overrides (resolved via `lookup`) on top of the
-/// default config. Kept compatible with the legacy ollama.rs: both `LT_`-prefixed and
-/// bare `OLLAMA_` variables are honored, and `LT_` takes precedence.
+/// default config. Prefix chain per key: `LT_*` > `WONSLATE_*` > bare legacy name.
 fn from_env_with(lookup: &dyn Fn(&str) -> Option<String>) -> Config {
     let mut cfg = Config::default();
-    cfg.ollama_url = lookup("LT_OLLAMA_URL")
-        .or_else(|| lookup("OLLAMA_URL"))
+    cfg.ollama_url = first_env(lookup, &["LT_OLLAMA_URL", "WONSLATE_OLLAMA_URL", "OLLAMA_URL"])
         .unwrap_or_else(|| cfg.ollama_url.clone());
-    cfg.ollama_model = lookup("LT_OLLAMA_MODEL")
-        .or_else(|| lookup("OLLAMA_MODEL"))
+    cfg.ollama_model = first_env(lookup, &["LT_OLLAMA_MODEL", "WONSLATE_OLLAMA_MODEL", "OLLAMA_MODEL"])
         .unwrap_or_else(|| cfg.ollama_model.clone());
-    if let Some(n) = lookup("LT_OLLAMA_TIMEOUT_MS")
-        .or_else(|| lookup("OLLAMA_TIMEOUT_MS"))
+    if let Some(n) = first_env(lookup, &["LT_OLLAMA_TIMEOUT_MS", "WONSLATE_OLLAMA_TIMEOUT_MS", "OLLAMA_TIMEOUT_MS"])
         .and_then(|v| v.trim().parse::<u64>().ok())
     {
         cfg.ollama_timeout_ms = n;
@@ -78,16 +83,19 @@ pub fn get() -> &'static Config {
     CONFIG.get_or_init(Config::default)
 }
 
-// ── DATA_DIR 跨平台解析（std，零依赖）─────────────────────────────
+// ---- DATA_DIR resolution across platforms (std only, zero deps) -------------
 
 pub fn data_dir() -> PathBuf {
     data_dir_from(&|k| std::env::var(k).ok())
 }
 
-/// Pure, testable: resolve the data directory. `LT_DATA_DIR` always wins; otherwise a
-/// per-OS user data location is used, falling back to `./lt-data` when none is set.
+/// Pure, testable: resolve the data directory. `LT_DATA_DIR` (legacy) and
+/// `WONSLATE_DATA_DIR` (brand) win, legacy first for backward compatibility;
+/// otherwise a per-OS user data location is used, falling back to `./lt-data`
+/// (kept as-is so existing local data directories continue to be found) when
+/// none is set.
 fn data_dir_from(lookup: &dyn Fn(&str) -> Option<String>) -> PathBuf {
-    if let Some(v) = lookup("LT_DATA_DIR") {
+    if let Some(v) = first_env(lookup, &["LT_DATA_DIR", "WONSLATE_DATA_DIR"]) {
         return PathBuf::from(v);
     }
     #[cfg(target_os = "windows")]
@@ -205,6 +213,48 @@ mod tests {
     fn data_dir_falls_back_when_no_env() {
         // No env keys set -> OS-independent fallback.
         assert_eq!(data_dir_from(&empty()), PathBuf::from("./lt-data"));
+    }
+
+    #[test]
+    fn wonslate_prefixed_ollama_overrides_win_over_bare() {
+        // Brand migration: WONSLATE_* is the documented spelling and beats the
+        // legacy bare OLLAMA_* variables.
+        let cfg = from_env_with(&only(&[
+            ("WONSLATE_OLLAMA_URL", "http://wonslate:11434"),
+            ("OLLAMA_URL", "http://bare:11434"),
+            ("WONSLATE_OLLAMA_MODEL", "wonslate-model:1"),
+            ("OLLAMA_MODEL", "bare-model:1"),
+            ("WONSLATE_OLLAMA_TIMEOUT_MS", "7000"),
+        ]));
+        assert_eq!(cfg.ollama_url, "http://wonslate:11434");
+        assert_eq!(cfg.ollama_model, "wonslate-model:1");
+        assert_eq!(cfg.ollama_timeout_ms, 7000);
+    }
+
+    #[test]
+    fn lt_prefixed_ollama_still_wins_for_backward_compat() {
+        // Legacy LT_* spellings keep working during the transition and take
+        // precedence over WONSLATE_* (documented compat rule).
+        let cfg = from_env_with(&only(&[
+            ("LT_OLLAMA_URL", "http://lt:11434"),
+            ("WONSLATE_OLLAMA_URL", "http://wonslate:11434"),
+        ]));
+        assert_eq!(cfg.ollama_url, "http://lt:11434");
+    }
+
+    #[test]
+    fn wonslate_data_dir_env_var_wins() {
+        let p = data_dir_from(&only(&[("WONSLATE_DATA_DIR", "/tmp/wonslate-brand-data")]));
+        assert_eq!(p, PathBuf::from("/tmp/wonslate-brand-data"));
+    }
+
+    #[test]
+    fn lt_data_dir_wins_over_wonslate_for_compat() {
+        let p = data_dir_from(&only(&[
+            ("LT_DATA_DIR", "/tmp/legacy"),
+            ("WONSLATE_DATA_DIR", "/tmp/new"),
+        ]));
+        assert_eq!(p, PathBuf::from("/tmp/legacy"));
     }
 
     #[cfg(target_os = "windows")]

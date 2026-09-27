@@ -12,18 +12,23 @@ request, and can also be triggered by hand from the Actions tab (`workflow_dispa
   library (`dll` / `so` / `dylib`) as a `translator-engine-<os>` build artifact
 - Python smoke: FFI contract (`tests/test_phase1_ffi.py`), sidecar end-to-end
   (`tests/test_sidecar_e2e.py`), sidecar unit tests (`tests/test_ct2_sidecar.py`), the
-  XAML lint rules (`tests/test_xaml_lint.py`) and the hook guards
-  (`tests/test_pre_commit_hook.py`)
+  XAML lint rules (`tests/test_xaml_lint.py`), the hook guards
+  (`tests/test_pre_commit_hook.py`), the component license gate
+  (`tests/test_component_licenses.py`) and the English-comments source lint
+  (`tests/test_source_lint.py`)
 - .NET WPF build + xUnit (Windows runner); `.trx` results are published as a check run
   with per-test annotations, so a failing case is readable in the PR itself. Pull
   requests from forks run with a read-only token and cannot create check runs, so there
   the same report falls back to the workflow job summary - it stays visible without ever
   turning an outside contributor's build red. `dotnet test` decides pass/fail either way.
-- Two-layer license gate:
+- Three-layer license gate:
   - **crate layer** — `cargo-deny` checks `Cargo.lock` against the allow-list in
     [`translator-engine/deny.toml`](../translator-engine/deny.toml)
   - **model/component layer** — `license_gate` unit tests cover non-crate licenses
     that cargo-deny cannot see
+  - **registration layer** — `tests/test_component_licenses.py` fails closed when a
+    `PackageReference` in any `.csproj` is missing from `REGISTERED_DEPS`, carries a
+    disallowed license, or has no provenance note
 - Rust coverage baseline (`cargo-llvm-cov`, non-blocking)
 
 ## Local pre-commit hook
@@ -42,6 +47,8 @@ updates). The hook only runs checks for staged files that touch the relevant sub
 |---|---|
 | `translator-engine/` | `cargo test --release --lib` |
 | `translator-engine/` license files (`Cargo.lock`, `deny.toml`, `license_gate.rs`, `engine/`) | `license_gate` unit tests |
+| `*.csproj`, `license_gate.rs`, the gate script itself | `tests/test_component_licenses.py` (registration gate) |
+| any `*.rs/*.cs/*.py/*.toml/*.yml/*.bat/*.xaml` | `tests/test_source_lint.py` (English-only comments) |
 | `Wonslate.UI/`, `Wonslate.UI.Tests/` | `dotnet test` (Release) |
 | `tests/`, `sidecar/` (`*.py`) | `python -m py_compile` |
 
@@ -101,5 +108,6 @@ cover, so the boundary is explicit:
 | Real model inference (CT2 / Argos / MADLAD checkpoints) | Shipping and downloading model weights is out of scope for CI | the HTTP contract and the absence-fallback path are covered end-to-end against the mock backend (`tests/test_sidecar_e2e.py`) |
 | Engine absence behaviour on the .NET side | Needs a live sidecar | Rust-side behaviour is asserted in `translator-engine/tests/pipeline_e2e.rs`; the .NET sidecar manager is tested with injected fake delegates (no real process) |
 | Coverage on a developer machine | the local coverage toolchain is not available on every host | the `coverage` job produces the number on ubuntu and is intentionally non-blocking (baseline, not a gate) |
-| Model / component licenses | `cargo-deny` only sees crates.io entries | the second layer, `license_gate` unit tests, enforces the model/component allow-list |
+| Model / component licenses | `cargo-deny` only sees crates.io entries | the second layer, `license_gate` unit tests, enforces the model/component allow-list; the third layer (`test_component_licenses.py`) fails closed if a shipped `PackageReference` is not registered |
+| Transitive / pip-installed dependency licenses | the registration gate sees direct `PackageReference`s only; `ctranslate2`/`sentencepiece` are installed by the user, not by the build | both are individually MIT/Apache-2.0 upstream (registered), and model weights never ship in the repo |
 | macOS / Linux client UI | Only the WPF client exists today | the `rust` matrix builds and tests the engine on all three OSes and publishes each native library |

@@ -1,34 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 精译档真实引擎：通过本机 Ollama 服务调用 Qwen 大模型翻译。
+//! The real full-quality engine: translates via a Qwen model served by local Ollama.
 //!
-//! 接入方式：
-//!   - 服务地址：http://127.0.0.1:11434（本机 Ollama，OCI 容器 / 本地部署均可）
-//!   - 兼容端点：/v1/chat/completions（OpenAI 兼容）
-//!   - 模型：qwen3:8b（建议；可通过 OLLAMA_MODEL 环境变量覆盖）
-//!   - 关闭思考：reasoning_effort="none"（/v1 兼容层正确映射 Think=false）+
-//!               保留 think=false 以兼容 Ollama 原生语义
-//!   - 超时：OLLAMA_TIMEOUT_MS 可调（默认 120000ms），失败回退且不 panic
+//! Integration:
+//!   -   - endpoint: http://127.0.0.1:11434 (local Ollama; OCI container or native install both work)
+//!   -   - API: /v1/chat/completions (OpenAI-compatible)
+//!   -   - model: qwen3:8b (suggested; env-overridable via the LT_ > WONSLATE_ > bare prefix chain)
+//!   -   - thinking off: reasoning_effort="none" (the /v1 layer maps this to Think=false) plus
+//!                   think=false kept for native Ollama semantics
+//!   -   - timeout: *_TIMEOUT_MS (default 120000ms); failures degrade without panicking
 //!
-//! 该引擎不引入任何外部分词/模型文件，纯 HTTP 调本机 Ollama，天然离线；翻译为
-//! 阻塞式（同步），由调用侧线程承担。返回 None 表示服务不可用/超时/解析失败，
-//! 由上层路由层负责兜底。
+//! This engine ships no tokenizer or model files: plain HTTP to local Ollama keeps it
+//! offline by nature. Translation is synchronous; the caller's thread bears the wait.
+//! None means unavailable / timeout / parse failure; the router falls back.
 
 use super::{http, Translator};
 use crate::glossary::GlossaryContext;
 use std::time::Duration;
 
-/// 默认 Ollama 服务基址。
+/// Default Ollama base URL.
 pub const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
-/// OpenAI 兼容的对话补全端点。
+/// OpenAI-compatible chat-completions path.
 const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
-/// 默认模型名（可用环境变量 OLLAMA_MODEL 覆盖）。
+/// Default model name (env-overridable through the OLLAMA_MODEL prefix chain).
 const DEFAULT_MODEL: &str = "qwen3:8b";
-/// 默认超时（毫秒）。
+/// Default timeout in milliseconds.
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 
-/// 语言对 -> 指令后缀（用于构造翻译提示词）。
+/// Language pair -> instruction suffix (used to build the translation prompt).
 fn language_prompt(source: &str, target: &str) -> String {
     match (source.to_lowercase().as_str(), target.to_lowercase().as_str()) {
         ("zh", "en") => "Chinese to English".to_string(),
@@ -50,13 +50,16 @@ impl Default for OllamaTranslator {
 }
 
 impl OllamaTranslator {
-    /// 从环境变量读取可选配置，其余使用默认值。
+    /// Build from environment overrides, falling through to defaults.
+    /// Prefix chain per key (see config::first_env): legacy `LT_*` wins for
+    /// backward compatibility, then `WONSLATE_*`, then the bare name.
     pub fn new() -> Self {
-        let url = std::env::var("OLLAMA_URL").unwrap_or_else(|_| DEFAULT_OLLAMA_URL.to_string());
-        let model =
-            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
-        let timeout_ms = std::env::var("OLLAMA_TIMEOUT_MS")
-            .ok()
+        let lookup = |k: &str| std::env::var(k).ok();
+        let url = crate::config::first_env(&lookup, &["LT_OLLAMA_URL", "WONSLATE_OLLAMA_URL", "OLLAMA_URL"])
+            .unwrap_or_else(|| DEFAULT_OLLAMA_URL.to_string());
+        let model = crate::config::first_env(&lookup, &["LT_OLLAMA_MODEL", "WONSLATE_OLLAMA_MODEL", "OLLAMA_MODEL"])
+            .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let timeout_ms = crate::config::first_env(&lookup, &["LT_OLLAMA_TIMEOUT_MS", "WONSLATE_OLLAMA_TIMEOUT_MS", "OLLAMA_TIMEOUT_MS"])
             .and_then(|v| v.trim().parse::<u64>().ok())
             .unwrap_or(DEFAULT_TIMEOUT_MS);
         Self {
@@ -66,7 +69,7 @@ impl OllamaTranslator {
         }
     }
 
-    /// 触发一次对话补全，返回大模型原始 content 文本；失败返回 None。
+    /// Issue one chat completion and return the raw content text; None on failure.
     fn chat(&self, system: &str, user: &str) -> Option<String> {
         let endpoint = format!("{}{}", self.url.trim_end_matches('/'), CHAT_COMPLETIONS_PATH);
 
@@ -77,14 +80,14 @@ impl OllamaTranslator {
                 { "role": "user", "content": user },
             ],
             "stream": false,
-            // /v1 兼容层：OpenAI 语义下 "none" 显式关闭思考
+            // /v1 layer: under OpenAI semantics "none" explicitly disables thinking
             "reasoning_effort": "none",
-            // 兼容旧版 / 原生语义（/v1 下会被忽略，无害）
+            // native-semantics compat (ignored under /v1; harmless)
             "think": false,
             "temperature": 0.3,
         });
 
-        // 复用共享的纯 std HTTP 客户端（见 engine/http.rs）
+        // Reuse the shared pure-std HTTP client (see engine/http.rs)
         let root = http::http_post_json(&endpoint, &payload, self.timeout)?;
 
         // choices[0].message.content
@@ -99,10 +102,10 @@ impl OllamaTranslator {
         Some(content)
     }
 
-    /// 解析/精简模型输出：去除思考块、代码围栏与多余说明，保证只有译文本身。
+    /// Clean the model output: strip thinking blocks, code fences and stray commentary so only the translation remains.
     fn clean_output(&self, raw: &str) -> String {
         let mut out = raw.trim().to_string();
-        // 剥掉可能的思考内容块（形如  ... ，双标签/单标签均处理）
+        // Remove any thinking block (both single- and double-tag forms)
         if let Some(start) = out.find("<thinking>") {
             if let Some(end) = out.find("</thinking>") {
                 let size = end + "</thinking>".len();
@@ -111,7 +114,7 @@ impl OllamaTranslator {
                 }
             }
         }
-        // 去掉可能包裹的代码围栏
+        // Strip wrapping code fences
         if out.trim_start().starts_with("```") {
             let no_fence = out.trim_start().trim_start_matches('`').trim_start();
             if let Some(idx) = no_fence.find("```") {
@@ -167,7 +170,7 @@ impl OllamaTranslator {
         Some(cleaned)
     }
 
-    /// 构建含术语注入的 system prompt（层级 2：few-shot 示例）
+    /// Build the system prompt with term injection (level 2: few-shot examples)
     fn build_system_prompt(&self, pair: &str, glossary: &GlossaryContext) -> String {
         let mut prompt = format!(
             "You are a professional offline translation engine. Translate the user's text \

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 内存 Cache（HashMap + 简单 FIFO 淘汰，零外部依赖）
+//! In-memory cache (HashMap + simple FIFO eviction, zero external deps)
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock};
@@ -13,7 +13,7 @@ pub struct TmCache {
 
 struct CacheInner {
     map: HashMap<String, TmEntry>,
-    order: VecDeque<String>,   // FIFO 淘汰顺序
+    order: VecDeque<String>,   // FIFO eviction order
     capacity: usize,
 }
 
@@ -34,12 +34,12 @@ impl TmCache {
 
     pub fn put(&self, hash: String, entry: TmEntry) {
         if let Ok(mut c) = self.inner.lock() {
-            // 已存在：先移除旧位置再插入新位置（模拟 LRU touch）
+            // Existing key: remove the old slot before re-inserting (emulates an LRU touch)
             if c.map.remove(&hash).is_some() {
                 let pos = c.order.iter().position(|h| h == &hash);
                 if let Some(p) = pos { c.order.remove(p); }
             }
-            // 容量满：FIFO 淘汰最老条目
+            // At capacity: FIFO evicts the oldest entry
             while c.map.len() >= c.capacity {
                 if let Some(old) = c.order.pop_front() {
                     c.map.remove(&old);
@@ -59,7 +59,7 @@ impl TmCache {
         }
     }
 
-    /// 与 store 同步命中计数（保持 cache 视图 hit_count 单调递增）
+    /// Sync hit counts with the store (the cache view of hit_count only grows)
     pub fn bump_hit_count(&self, hash: &str) {
         if let Ok(mut c) = self.inner.lock() {
             if let Some(e) = c.map.get_mut(hash) {
@@ -90,7 +90,7 @@ pub fn init(capacity: usize) {
     let _ = TM_CACHE.set(TmCache::new(capacity));
 }
 
-// ── 单元测试（用局部实例，绕开全局 OnceLock）──────────────────
+// ---- Unit tests (local instances only, avoiding the global OnceLock)--------------------
 
 #[cfg(test)]
 mod tests {
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn capacity_eviction_uses_fifo_order() {
-        // 容量 3，插入 4 条，最早一条应被淘汰
+        // capacity 3, insert 4: the oldest must be evicted
         let c = TmCache::new(3);
         c.put("a".into(), e("A", 0.9));
         c.put("b".into(), e("B", 0.9));
@@ -147,9 +147,9 @@ mod tests {
         c.put("a".into(), e("old", 0.5));
         c.put("b".into(), e("B", 0.9));
         c.put("c".into(), e("C", 0.9));
-        // 更新 a 的内容，并把它移到队尾
+        // update a and move it to the queue tail
         c.put("a".into(), e("new", 0.95));
-        // 再加一个触发淘汰：这时 b（最老未被 touch）应被踢
+        // one more insert triggers eviction: now b (oldest untouched) must go
         c.put("d".into(), e("D", 0.9));
         assert!(c.get("b").is_none(), "b was oldest untouched after a-refresh");
         let a = c.get("a").expect("a refreshed, should survive");
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn zero_capacity_clamped_to_one() {
-        // 防御性：容量 0 应被 clamp 到 1，不 panic
+        // defensive: capacity 0 clamps to 1 instead of panicking
         let c = TmCache::new(0);
         c.put("k".into(), e("v", 0.9));
         assert!(c.get("k").is_some());

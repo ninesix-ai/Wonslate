@@ -7,28 +7,28 @@ using Xunit;
 namespace Wonslate.UI.Tests;
 
 /// <summary>
-/// MainViewModel 状态机测试。仅覆盖不触发 FFI 的路径：
-///  - 属性 setter 是否正确 raise PropertyChanged
-///  - 空输入 Translate() 早退（不进 FFI）
-///  - 初始状态默认值（P0 演示文案）
-/// 需要 P/Invoke 的翻译路径由 Python FFI 冒烟（tests/test_phase1_ffi.py）覆盖。
+/// MainViewModel state-machine tests. Covers only paths that never touch the FFI:
+///  -  - property setters raise PropertyChanged correctly
+///  -  - Translate() early-exits on empty input (no FFI)
+///  -  - initial default state (the P0 demo text)
+///  The P/Invoke translation paths are covered by the Python FFI smoke (tests/test_phase1_ffi.py).
 /// </summary>
 public class MainViewModelTests
 {
-    // ── 初始状态 ─────────────────────────────────────────────────
+    // ---- Initial state --------------------------------------------------
 
     [Fact]
     public void NewViewModel_HasP0DemoInput()
     {
         var vm = new MainViewModel();
-        Assert.Equal("Hello there", vm.Input);   // 演示词，走 demo 引擎可看到"你好"
+        Assert.Equal("Hello there", vm.Input);   // demo phrase; the demo engine yields"你好"
         Assert.Equal("", vm.Output);
         Assert.Equal("realtime", vm.Mode);
         Assert.False(vm.PrivacySensitive);
         Assert.False(vm.IsBusy);
     }
 
-    // ── PropertyChanged 事件契约 ────────────────────────────────
+    // ---- PropertyChanged contract --------------------------------
 
     [Fact]
     public void Input_Setter_RaisesPropertyChanged()
@@ -46,7 +46,7 @@ public class MainViewModelTests
     [Fact]
     public void Input_SameValue_StillRaises()
     {
-        // 当前实现不做相等性去重，UI 层每次赋值都通知。测试锁死该语义。
+        // The current implementation does not de-duplicate equal values; every assignment notifies. The test pins this down.
         var vm = new MainViewModel { Input = "hello" };
         int count = 0;
         vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.Input)) count++; };
@@ -62,7 +62,7 @@ public class MainViewModelTests
     [InlineData(nameof(MainViewModel.Mode))]
     public void Property_HasPublicSetter(string propName)
     {
-        // 双向绑定要求：属性必须有 public setter
+        // Two-way binding requires a public setter
         var prop = typeof(MainViewModel).GetProperty(propName);
         Assert.NotNull(prop);
         Assert.True(prop!.CanWrite, $"{propName} 应可写以支持 WPF 双向绑定");
@@ -74,7 +74,7 @@ public class MainViewModelTests
     [InlineData(nameof(MainViewModel.EngineLabel))]
     public void ComputedProperty_HasPrivateSetter(string propName)
     {
-        // 输出侧属性：VM 内部计算写入，UI 只能读，防误改
+        // Output-side properties: written by VM internals, read-only for the UI, protected from stray edits
         var prop = typeof(MainViewModel).GetProperty(propName);
         Assert.NotNull(prop);
         Assert.True(prop!.CanRead);
@@ -83,17 +83,17 @@ public class MainViewModelTests
         Assert.False(setter!.IsPublic, $"{propName} setter 应为 private");
     }
 
-    // ── Translate() 早退路径（不触发 FFI）──────────────────────
+    // ---- Translate() early-exit path (no FFI)----------------------------
 
     [Fact]
     public void Translate_EmptyInput_ClearsOutput_AndSkipsFfi()
     {
         var vm = new MainViewModel { Input = "" };
 
-        vm.Translate();   // 空输入直接早退，不进 FFI
+        vm.Translate();   // empty input exits before the FFI
 
         Assert.Equal("", vm.Output);
-        Assert.False(vm.IsBusy);   // 未进入 busy 状态
+        Assert.False(vm.IsBusy);   // never entered the busy state
     }
 
     [Fact]
@@ -110,19 +110,19 @@ public class MainViewModelTests
     public void Translate_NullInput_SafeGuarded()
     {
         var vm = new MainViewModel();
-        vm.Input = null!;   // 强制置 null 触发 ?.Trim() 兜底路径
+        vm.Input = null!;   // force null to hit the ?.Trim() defensive path
 
         vm.Translate();
 
         Assert.Equal("", vm.Output);
     }
 
-    // ── INotifyPropertyChanged 契约 ─────────────────────────────
+    // ---- INotifyPropertyChanged contract ----------------------------------
 
     [Fact]
     public void ImplementsINotifyPropertyChanged()
     {
-        // WPF 绑定的最低要求
+        // the bare minimum WPF binding requires
         Assert.IsAssignableFrom<INotifyPropertyChanged>(new MainViewModel());
     }
 
@@ -149,7 +149,7 @@ public class MainViewModelTests
         Assert.True(vm.PrivacySensitive);
     }
 
-    // ── 语言对解耦（①）───────────────────────────────
+    // ---- Language-pair decoupling--------------------------------------
 
     [Fact]
     public void NewViewModel_DefaultLanguages_AreEnToZh()

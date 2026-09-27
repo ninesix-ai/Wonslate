@@ -80,7 +80,8 @@ def run_ffi_smoke() -> int:
     rc = 0
     for name in ("test_phase1_ffi.py", "test_sidecar_e2e.py",
                  "test_ct2_sidecar.py", "test_xaml_lint.py",
-                 "test_pre_commit_hook.py"):
+                 "test_pre_commit_hook.py", "test_component_licenses.py",
+                 "test_source_lint.py"):
         script = ROOT / "tests" / name
         if not script.exists():
             print(f"  [SKIP] tests/{name} not present", flush=True)

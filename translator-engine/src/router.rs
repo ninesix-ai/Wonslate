@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 路由决策核心（五层，从 Router.cs 下沉至 Rust 跨平台共享）
+//! Core routing decision (five layers; moved down from Router.cs into the cross-platform Rust core)
 
 use crate::types::{TranslateRequest, TranslationMode};
 
-/// 路由决策结果
+/// Result of one routing decision
 #[derive(Debug, Clone)]
 pub struct RoutePlan {
-    /// L2 本地引擎 id
+    /// L2 local engine id
     pub local_engine_id: String,
-    /// 是否注入 glossary
+    /// Whether to inject the glossary
     pub use_glossary: bool,
-    /// L3 升级 AI 引擎 id（None = 不升级）
+    /// L3 AI upgrade engine id (None = never upgrade)
     pub upgrade_engine_id: Option<String>,
-    /// 升级置信度阈值（本地结果 < 此值时升级）
+    /// Confidence threshold for upgrade (local result below it triggers the upgrade)
     pub confidence_threshold: f32,
 }
 
-/// 对一次翻译请求做路由决策
+/// Resolve a routing plan for one translation request.
 pub fn resolve(req: &TranslateRequest) -> RoutePlan {
-    // L0: 隐私层 — 强制本地，永不升级
+    // L0: privacy layer -- force local engines, never upgrade
     if req.privacy {
         return RoutePlan {
             local_engine_id: "argos".into(),
@@ -30,7 +30,7 @@ pub fn resolve(req: &TranslateRequest) -> RoutePlan {
         };
     }
 
-    // L1: 冷门语言降级
+    // L1: rare-language fallback
     if !is_common_pair(&req.source_lang, &req.target_lang) {
         return RoutePlan {
             local_engine_id: "madlad".into(),
@@ -40,16 +40,16 @@ pub fn resolve(req: &TranslateRequest) -> RoutePlan {
         };
     }
 
-    // L2/L3: 按模式选择
+    // L2/L3: pick by mode
     match req.mode {
-        // 实时档：本地引擎，不升级（保证延迟）
+        // Realtime: local engine, no upgrade (latency budget)
         TranslationMode::Realtime => RoutePlan {
             local_engine_id: "argos".into(),
             use_glossary: true,
             upgrade_engine_id: None,
             confidence_threshold: 0.0,
         },
-        // 精译档：本地先行，低置信度时升级 AI
+        // Full: local first, upgrade to AI on low confidence
         TranslationMode::Full => RoutePlan {
             local_engine_id: "argos".into(),
             use_glossary: true,
@@ -59,7 +59,7 @@ pub fn resolve(req: &TranslateRequest) -> RoutePlan {
     }
 }
 
-/// 主流语言对判断（11 种高资源语言）
+/// Common language-pair check (11 high-resource languages)
 fn is_common_pair(src: &str, tgt: &str) -> bool {
     const LANGS: &[&str] = &[
         "zh", "en", "ja", "ko", "fr", "de", "es", "ru", "pt", "it", "ar",
@@ -106,8 +106,8 @@ mod tests {
     #[test]
     fn rare_lang_uses_fallback_engine() {
         let mut req = make_req(false, TranslationMode::Full);
-        req.source_lang = "sw".into(); // 斯瓦希里语，冷门
+        req.source_lang = "sw".into(); // Swahili: rare pair
         let plan = resolve(&req);
-        assert_eq!(plan.local_engine_id, "madlad"); // Phase 2：冷门兜底走 MADLAD
+        assert_eq!(plan.local_engine_id, "madlad"); // Phase 2: rare-pair fallback goes to MADLAD
     }
 }

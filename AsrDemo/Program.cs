@@ -9,13 +9,13 @@ using System.Text;
 using SherpaOnnx;
 
 // =====================================================================
-//  AsrDemo : 本地离线 ASR 命令行 demo（sherpa-onnx + SenseVoice）
+//  AsrDemo: offline ASR command-line demo (sherpa-onnx + SenseVoice)
 //
-//  用法:
+//  Usage:
 //    AsrDemo.exe [wav1 wav2 ...] [-vad]
-//    不传 wav 则默认识别模型目录下的 zh.wav / en.wav / mixed_zh_en.wav
-//    -vad  : 额外加载 Silero VAD 对输入做语音活动检测（含加载自检）
-//  模型目录(默认): models\sense-voice（可用环境变量 ASR_MODEL_DIR 覆盖）
+//      without a wav argument it recognizes zh.wav / en.wav / mixed_zh_en.wav under the model dir
+//      -vad  : additionally load Silero VAD for voice-activity detection (includes a load self-check)
+//    model dir (default): models\sense-voice (override with the ASR_MODEL_DIR env var)
 // =====================================================================
 
 string ModelDir = Environment.GetEnvironmentVariable("ASR_MODEL_DIR") ?? @"models\sense-voice";
@@ -64,7 +64,7 @@ static float[] ReadWavPcm16(string path, out int sampleRate)
                 throw new NotSupportedException($"unsupported wav fmt={audioFormat} bits={bitsPerSample}");
             }
         }
-        // 跳过当前 chunk（对齐到偶数）
+        // skip the current chunk (align to an even length)
         fs.Seek(chunkStart + chunkSize + (chunkSize & 1), SeekOrigin.Begin);
     }
 
@@ -72,7 +72,7 @@ static float[] ReadWavPcm16(string path, out int sampleRate)
     return pcm.ToArray();
 }
 
-// ---------- 参数解析 ----------
+// ---------- Argument parsing ----------
 var positional = new List<string>();
 bool doVad = false;
 foreach (var a in args)
@@ -89,7 +89,7 @@ var files = positional.Count > 0
         Path.Combine(ModelDir, "en.wav"),
     };
 
-// ---------- 构建 OfflineRecognizer (SenseVoice) ----------
+// ---------- Build the OfflineRecognizer (SenseVoice) ----------
 var modelPath = Path.Combine(ModelDir, "model.int8.onnx");
 var tokensPath = Path.Combine(ModelDir, "tokens.txt");
 if (!File.Exists(modelPath) || !File.Exists(tokensPath))
@@ -104,7 +104,7 @@ config.ModelConfig.SenseVoice = new OfflineSenseVoiceModelConfig
 {
     Model = modelPath,
     Language = "auto",
-    UseInverseTextNormalization = 1,     // ITN: 数字/标点规整
+    UseInverseTextNormalization = 1,     // ITN: normalize numbers / punctuation
 };
 config.ModelConfig.Tokens = tokensPath;
 config.ModelConfig.NumThreads = 2;
@@ -115,7 +115,7 @@ using var recognizer = new OfflineRecognizer(config);
 loadSw.Stop();
 Console.WriteLine($"[model load] {loadSw.ElapsedMilliseconds} ms\n");
 
-// ---------- 可选 Silero VAD 自检 ----------
+// ---------- Optional Silero VAD self-check ----------
 if (doVad)
 {
     var vadPath = Path.Combine(ModelDir, "silero_vad.onnx");
@@ -146,7 +146,7 @@ if (doVad)
     Console.WriteLine();
 }
 
-// ---------- 逐文件离线识别 ----------
+// ---------- Offline recognition, file by file ----------
 foreach (var f in files)
 {
     if (!File.Exists(f)) { Console.WriteLine($"[skip] 文件不存在: {f}"); continue; }

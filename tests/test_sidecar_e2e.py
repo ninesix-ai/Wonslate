@@ -56,8 +56,10 @@ def main() -> int:
     port = _free_port()
     url = f"http://127.0.0.1:{port}"
 
-    # Point the Rust `argos` engine (sidecar.rs reads LT_ARGOS_URL) at our mock sidecar.
+    # Point the Rust `argos` engine (sidecar.rs reads LT_/WONSLATE_ARGOS_URL)
+    # at our mock sidecar; set both spellings so the prefix chain resolves.
     os.environ["LT_ARGOS_URL"] = url
+    os.environ["WONSLATE_ARGOS_URL"] = url
 
     proc = subprocess.Popen(
         [sys.executable, str(SIDECAR), "--backend", "mock", "--port", str(port)],
@@ -65,14 +67,14 @@ def main() -> int:
     )
     try:
         if not _wait_health(url):
-            ck.fail("sidecar 启动", f"mock sidecar 未在 {url} 就绪")
+            ck.fail("sidecar start", f"mock sidecar never became ready at {url}")
             return ck.summary()
-        ck.ok(f"mock sidecar 就绪于 {url}")
+        ck.ok(f"mock sidecar ready at {url}")
 
         try:
             dll = ffi._find_dll()
         except FileNotFoundError as e:
-            ck.fail("引擎 DLL", str(e))
+            ck.fail("engine DLL", str(e))
             return ck.summary()
         eng = ffi.Engine(dll)
         eng.init("{}")
@@ -88,9 +90,9 @@ def main() -> int:
             r = eng.translate_full(req)
             out = (r.get("output") or "").strip()
             if r.get("ok") and out == "[zh] hello":
-                ck.ok(f"UI→Rust(argos)→sidecar 端到端命中 mock 回显: {out!r}")
+                ck.ok(f"UI->Rust(argos)->sidecar end-to-end hit on the mock echo: {out!r}")
             else:
-                ck.fail("argos→sidecar 命中", f"expected '[zh] hello', got {r}")
+                ck.fail("argos->sidecar hit", f"expected '[zh] hello', got {r}")
         finally:
             eng.shutdown()
     finally:
@@ -99,7 +101,7 @@ def main() -> int:
             proc.wait(timeout=5)
         except Exception:
             proc.kill()
-        ck.ok("sidecar 进程已回收")
+        ck.ok("sidecar process reaped")
 
     return ck.summary()
 

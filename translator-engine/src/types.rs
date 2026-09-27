@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 跨模块共享数据结构（零外部依赖，手动 JSON 转换）
+//! Data structures shared across modules (zero external deps, manual JSON).
 
-// ── 翻译模式 ────────────────────────────────────────────────────────
+// ---- Translation mode ------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TranslationMode {
@@ -20,7 +20,7 @@ impl TranslationMode {
     }
 }
 
-// ── 翻译来源 ────────────────────────────────────────────────────────
+// ---- Translation source --------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TranslationSource {
@@ -41,7 +41,7 @@ impl TranslationSource {
     }
 }
 
-// ── 翻译请求 ────────────────────────────────────────────────────────
+// ---- Translation request ------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct TranslateRequest {
@@ -56,7 +56,7 @@ pub struct TranslateRequest {
 }
 
 impl TranslateRequest {
-    /// 从 JSON 字符串解析（用于 FFI 入口）
+    /// Parse from a JSON string (used at the FFI entry point).
     pub fn from_json(json: &str) -> Result<Self, String> {
         let v: serde_json::Value = serde_json::from_str(json)
             .map_err(|e| format!("JSON parse error: {}", e))?;
@@ -79,7 +79,7 @@ impl TranslateRequest {
     }
 }
 
-// ── 翻译响应 ────────────────────────────────────────────────────────
+// ---- Translation response ----------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct TranslateResponse {
@@ -115,7 +115,7 @@ impl TranslateResponse {
     }
 }
 
-// ── TM 条目 ─────────────────────────────────────────────────────────
+// ---- TM entry --------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct TmEntry {
@@ -158,7 +158,7 @@ impl TmEntry {
     }
 }
 
-// ── 术语表条目 ──────────────────────────────────────────────────────
+// ---- Glossary entry --------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct GlossaryEntry {
@@ -198,7 +198,7 @@ impl GlossaryEntry {
     }
 }
 
-// ── 蒸馏任务 ────────────────────────────────────────────────────────
+// ---- Distillation task ----------------------------------------------------
 
 pub struct DistillTask {
     pub source_text: String,
@@ -208,13 +208,13 @@ pub struct DistillTask {
     pub domain: String,
 }
 
-// ── 单元测试 ────────────────────────────────────────────────────────
+// ---- Unit tests ----------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ── TranslationMode ──────────────────────────────────────────
+    // ---- TranslationMode --------------------------------------------
 
     #[test]
     fn mode_from_str_recognizes_realtime() {
@@ -236,20 +236,20 @@ mod tests {
         assert_eq!(TranslationMode::Full.as_str(),     "full");
     }
 
-    // ── TranslateRequest.from_json ───────────────────────────────
+    // ---- TranslateRequest.from_json --------------------------------------
 
     #[test]
     fn req_from_json_minimal() {
-        // 最小请求：只给必填字段，其它走默认
+        // Minimal request: only required fields, everything else defaults.
         let r = TranslateRequest::from_json(
             r#"{"input":"你好","target_lang":"en"}"#
         ).unwrap();
         assert_eq!(r.input, "你好");
         assert_eq!(r.target_lang, "en");
-        assert_eq!(r.source_lang, "auto");        // 默认
-        assert_eq!(r.mode, TranslationMode::Full); // 默认
-        assert!(!r.privacy);                        // 默认
-        assert!(r.use_tm);                          // 默认 true
+        assert_eq!(r.source_lang, "auto");         // default
+        assert_eq!(r.mode, TranslationMode::Full); // default
+        assert!(!r.privacy);                       // default
+        assert!(r.use_tm);                         // defaults to true
     }
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
         assert_eq!(r.source_lang, "auto");
     }
 
-    // ── TranslateResponse.to_json ────────────────────────────────
+    // ---- TranslateResponse.to_json --------------------------------
 
     #[test]
     fn resp_to_json_contains_all_fields() {
@@ -310,7 +310,7 @@ mod tests {
         assert_eq!(v["output"], "Hello");
         assert_eq!(v["source"], "tm_hit");
         assert_eq!(v["latency_ms"], 42);
-        // None 字段应被跳过（不出现在 JSON 里）
+        // None fields must be skipped (absent from the JSON).
         assert!(v.get("error").is_none());
         assert!(v.get("message").is_none());
     }
@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(v["message"], "engine returned nothing");
     }
 
-    // ── TmEntry JSON 往返 ────────────────────────────────────────
+    // ---- TmEntry JSON round-trip ----------------------------------------
 
     #[test]
     fn tm_entry_json_roundtrip() {
@@ -365,11 +365,11 @@ mod tests {
         });
         let e = TmEntry::from_json(&v);
         assert_eq!(e.quality, 0.0);
-        assert_eq!(e.hit_count, 1);       // 默认 1
+        assert_eq!(e.hit_count, 1);       // defaults to 1
         assert_eq!(e.domain, "");
     }
 
-    // ── GlossaryEntry JSON 往返 ──────────────────────────────────
+    // ---- GlossaryEntry JSON round-trip ----------------------------------
 
     #[test]
     fn glossary_entry_json_roundtrip() {
@@ -390,11 +390,12 @@ mod tests {
         assert_eq!(parsed.frequency, 15);
     }
 
-    // ── TranslationSource.as_str ─────────────────────────────────
+    // ---- TranslationSource.as_str ----------------------------------
 
     #[test]
     fn all_translation_sources_have_stable_strings() {
-        // 这些字符串是跨语言契约（.NET / Python 依赖），改动会破坏兼容
+        // These strings are a cross-language contract (.NET / Python depend on
+        // them); changing one breaks compatibility.
         assert_eq!(TranslationSource::TmHit.as_str(),      "tm_hit");
         assert_eq!(TranslationSource::Local.as_str(),      "local");
         assert_eq!(TranslationSource::AiUpgraded.as_str(), "ai_upgraded");

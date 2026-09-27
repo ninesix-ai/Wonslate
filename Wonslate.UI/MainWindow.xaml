@@ -9,13 +9,13 @@
         WindowStartupLocation="CenterScreen">
     <DockPanel Margin="12">
 
-        <!-- 顶部：引擎版本 + 路由说明 -->
+        <!-- Top bar: engine version + routing label -->
         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" Foreground="#666">
             Rust 引擎版本: <Run Text="{Binding EngineVersion, Mode=OneWay}" /> · 路由决策:
             <Run Text="{Binding EngineLabel, Mode=OneWay}" Foreground="#0a7d33" />
         </TextBlock>
 
-        <!-- 输入区 -->
+        <!-- Input area -->
         <GroupBox DockPanel.Dock="Top" Header="输入（Source）" Margin="0,0,0,8">
             <TextBox Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
                      AcceptsReturn="True" TextWrapping="Wrap"
@@ -23,7 +23,7 @@
                      FontSize="16" Padding="6" />
         </GroupBox>
 
-        <!-- 语言对选择（① 解耦）-->
+        <!-- Language-pair picker (decoupled source / target) -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
             <TextBlock Text="源语言:" VerticalAlignment="Center" Margin="0,0,6,0" />
             <ComboBox Width="130" ItemsSource="{Binding Languages}" DisplayMemberPath="DisplayName"
@@ -35,7 +35,7 @@
                       SelectedValuePath="Code" SelectedValue="{Binding TargetLang, Mode=TwoWay}" />
         </StackPanel>
 
-        <!-- 控制区 -->
+        <!-- Controls area -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
             <TextBlock Text="模式:" VerticalAlignment="Center" Margin="0,0,6,0" />
             <ComboBox Width="120" SelectedIndex="0" SelectionChanged="ModeComboBox_SelectionChanged">
@@ -51,7 +51,7 @@
                     Click="TranslateButton_Click" />
         </StackPanel>
 
-        <!-- 输出区 -->
+        <!-- Output area -->
         <GroupBox DockPanel.Dock="Top" Header="输出（Target）" Margin="0,0,0,8">
             <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True"
                      AcceptsReturn="True" TextWrapping="Wrap"

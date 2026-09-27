@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 纯 std HTTP/1.1 客户端（仅 http 明文，不引 TLS、不引外部 crate）。
+//! Pure-std HTTP/1.1 client (plain http only: no TLS stack, no external crates).
 //!
-//! 从 `ollama.rs` 抽取而来，供 ollama / argos / madlad 等"调本机服务"的引擎共享，
-//! 避免手抄三份。约束：Rust 侧零外部依赖，且这些函数不产生 build-script/proc-macro，
-//! 不触发 Smart App Control。所有失败路径返回 None，由上层路由兜底，绝不 panic。
+//! Extracted from `ollama.rs` and shared by every engine that dials a local service
+//! (ollama / argos / madlad), so it is not hand-copied three times. Constraint: zero external crates and no build-script/proc-macro, so
+//! Smart App Control is not triggered. Every failure path returns None and the router falls back; it never panics.
 
 use std::io::{Read, Write};
 use std::time::Duration;
 
-/// 从 URL 解析 host:port 与 path。
+/// Parse host:port and path out of a URL.
 pub fn parse_url(url: &str) -> Option<(String, u16, String)> {
     let rest = url.strip_prefix("http://")?;
     let (authority, path) = match rest.find('/') {
@@ -28,7 +28,7 @@ fn host_of(url: &str) -> Option<String> {
     parse_url(url).map(|(h, _, _)| h)
 }
 
-/// 组装 HTTP/1.1 POST 请求字节（无 body 时转为 GET）。
+/// Assemble HTTP/1.1 request bytes (POST when a body is present, GET otherwise).
 pub fn build_http_post(url: &str, body: &[u8]) -> Option<Vec<u8>> {
     let (_, _, path) = parse_url(url)?;
     let mut req = String::new();
@@ -49,7 +49,7 @@ pub fn build_http_post(url: &str, body: &[u8]) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-/// 建立 TCP 连接并发送请求、读完整响应。
+/// Open the TCP connection, send the request, read the full response.
 pub fn tcp_roundtrip(url: &str, request: &[u8], timeout: Duration) -> Option<Vec<u8>> {
     let (host, port, _) = parse_url(url)?;
     let addr = format!("{}:{}", host, port);
@@ -62,7 +62,7 @@ pub fn tcp_roundtrip(url: &str, request: &[u8], timeout: Duration) -> Option<Vec
     Some(buf)
 }
 
-/// 从原始 HTTP 响应中剥离状态行/头部，仅返回 body 文本。
+/// Strip the status line and headers from a raw HTTP response, returning only the body text.
 pub fn response_body_from_http(response: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(response).ok()?;
     if !text.starts_with("HTTP/1.1 200") && !text.starts_with("HTTP/1.0 200") {
@@ -72,7 +72,7 @@ pub fn response_body_from_http(response: &[u8]) -> Option<String> {
     Some(text[idx + 4..].to_string())
 }
 
-/// 便捷封装：向 url POST 一个 JSON，返回解析后的响应 JSON。任一步失败 → None。
+/// Convenience wrapper: POST a JSON to url and return the parsed response JSON. Any step failing returns None.
 pub fn http_post_json(
     url: &str,
     payload: &serde_json::Value,

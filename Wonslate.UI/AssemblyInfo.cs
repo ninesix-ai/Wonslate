@@ -8,5 +8,5 @@ using System.Runtime.CompilerServices;
     ResourceDictionaryLocation.SourceAssembly
 )]
 
-// 允许 xUnit 测试项目访问 internal 类型（EngineNative / DTOs 等）
+// Let the xUnit test project see internal types (EngineNative / DTOs, etc.)
 [assembly: InternalsVisibleTo("Wonslate.UI.Tests")]

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 演示引擎：内置中英词表与短语表，做词级双向替换翻译。
+//! Demo engine: a built-in zh/en dictionary doing word-level bidirectional replacement.
 //!
-//! 定位：P0 阶段用于跑通「.NET -> FFI -> Rust 引擎」整条链路，
-//! 不追求翻译质量。真实引擎接入后，本引擎作为 fallback 保留。
+//! Purpose: at P0 it proves the whole ".NET -> FFI -> Rust engine" path works;
+//! translation quality is not the goal. Once real engines land, it stays as the fallback.
 
 use super::Translator;
 use std::collections::HashMap;
 
-/// 英文 -> 中文 常用词表（P0 演示子集）
+/// English -> Chinese common-word table (P0 demo subset)
 const EN_ZH: &[(&str, &str)] = &[
     ("hello there", "你好"),
     ("good morning", "早上好"),
@@ -32,7 +32,7 @@ const EN_ZH: &[(&str, &str)] = &[
     ("cat", "猫"),
 ];
 
-/// 中文 -> 英文 反向词表
+/// Chinese -> English reverse table
 const ZH_EN: &[(&str, &str)] = &[
     ("你好", "hello"),
     ("早上好", "good morning"),
@@ -52,7 +52,7 @@ const ZH_EN: &[(&str, &str)] = &[
 ];
 
 pub struct DemoTranslator {
-    en_zh_long: HashMap<String, String>, // 先匹配长短语
+    en_zh_long: HashMap<String, String>, // long phrases match first
     en_zh_word: HashMap<String, String>,
     zh_en_long: HashMap<String, String>,
     zh_en_word: HashMap<String, String>,
@@ -65,7 +65,7 @@ impl Default for DemoTranslator {
         let mut zh_en_long = HashMap::new();
         let mut zh_en_word = HashMap::new();
 
-        // 短语优先：词组在词表，先按词序插入长表
+        // Phrases first: multi-word entries go into the long table, matched before single words
         for (en, zh) in EN_ZH {
             if en.split_whitespace().count() > 1 {
                 en_zh_long.insert(en.to_string(), zh.to_string());
@@ -93,11 +93,11 @@ impl Default for DemoTranslator {
 impl DemoTranslator {
     fn translate_en_zh(&self, text: &str) -> Option<String> {
         let lower = text.to_lowercase();
-        // 1) 整句/长短语命中
+        // 1) whole-sentence / long-phrase hit
         if let Some(hit) = self.en_zh_long.get(&lower) {
             return Some(hit.clone());
         }
-        // 2) 词级替换
+        // 2) word-level replacement
         let words: Vec<&str> = lower.split_whitespace().collect();
         let mut out = Vec::new();
         let mut hit = 0;
@@ -117,18 +117,18 @@ impl DemoTranslator {
     }
 
     fn translate_zh_en(&self, text: &str) -> Option<String> {
-        // 1) 长短语（无空格分词，直接查整串）
+        // 1) long phrases (no spacing; look up the whole string)
         let trimmed = text.trim();
         if let Some(hit) = self.zh_en_long.get(trimmed) {
             return Some(hit.clone());
         }
-        // 2) 逐字符扫描 2 字词
+        // 2) character scan for two-character words
         let mut out = Vec::new();
         let mut hit = 0;
         let mut i = 0;
         let chars: Vec<char> = trimmed.chars().collect();
         while i < chars.len() {
-            // 优先匹配 2 字词
+            // prefer two-character words
             if i + 1 < chars.len() {
                 let two: String = chars[i..=i + 1].iter().collect();
                 if let Some(en) = self.zh_en_word.get(&two) {

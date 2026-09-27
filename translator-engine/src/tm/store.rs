@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 文件型 TM 持久化层（JSON 文件，零 C 依赖，跨平台，零 serde derive）
+//! File-backed TM persistence (JSON files; no C deps, cross-platform, no serde derive)
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -10,10 +10,10 @@ use serde_json::{json, Value};
 use crate::error::EngineError;
 use crate::types::{GlossaryEntry, TmEntry};
 
-/// 脏数据阈值：累计 N 次写入后自动 flush 到磁盘
+/// Dirty threshold: flush to disk automatically after N accumulated writes
 const FLUSH_THRESHOLD: usize = 100;
 
-// ── 内部记录（手写 JSON 转换，无 derive）─────────────────────────
+// ---- Internal records (hand-written JSON conversion, no derive)--------------------------
 
 #[derive(Debug, Clone)]
 struct TmRecord {
@@ -58,7 +58,7 @@ impl GlossaryRecord {
     }
 }
 
-// ── TmStore（核心结构）────────────────────────────────────────────
+// ---- TmStore (core struct)------------------------------------------------
 
 pub struct TmStore {
     tm_path: PathBuf,
@@ -101,7 +101,7 @@ impl TmStore {
 
     pub fn instance() -> Option<&'static TmStore> { TM_STORE.get() }
 
-    // ── TM 操作 ────────────────────────────────────────────────────
+    // ---- TM operations --------------------------------------------------------
 
     pub fn tm_get(&self, hash: &str) -> Result<Option<TmEntry>, EngineError> {
         let idx = self.tm_index.read()
@@ -145,7 +145,7 @@ impl TmStore {
                 .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
             if let Some(rec) = idx.get_mut(hash) { rec.entry.hit_count += 1; }
         }
-        // 同步刷新 LRU Cache 视图，保证 lookup 读到的 hit_count 单调递增
+        // Refresh the LRU cache view so hit_count read via lookup only ever grows
         if let Some(c) = crate::tm::cache::TM_CACHE.get() {
             c.bump_hit_count(hash);
         }
@@ -193,7 +193,7 @@ impl TmStore {
         Ok(idx.values().filter(|r| !r.flagged).count() as u64)
     }
 
-    // ── Glossary 操作 ──────────────────────────────────────────────
+    // ---- Glossary operations ----------------------------------------------------
 
     pub fn glossary_list(
         &self, source_lang: &str, target_lang: &str, limit: usize,
@@ -225,7 +225,7 @@ impl TmStore {
                 None => {
                     idx.insert(key, GlossaryRecord { entry: entry.clone(), user_locked: false });
                 }
-                _ => {}   // user_locked=true，蒸馏不覆盖
+                _ => {}   // user_locked=true: distillation must not overwrite
             }
         }
         self.bump_gl_dirty()
@@ -243,7 +243,7 @@ impl TmStore {
         self.bump_gl_dirty()
     }
 
-    // ── Dirty flush ────────────────────────────────────────────────
+    // ---- Dirty flush ------------------------------------------------
 
     fn bump_tm_dirty(&self) -> Result<(), EngineError> {
         let mut n = self.tm_dirty.lock()
@@ -289,13 +289,13 @@ impl TmStore {
     }
 }
 
-// ── 文件 IO 辅助（不用 serde derive，走 serde_json::Value 手动）────
+// ---- File-IO helpers (serde_json::Value by hand, no derive)--------
 
 fn gl_key(term: &str, slang: &str, tlang: &str) -> String {
     format!("{}|{}|{}", term.to_lowercase(), slang, tlang)
 }
 
-/// 从 JSON 文件读出记录数组；不存在/空文件返回空数组
+/// Read the record array from the JSON file; a missing or empty file yields an empty array
 fn read_records<T: FromValue>(path: &Path) -> Result<Vec<T>, EngineError> {
     if !path.exists() { return Ok(vec![]); }
     let raw = std::fs::read_to_string(path)?;
@@ -310,7 +310,7 @@ trait FromValue: Sized { fn from_value(v: &Value) -> Self; }
 impl FromValue for TmRecord       { fn from_value(v: &Value) -> Self { TmRecord::from_value(v) } }
 impl FromValue for GlossaryRecord { fn from_value(v: &Value) -> Self { GlossaryRecord::from_value(v) } }
 
-/// 原子写：先写 .tmp 再 rename，避免中途崩溃破坏原文件
+/// Atomic write: write .tmp then rename, so a mid-write crash cannot corrupt the original
 fn write_records(path: &Path, records: &[Value]) -> Result<(), EngineError> {
     let tmp = path.with_extension("tmp");
     let body = json!({ "version": 1, "records": records });
@@ -320,7 +320,7 @@ fn write_records(path: &Path, records: &[Value]) -> Result<(), EngineError> {
     Ok(())
 }
 
-// ── 单元测试 ─────────────────────────────────────────────────────
+// ---- Unit tests ----------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

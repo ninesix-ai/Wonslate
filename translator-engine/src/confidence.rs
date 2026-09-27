@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 翻译结果置信度估算（启发式，MVP 版本）
+//! Confidence estimation for translation results (heuristic, MVP version).
 //!
-//! 基线分来自引擎类型，glossary 覆盖率高时加分，
-//! 空结果/占位符扣分，结果与源文本相同时扣分（语言未转换）。
+//! The baseline score comes from the engine type; high glossary coverage adds
+//! points, empty results / placeholders subtract, and an output identical to
+//! the source subtracts (the language was not actually converted).
 
-/// 引擎基线置信度
+/// Baseline confidence per engine id.
 const BASELINE: &[(&str, f32)] = &[
     ("ollama",          0.95),
     ("ollama-qwen",     0.95),
@@ -14,13 +15,13 @@ const BASELINE: &[(&str, f32)] = &[
     ("argos_glossary",  0.75),
     ("madlad",          0.68),
     ("demo",            0.55),
-    ("tm",              1.00),  // TM 命中由 quality 字段决定实际分
+    ("tm",              1.00),  // TM hits: the quality field decides the real score
 ];
 
-/// 估算翻译结果的置信度（0.0 ~ 1.0）
+/// Estimate the confidence of a translation result (0.0 ~ 1.0).
 ///
-/// - `engine`：产生结果的引擎 id
-/// - `glossary_coverage`：本次翻译中命中术语表的 token 比例（0.0~1.0）
+/// - `engine`: id of the engine that produced the result
+/// - `glossary_coverage`: share of tokens hit by the glossary (0.0~1.0)
 pub fn estimate(
     translated: &str,
     source_text: &str,
@@ -36,15 +37,16 @@ pub fn estimate(
         .find(|(name, _)| *name == engine)
         .map_or(0.60_f32, |(_, s)| *s);
 
-    // 术语表覆盖加分（最多 +0.15）
+    // Glossary-coverage bonus (at most +0.15).
     score += glossary_coverage.min(1.0) * 0.15;
 
-    // 含占位符 → 强扣分
+    // Placeholders present -> heavy penalty.
     if translated.contains("[??]") || translated.contains("???") || translated.contains("TODO") {
         score -= 0.40;
     }
 
-    // 译文与源文本完全相同 且 源文本含非 ASCII 字符（语言未真正转换）
+    // Output identical to the source and the source contains non-ASCII
+    // characters (the language was never actually converted).
     if translated.trim() == source_text.trim()
         && source_text.chars().any(|c| !c.is_ascii())
     {
@@ -72,7 +74,7 @@ mod tests {
     #[test]
     fn placeholder_penalized() {
         let s = estimate("hello [??] world", "你好世界", "argos", 0.0);
-        // 基线 0.72 - 0.40 = 0.32
+        // baseline 0.72 - 0.40 = 0.32
         assert!(s < 0.45);
     }
 

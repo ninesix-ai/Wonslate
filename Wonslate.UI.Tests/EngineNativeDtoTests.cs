@@ -6,12 +6,12 @@ using Xunit;
 namespace Wonslate.UI.Tests;
 
 /// <summary>
-/// EngineNative DTO 反序列化测试（纯逻辑，不触发 P/Invoke）。
-/// DTO 是 .NET 侧对 Rust FFI 返回 JSON 的解析契约，一旦偏差就影响 UI 展示。
+/// EngineNative DTO deserialization tests (pure logic, no P/Invoke).
+/// The DTO is the .NET parsing contract for Rust FFI JSON; drift here breaks the UI.
 /// </summary>
 public class EngineNativeDtoTests
 {
-    // ── TranslateResponseDto（v2.0 全功能接口）────────────────────
+    // ---- TranslateResponseDto (v2.0 full API)------------------------
 
     [Fact]
     public void TranslateResponseDto_DeserializesTmHit()
@@ -72,7 +72,7 @@ public class EngineNativeDtoTests
     [Fact]
     public void TranslateResponseDto_MissingOptionalFieldsDefaults()
     {
-        // 缺 output / error / message，反序列化不能崩
+        // missing output / error / message must not break deserialization
         var json = """
             {"ok":true,"engine":"demo","source_lang":"en","target_lang":"zh",
              "input":"hello","source":"local","latency_ms":1,"confidence":0.6}
@@ -88,7 +88,7 @@ public class EngineNativeDtoTests
     [Fact]
     public void TranslateResponseDto_GarbageJsonReturnsParseError()
     {
-        // 契约：非法 JSON 不能抛异常穿透到 UI 层
+        // contract: malformed JSON must not throw through to the UI layer
         var dto = EngineNative.TranslateResponseDto.FromJson("not json at all");
 
         Assert.False(dto.Ok);
@@ -104,7 +104,7 @@ public class EngineNativeDtoTests
         Assert.Equal("PARSE", dto.Error);
     }
 
-    // ── EngineResult（向后兼容旧接口）──────────────────────────────
+    // ---- EngineResult (backward-compatible legacy API)------------------------------------
 
     [Fact]
     public void EngineResult_LegacyInterfaceStillWorks()

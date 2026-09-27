@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! TM 统一公开 API（所有模块通过此文件访问 TM 和 glossary）
+//! Public TM API (every module reaches the TM and the glossary through this file)
 
 pub mod store;
 pub mod cache;
@@ -11,13 +11,13 @@ use crate::types::{GlossaryEntry, TmEntry};
 
 pub use store::TmStore;
 
-/// 初始化（应用启动时调一次，顺序：cache → store → warmup）
+/// Initialize (call once at app start; order: cache -> store -> warmup)
 pub fn init(data_dir: &std::path::Path, cache_size: usize, warmup_n: usize) -> Result<(), EngineError> {
     cache::init(cache_size);
     let tm_path = data_dir.join("translator_tm.json");
     let gl_path = data_dir.join("glossary.json");
     store::TmStore::open(&tm_path, &gl_path)?;
-    // 预热 LRU
+    // warm up the LRU
     if let Some(store) = TmStore::instance() {
         if let Ok(top) = store.tm_top_by_hit(warmup_n) {
             if let Some(c) = cache::TM_CACHE.get() {
@@ -28,7 +28,7 @@ pub fn init(data_dir: &std::path::Path, cache_size: usize, warmup_n: usize) -> R
     lt_info!("[tm] initialized, data_dir={}", data_dir.display());
     Ok(())
 }
-/// SHA256 哈希（trim + lowercase 规范化，使用 std DefaultHasher）
+/// Content hash (trim + lowercase normalization; std DefaultHasher, zero deps)
 pub fn compute_hash(text: &str, source_lang: &str, target_lang: &str) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -39,7 +39,7 @@ pub fn compute_hash(text: &str, source_lang: &str, target_lang: &str) -> String 
     format!("{:016x}", h.finish())
 }
 
-// ── TM 快捷函数（封装 TmStore，供 pipeline 调用）──────────────────
+// ---- TM convenience functions (wrap TmStore for the pipeline)--------------------
 
 pub fn lookup(text: &str, source_lang: &str, target_lang: &str)
     -> Result<Option<TmEntry>, EngineError>
@@ -81,7 +81,7 @@ pub fn flag_bad(text: &str, source_lang: &str, target_lang: &str) -> Result<(), 
         .tm_flag_bad(&hash)
 }
 
-/// 子串模糊匹配（取 top_n 条，供 few-shot 使用）
+/// Substring fuzzy match (top_n entries, used for few-shot)
 pub fn similar_entries(
     text: &str,
     source_lang: &str,
@@ -99,7 +99,7 @@ pub fn total_entries() -> Result<u64, EngineError> {
         .tm_total()
 }
 
-// ── Glossary 快捷函数 ─────────────────────────────────────────────
+// ---- Glossary convenience functions --------------------------------------------------
 
 pub fn glossary_list(
     source_lang: &str,

@@ -7,7 +7,7 @@ using Wonslate.Interop;
 
 namespace Wonslate.ViewModels;
 
-/// <summary>主窗口 ViewModel：绑定输入、模式、隐私开关与翻译链路。</summary>
+/// <summary>Main-window ViewModel: binds input, mode, the privacy toggle and the translation chain.</summary>
 public sealed class MainViewModel : INotifyPropertyChanged
 {
     private string _input = "Hello there";
@@ -49,7 +49,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set { _mode = value; OnPropertyChanged(); }
     }
 
-    /// <summary>当前生效路由/引擎说明（含 TM 命中状态）。</summary>
+    /// <summary>Current routing/engine label (includes TM hit state).</summary>
     public string EngineLabel
     {
         get => _engineLabel;
@@ -58,7 +58,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string EngineVersion => EngineNative.Version();
 
-    /// <summary>可选语言（当前离线引擎支持 英↔中；更多语言对随 Phase 2 引擎接入而扩展）。</summary>
+    /// <summary>Selectable languages (the offline engines currently support EN<->ZH; more pairs grow with the Phase 2 engines).</summary>
     public sealed record LangOption(string Code, string DisplayName);
     public IReadOnlyList<LangOption> Languages { get; } = new[]
     {
@@ -66,21 +66,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
         new LangOption("zh", "中文"),
     };
 
-    /// <summary>源语言代码（如 en / zh）。</summary>
+    /// <summary>Source language code (e.g. en / zh).</summary>
     public string SourceLang
     {
         get => _sourceLang;
         set { _sourceLang = value; OnPropertyChanged(); }
     }
 
-    /// <summary>目标语言代码。</summary>
+    /// <summary>Target language code.</summary>
     public string TargetLang
     {
         get => _targetLang;
         set { _targetLang = value; OnPropertyChanged(); }
     }
 
-    /// <summary>交换源/目标语言。</summary>
+    /// <summary>Swap source and target languages.</summary>
     public void ExchangeLanguages()
     {
         (_sourceLang, _targetLang) = (_targetLang, _sourceLang);
@@ -88,7 +88,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(TargetLang));
     }
 
-    /// <summary>构建 v2.0 全功能流水线的请求 JSON（随 SourceLang/TargetLang 变化，可测）。</summary>
+    /// <summary>Build the v2.0 pipeline request JSON (follows SourceLang/TargetLang; testable).</summary>
     public string BuildRequestJson(string text) =>
         System.Text.Json.JsonSerializer.Serialize(new
         {
@@ -101,7 +101,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         });
 
     /// <summary>
-    /// 执行一次翻译：走 v2.0 全功能流水线（TM + 路由 + 蒸馏）。
+    /// Run one translation through the v2.0 full pipeline (TM + routing + distillation).
     /// </summary>
     public void Translate()
     {
@@ -111,13 +111,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsBusy = true;
         try
         {
-            // 构建 JSON 请求：语言对来自 UI 选择的 SourceLang/TargetLang
+            // Build the JSON request: the pair comes from the UI-selected SourceLang/TargetLang
             var req = BuildRequestJson(text);
 
             var json = EngineNative.TranslateFull(req);
             var result = EngineNative.TranslateResponseDto.FromJson(json);
 
-            // 展示命中来源
+            // surface where the result came from
             var srcLabel = result.Source switch
             {
                 "tm_hit"      => "TM 命中",
