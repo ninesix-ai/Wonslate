@@ -86,9 +86,12 @@ jobs:
       - name: Build WPF app
         run: dotnet build Wonslate.UI -c Release
       - name: Run .NET tests
+        # Quoted because `run:` on windows-latest defaults to PowerShell, where the
+        # ';' in trx;LogFileName=... is a statement separator: unquoted it aborts the
+        # step with CommandNotFoundException and writes no .trx at all.
         run: >-
           dotnet test Wonslate.UI.Tests -c Release --nologo
-          --logger trx;LogFileName=wonslate-tests.trx
+          --logger "trx;LogFileName=wonslate-tests.trx"
           --results-directory TestResults
       # Publish the .trx as a check with per-test annotations, so a failing case is
       # readable in the PR instead of only in the log. Pinned to the v3.0.0 commit
