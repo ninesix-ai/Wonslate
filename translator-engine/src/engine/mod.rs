@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! 引擎注册与统一 Translator 接口。
+//! Engine registration and the unified Translator interface.
 //!
-//! 所有引擎实现同一 trait，业务侧按需热插拔。
+//! Every engine implements the same trait; callers hot-swap by need.
 
 pub mod demo;
 pub mod ollama;
@@ -12,16 +12,16 @@ pub mod sidecar;
 
 use crate::glossary::GlossaryContext;
 
-/// 统一翻译引擎接口（v2.0：新增 translate_with_context）
+/// Unified translation-engine interface (v2.0: adds translate_with_context)
 pub trait Translator: Send + Sync {
     fn name(&self) -> &'static str;
 
-    /// 基础翻译（无 glossary 上下文）。
-    /// 返回 None 表示该引擎无法处理，由路由层兜底。
+    /// Basic translation (no glossary context).
+    /// None means this engine cannot handle the input; the router falls back.
     fn translate(&self, text: &str, source: &str, target: &str) -> Option<String>;
 
-    /// 带 glossary 上下文的翻译（ollama.rs 等高级引擎 override 此方法）。
-    /// 默认退化到无 glossary 版本，保证向后兼容。
+    /// Translation with glossary context (advanced engines like ollama.rs override this).
+    /// The default degrades to the no-glossary call for backward compatibility.
     fn translate_with_context(
         &self,
         text: &str,
@@ -33,7 +33,7 @@ pub trait Translator: Send + Sync {
     }
 }
 
-/// 按 id 获取引擎实例；未知 id 回落到 demo，保证永不空指针。
+/// Get an engine instance by id; unknown ids fall back to demo, never a null pointer.
 pub fn get_engine(id: &str) -> Box<dyn Translator> {
     match id {
         "demo" => Box::new(demo::DemoTranslator::default()),
@@ -44,13 +44,23 @@ pub fn get_engine(id: &str) -> Box<dyn Translator> {
     }
 }
 
-/// 引擎是否【真正注册可用】。与 get_engine 的真实分支保持一致（不含未知回落），
-/// 供上层判断路由声称的引擎是否会静默回落，从而显式暴露回落原因。
+/// Whether the engine id is genuinely registered. Stays aligned with get_engine's real
+/// branches (no unknown-id fallback) so callers can expose why a fallback happened.
 pub fn is_available(id: &str) -> bool {
     matches!(id, "demo" | "ollama" | "qwen" | "ollama-qwen" | "argos" | "madlad")
 }
 
-/// 支持的引擎清单（供 UI 展示和路由配置）。
+/// Whether an engine id is guaranteed to run fully on this machine.
+///
+/// Privacy-mode invariant basis: fail-closed -- only ids we know to be local
+/// (built-in dictionary, or a 127.0.0.1 sidecar slot) count as local. Any
+/// other id, including LLM-backed engines whose URL is env-overridable
+/// (ollama/qwen) and anything unregistered, is treated as non-local.
+pub fn is_local_engine(id: &str) -> bool {
+    matches!(id, "demo" | "argos" | "madlad")
+}
+
+/// Catalog of supported engines (for UI display and routing config).
 pub fn available_engines() -> Vec<(&'static str, &'static str)> {
     vec![
         ("demo",   "演示引擎（内置词表，兜底用）"),
@@ -78,7 +88,7 @@ mod tests {
 
     #[test]
     fn argos_and_madlad_registered() {
-        // Phase 2 sidecar 引擎已注册（不再静默回落 demo）
+        // Phase 2 sidecar engines are registered (no more silent demo fallback)
         assert_eq!(get_engine("argos").name(), "argos");
         assert_eq!(get_engine("madlad").name(), "madlad");
     }
@@ -98,15 +108,38 @@ mod tests {
         assert!(is_available("ollama"));
         assert!(is_available("qwen"));
         assert!(is_available("ollama-qwen"));
-        // Phase 2：argos/madlad 现已真正可用
+        // Phase 2: argos/madlad are genuinely available now
         assert!(is_available("argos"));
         assert!(is_available("madlad"));
     }
 
     #[test]
     fn is_available_false_for_unregistered() {
-        // 仍未注册的 id 必须返回 false（供上层暴露回落）
+        // Still-unregistered ids must return false (so callers can expose the fallback)
         assert!(!is_available("bert"));
         assert!(!is_available("no-such-engine"));
+    }
+
+    #[test]
+    fn local_engines_are_privacy_safe() {
+        // Privacy-mode invariant basis: engines that never leave the machine.
+        assert!(is_local_engine("demo"));
+        assert!(is_local_engine("argos"));
+        assert!(is_local_engine("madlad"));
+    }
+
+    #[test]
+    fn ollama_is_not_a_local_engine_for_privacy_purposes() {
+        // Ollama reaches an LLM over HTTP and its URL is env-overridable,
+        // so privacy mode must treat it as non-local.
+        assert!(!is_local_engine("ollama"));
+        assert!(!is_local_engine("qwen"));
+        assert!(!is_local_engine("ollama-qwen"));
+    }
+
+    #[test]
+    fn unknown_engines_are_not_local() {
+        // Fail-closed: an id we do not know must default to "not local".
+        assert!(!is_local_engine("no-such-engine"));
     }
 }

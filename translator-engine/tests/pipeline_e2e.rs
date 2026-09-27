@@ -109,7 +109,7 @@ fn translate_full_returns_tm_hit_and_skips_engine() {
 fn privacy_mode_never_escalates_to_ai() {
     ensure_init();
     // Use a text that misses TM; privacy mode must fall back to local only.
-    // With no local hit it may return Err(NoResult) — that still counts as
+    // With no local hit it may return Err(NoResult) -- that still counts as
     // "not escalating to AI", honoring the privacy-first guarantee.
     let unique = format!("隐私保护验证 {}", std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
@@ -142,7 +142,7 @@ fn realtime_mode_never_escalates_to_ai() {
         TranslationMode::Realtime, false));
 
     // In realtime mode the demo engine returns None for Chinese with no glossary
-    // hit, so a pipeline Err(NoResult) is acceptable too — as long as it is not
+    // hit, so a pipeline Err(NoResult) is acceptable too -- as long as it is not
     // AiUpgraded (honoring the latency budget for realtime mode).
     if let Ok(r) = resp {
         assert_ne!(r.source, TranslationSource::AiUpgraded,
@@ -336,6 +336,76 @@ fn no_result_when_even_demo_cannot_handle() {
 }
 
 // ── Helper to point at the temp dir for standalone debugging ────────────────
+
+/// A local HTTP server that answers 404 to anything and counts how many times
+/// it was dialed. Used to prove that privacy mode never reaches out to an
+/// LLM-backed engine, no matter what the request asked for.
+mod dial_counter {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    pub fn spawn(hits: &'static AtomicUsize) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                if let Ok(mut s) = stream {
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    let mut buf = [0u8; 2048];
+                    let _ = s.read(&mut buf);
+                    let body = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+                    let _ = s.write_all(body.as_bytes());
+                }
+            }
+        });
+        format!("http://127.0.0.1:{}", port)
+    }
+}
+
+#[test]
+fn privacy_mode_clamps_non_local_explicit_engine_to_local() {
+    use std::sync::atomic::AtomicUsize;
+    ensure_init();
+    // Privacy invariant, hard form: even an explicit engine_id="ollama"
+    // (which bypasses the router) must never run under privacy mode. Point
+    // every ollama URL spelling at a dial-counting mock: if the pipeline
+    // clamps correctly the mock is dialed zero times and the local demo
+    // engine answers instead.
+    static HITS: AtomicUsize = AtomicUsize::new(0);
+    let url = dial_counter::spawn(&HITS);
+    // SAFETY: single-threaded within this test; OLLAMA_URL is only consulted
+    // by ollama-engine construction elsewhere in this suite, where a dead or
+    // 404 endpoint is the already-covered degradation path.
+    unsafe {
+        std::env::set_var("OLLAMA_URL", &url);
+        std::env::set_var("LT_OLLAMA_URL", &url);
+        std::env::set_var("WONSLATE_OLLAMA_URL", &url);
+        std::env::set_var("LT_OLLAMA_TIMEOUT_MS", "2000");
+    }
+    let before = HITS.load(std::sync::atomic::Ordering::SeqCst);
+
+    let r = TranslateRequest {
+        engine_id: "ollama".into(),
+        input: "hello world".into(),   // demo glossary covers this
+        source_lang: "en".into(),
+        target_lang: "zh".into(),
+        mode: TranslationMode::Full,
+        privacy: true,
+        domain: String::new(),
+        use_tm: false,
+    };
+    let resp = pipeline::translate_full(r).expect("demo should answer after the clamp");
+    let dialed = HITS.load(std::sync::atomic::Ordering::SeqCst) - before;
+
+    assert_eq!(dialed, 0, "PRIVACY VIOLATION: ollama endpoint dialed {} time(s) under privacy mode", dialed);
+    assert_eq!(resp.engine, "demo");
+    assert_ne!(resp.source, TranslationSource::AiUpgraded);
+    assert!(resp.output.unwrap().contains("你好"));
+    let msg = resp.message.expect("the clamp must be surfaced via message, not silent");
+    assert!(msg.contains("privacy") && msg.contains("ollama"),
+        "message should name the clamp (privacy + ollama), got: {}", msg);
+}
 
 #[allow(dead_code)]
 fn _dbg_show_tmp_dir() -> PathBuf {
