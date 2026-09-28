@@ -24,7 +24,10 @@ Design rules:
 
 Preparing a real CT2 environment (run these yourself; the script never
 downloads or installs anything automatically):
-    python -m pip install ctranslate2 sentencepiece
+    python -m pip install -r sidecar/requirements.txt
+    # unpack Argos packages under <data_dir>/models/argos -- that default is
+    # reported by default_model_dir(); pass --model-dir to point elsewhere
+    #   (en_zh / zh_en .argosmodel from https://argos-net.com/v1/)
     # MADLAD-400 CT2 int8 (Apache-2.0, GB-scale) example (pick one; must include
     # the tokenizer .model):
     #   huggingface-cli download <madlad400-ct2-repo> --local-dir <model_dir>
@@ -34,6 +37,9 @@ The module is importable by unit tests (serve only blocks under __main__).
 """
 import argparse
 import json
+import os
+import pathlib
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DEFAULT_ARGOS_PORT = 11435
@@ -60,37 +66,142 @@ class MockBackend:
         return out
 
 
+# SentencePiece marks word boundaries with U+2581. The Argos packages carry it as
+# an ordinary piece, so decode() leaves the marker in the text; the detokenizer
+# maps it back to a space.
+_SPM_SPACE = "\u2581"
+
+# Beam width used per model call (Argos' own default).
+_BEAM_SIZE = 4
+
+
+def default_model_dir():
+    """Conventional location for unpacked Argos packages.
+
+    Mirrors translator-engine/src/config.rs: the data dir is overridden by
+    LT_DATA_DIR / WONSLATE_DATA_DIR (legacy spelling wins) and otherwise follows
+    the per-OS user data location; packages live under <data_dir>/models/argos.
+    """
+    override = None
+    for key in ("LT_DATA_DIR", "WONSLATE_DATA_DIR"):
+        value = os.environ.get(key)
+        if value and value.strip():
+            override = value.strip()
+            break
+
+    if override:
+        data_dir = pathlib.Path(override)
+    elif os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA")
+        data_dir = pathlib.Path(local) / "Wonslate" if local else pathlib.Path("./lt-data")
+    elif sys.platform == "darwin":
+        data_dir = pathlib.Path.home() / "Library" / "Application Support" / "Wonslate"
+    else:
+        xdg = os.environ.get("XDG_DATA_HOME")
+        base = pathlib.Path(xdg) if xdg else pathlib.Path.home() / ".local" / "share"
+        data_dir = base / "wonslate"
+
+    return data_dir / "models" / "argos"
+
+
 class CT2Backend:
-    """Real CTranslate2 backend (MADLAD-400 / Argos). Raises MissingDependency
-    when dependencies or the model are absent."""
+    """Real CTranslate2 backend over unpacked Argos packages.
+
+    A model root holds one directory per language pair, each in the Argos
+    layout: metadata.json (from_code / to_code), model/ (CTranslate2) and
+    sentencepiece.model. Pairs are discovered from metadata.json and loaded
+    lazily, so an unused direction costs nothing.
+
+    Raises MissingDependency -- never a bare crash and never a silently wrong
+    answer -- when the dependencies, the model root or the requested pair is
+    unavailable. Glossary injection is not supported by these checkpoints; the
+    Rust pipeline owns glossary handling for engines that accept a prompt.
+    """
 
     name = "ct2"
 
-    def __init__(self, model_dir):
-        if not model_dir:
-            raise MissingDependency(
-                "ct2 backend needs --model-dir pointing at a downloaded"
-                " CTranslate2 model directory (MADLAD-400 ct2 / unpacked Argos"
-                " .argosmodel). See the install/download guide at the top of"
-                " this file.")
+    def __init__(self, model_dir=None):
         try:
-            import ctranslate2          # noqa: F401
-            import sentencepiece        # noqa: F401
+            import ctranslate2
+            import sentencepiece
         except ImportError as e:
             raise MissingDependency(
                 "ct2 backend is missing dependencies: {}. Run"
-                " `python -m pip install ctranslate2 sentencepiece` first.".format(e))
-        self._model_dir = model_dir
-        # Actual loading is left to the concrete checkpoint integration (spiece /
-        # speed configuration differs per model); when wiring it up, initialize
-        # ctranslate2.Translator(model_dir) + sentencepiece here and verify.
-        raise MissingDependency(
-            "ct2 backend deps and model dir are in place, but checkpoint"
-            " loading / tokenization / language-code mapping must be"
-            " implemented and measured for the chosen MADLAD-400/Argos model.")
+                " `python -m pip install -r sidecar/requirements.txt` first.".format(e))
 
-    def translate(self, text, source, target, glossary=None):  # pragma: no cover - needs a real model
-        raise NotImplementedError("CT2Backend.translate lands with the real checkpoint integration")
+        if not model_dir:
+            model_dir = default_model_dir()
+        root = pathlib.Path(model_dir)
+        if not root.is_dir():
+            raise MissingDependency(
+                "ct2 backend model dir does not exist: {}. Download and unpack"
+                " Argos packages into it (see the guide at the top of this"
+                " file), or pass --model-dir.".format(root))
+
+        self._ct2 = ctranslate2
+        self._spm = sentencepiece
+        self._root = root
+        self._packages = {}   # (source, target) -> package directory
+        self._loaded = {}     # (source, target) -> (translator, processor)
+
+        for pkg in sorted(p for p in root.iterdir() if p.is_dir()):
+            if not (pkg / "model").is_dir():
+                continue
+            codes = self._pair_codes(pkg / "metadata.json")
+            if codes:
+                self._packages[codes] = pkg
+
+        if not self._packages:
+            raise MissingDependency(
+                "ct2 backend found no language packages under {}. Expected"
+                " <pair>/metadata.json plus <pair>/model/ (unpacked"
+                " .argosmodel).".format(root))
+
+    @staticmethod
+    def _pair_codes(metadata):
+        """Read (from_code, to_code) from an Argos metadata.json, else None."""
+        if not metadata.is_file():
+            return None
+        try:
+            data = json.loads(metadata.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        source, target = data.get("from_code"), data.get("to_code")
+        return (source, target) if source and target else None
+
+    def available_pairs(self):
+        """Sorted 'source->target' strings for the packages found on disk."""
+        return sorted("{0}->{1}".format(s, t) for s, t in self._packages)
+
+    def _pair(self, source, target):
+        key = (source, target)
+        pkg = self._packages.get(key)
+        if pkg is None:
+            raise MissingDependency(
+                "ct2 backend has no model for {}->{}; available: {}".format(
+                    source, target, ", ".join(self.available_pairs()) or "none"))
+        if key not in self._loaded:
+            processor = self._spm.SentencePieceProcessor(
+                model_file=str(pkg / "sentencepiece.model"))
+            translator = self._ct2.Translator(str(pkg / "model"), device="cpu")
+            self._loaded[key] = (translator, processor)
+        return self._loaded[key]
+
+    def translate(self, text, source, target, glossary=None):
+        text = (text or "").strip()
+        if not text:
+            return ""
+        translator, processor = self._pair(source, target)
+        pieces = processor.encode(text, out_type=str)
+        if not pieces:
+            return ""
+        result = translator.translate_batch([pieces], beam_size=_BEAM_SIZE)
+        return self._detokenize(processor, result[0].hypotheses[0])
+
+    @staticmethod
+    def _detokenize(processor, hypothesis):
+        """Turn a hypothesis into text and restore the word-boundary markers."""
+        return processor.decode(hypothesis).replace(_SPM_SPACE, " ").strip()
 
 
 def make_backend(kind, model_dir=None):

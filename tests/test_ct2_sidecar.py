@@ -2,11 +2,16 @@
 # Copyright (c) 2026 ninesix-ai studio
 """Contract tests for the real sidecar service (CT2 / Argos).
 
-Pure stdlib unittest, zero third-party deps, runs on a dev machine. Focuses on
-everything verifiable WITHOUT a real model: the backend abstraction, the HTTP
-contract (/health, /translate), and graceful degradation when dependencies are
-missing. Real CT2 inference needs ctranslate2 installed plus a model download
--- authorized environment steps outside this unit test.
+Pure stdlib unittest. Two layers are covered:
+
+  * dependency-free: the backend abstraction, the HTTP contract (/health,
+    /translate) and the explicit-degradation paths (missing deps, missing model
+    dir, dir without packages, unsupported pair) -- always runs, no skips.
+  * real inference: loads the CTranslate2 + sentencepiece stack and an unpacked
+    Argos package from default_model_dir(). Runs wherever that model is present
+    (install: sidecar/requirements.txt; download steps: docs/17) and skips with
+    an explicit reason otherwise -- a missing model is an environment fact, not
+    a passing test.
 
 Run:  python -m unittest tests.test_ct2_sidecar -v
 """
@@ -14,12 +19,14 @@ import http.client
 import json
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from sidecar.ct2_sidecar import (  # noqa: E402
-    MockBackend, MissingDependency, make_backend, serve_in_thread,
+    CT2Backend, MockBackend, MissingDependency, default_model_dir, make_backend,
+    serve_in_thread,
 )
 
 
@@ -49,15 +56,76 @@ class BackendFactoryTests(unittest.TestCase):
     def test_mock_backend_created(self):
         self.assertEqual(make_backend("mock").name, "mock")
 
-    def test_ct2_backend_without_deps_raises_missing_dependency(self):
-        # With ctranslate2 not installed locally, make_backend must raise
-        # MissingDependency (with install guidance), not a bare ImportError.
-        try:
-            import ctranslate2  # noqa: F401
-            self.skipTest("ctranslate2 is installed; skipping the missing-dep branch")
-        except ImportError:
+    def test_ct2_backend_rejects_a_missing_model_dir(self):
+        # Must be an explicit MissingDependency with guidance -- never a bare
+        # ImportError and never a silent empty translation. Unconditional:
+        # whether or not ctranslate2 is installed, a missing directory is an
+        # explicit failure.
+        missing = os.path.join(tempfile.gettempdir(), "wonslate-no-such-model-dir")
+        with self.assertRaises(MissingDependency):
+            make_backend("ct2", model_dir=missing)
+
+    def test_ct2_backend_rejects_a_dir_without_packages(self):
+        # Also unconditional: an empty dir fails with "no language packages"
+        # when the stack is installed, and with the dependency message when it
+        # is not -- both are MissingDependency.
+        with tempfile.TemporaryDirectory() as empty:
             with self.assertRaises(MissingDependency):
-                make_backend("ct2", model_dir=None)
+                make_backend("ct2", model_dir=empty)
+
+
+# ---- Real inference (needs the deps plus an unpacked Argos package) ---------
+
+class RealInferenceTests(unittest.TestCase):
+    """Exercises the actual CTranslate2 + sentencepiece path end to end."""
+
+    @classmethod
+    def setUpClass(cls):
+        model_dir = default_model_dir()
+        if not model_dir.is_dir():
+            raise unittest.SkipTest(
+                "no Argos model under {}; install sidecar/requirements.txt and "
+                "follow the download steps (docs/17)".format(model_dir))
+        try:
+            cls.backend = CT2Backend(model_dir=str(model_dir))
+        except MissingDependency as exc:
+            raise unittest.SkipTest("ct2 stack unavailable: {}".format(exc))
+
+    def test_discovers_the_english_chinese_pair(self):
+        self.assertIn("en->zh", self.backend.available_pairs())
+
+    def test_english_to_chinese_returns_cjk(self):
+        out = self.backend.translate("Hello, world.", "en", "zh")
+        self.assertTrue(out)
+        self.assertNotEqual(out, "[zh] Hello, world.")  # not the mock backend
+        self.assertTrue(any("\u4e00" <= ch <= "\u9fff" for ch in out), out)
+
+    def test_chinese_to_english_returns_latin(self):
+        out = self.backend.translate("你好，世界。", "zh", "en")
+        self.assertTrue(out)
+        self.assertTrue(any(ch.isascii() and ch.isalpha() for ch in out), out)
+
+    def test_unsupported_pair_is_explicit(self):
+        with self.assertRaises(MissingDependency):
+            self.backend.translate("hello", "en", "ja")
+
+    def test_http_translate_uses_the_real_backend(self):
+        srv, port = serve_in_thread(self.backend, host="127.0.0.1", port=0)
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
+            conn.request("POST", "/translate",
+                         body=json.dumps({"text": "Hello, world.",
+                                          "source": "en", "target": "zh"}),
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            payload = json.loads(resp.read().decode("utf-8"))
+            conn.close()
+            self.assertEqual(resp.status, 200)
+            self.assertTrue(payload["text"])
+            self.assertNotIn("[zh]", payload["text"])
+        finally:
+            srv.shutdown()
+            srv.server_close()
 
 
 # ---- HTTP contract (real server, random port, mock backend) -----------------

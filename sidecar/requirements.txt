@@ -1,0 +1,15 @@
+# Runtime dependencies for the CTranslate2 sidecar (sidecar/ct2_sidecar.py).
+#
+# Install:  python -m pip install -r sidecar/requirements.txt
+#
+# These versions are PINNED, not floating: they are the ones verified to load on
+# a Windows host whose code integrity policy is active. On that host
+# sentencepiece 0.2.2's Windows binary _sentencepiece.cp310-win_amd64.pyd is
+# rejected with WinError 4551 ("blocked by application control policy") even
+# after Smart App Control is turned off, because the denial is keyed to that
+# file's hash rather than to reputation; 0.1.99 loads normally. See docs/09.
+#
+# License note: both are permissive and already registered in
+# translator-engine/src/license_gate.rs (MIT / Apache-2.0).
+ctranslate2==4.8.2
+sentencepiece==0.1.99
