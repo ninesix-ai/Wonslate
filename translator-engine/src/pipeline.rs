@@ -251,7 +251,10 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
                 )),
             });
         }
-        Err(EngineError::NoResult)
+        Err(EngineError::NoResult {
+            source_lang: req.source_lang.clone(),
+            target_lang: req.target_lang.clone(),
+        })
     }
 }
 

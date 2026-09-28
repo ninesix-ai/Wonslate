@@ -10,7 +10,7 @@ pub enum EngineError {
     InvalidInput(String),
     UnknownEngine(String),
     EngineFailed { engine: String, reason: String },
-    NoResult,
+    NoResult { source_lang: String, target_lang: String },
     TmError(String),
     ConfigError(String),
     Panic,
@@ -24,7 +24,11 @@ impl fmt::Display for EngineError {
             Self::EngineFailed { engine, reason } => {
                 write!(f, "ENGINE_FAILED[{}]: {}", engine, reason)
             }
-            Self::NoResult => write!(f, "NO_RESULT"),
+            Self::NoResult { source_lang, target_lang } => write!(
+                f,
+                "NO_RESULT: no engine could translate {}->{}; install a local model for this pair or enable an AI engine in full mode",
+                source_lang, target_lang
+            ),
             Self::TmError(msg) => write!(f, "TM_ERROR: {}", msg),
             Self::ConfigError(msg) => write!(f, "CONFIG_ERROR: {}", msg),
             Self::Panic => write!(f, "PANIC: engine panicked"),
@@ -41,7 +45,7 @@ impl EngineError {
             Self::InvalidInput(_) => "INVALID_INPUT",
             Self::UnknownEngine(_) => "UNKNOWN_ENGINE",
             Self::EngineFailed { .. } => "ENGINE_FAILED",
-            Self::NoResult => "NO_RESULT",
+            Self::NoResult { .. } => "NO_RESULT",
             Self::TmError(_) => "TM_ERROR",
             Self::ConfigError(_) => "CONFIG_ERROR",
             Self::Panic => "PANIC",
@@ -76,10 +80,23 @@ mod tests {
         assert!(EngineError::UnknownEngine("bad".into()).to_string().starts_with("UNKNOWN_ENGINE"));
         assert!(EngineError::EngineFailed{engine:"o".into(),reason:"r".into()}
             .to_string().starts_with("ENGINE_FAILED"));
-        assert_eq!(EngineError::NoResult.to_string(), "NO_RESULT");
+        assert!(EngineError::NoResult { source_lang: "de".into(), target_lang: "ar".into() }
+            .to_string().starts_with("NO_RESULT"));
         assert!(EngineError::TmError("db".into()).to_string().starts_with("TM_ERROR"));
         assert!(EngineError::ConfigError("yaml".into()).to_string().starts_with("CONFIG_ERROR"));
         assert!(EngineError::Panic.to_string().starts_with("PANIC"));
+    }
+
+    #[test]
+    fn no_result_names_the_language_pair() {
+        // The message is what the UI shows; a bare "NO_RESULT" told the user nothing.
+        let e = EngineError::NoResult { source_lang: "de".into(), target_lang: "ar".into() };
+        let msg = e.to_string();
+        assert!(msg.contains("de->ar"), "message must name the pair, got: {}", msg);
+
+        let v = e.to_json();
+        assert_eq!(v["error"], "NO_RESULT");
+        assert!(v["message"].as_str().unwrap().contains("de->ar"));
     }
 
     #[test]
