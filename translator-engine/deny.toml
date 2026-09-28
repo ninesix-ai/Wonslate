@@ -24,9 +24,14 @@
 # previous revision carried `[licenses.bans]`, `copyleft` and `allow-osi-fsf-free`
 # from a template and the licenses check had therefore never run.
 #
-# Anything not listed under `allow` fails the check (fail-closed), which mirrors
-# ALLOWED_LICENSES in src/license_gate.rs. Banning a license by name is redundant
-# here; the explicit blacklist lives in license_gate.rs (DENIED_LICENSES).
+# Anything not listed under `allow` fails the check (fail-closed). The allow list
+# below MUST be identical to ALLOWED_LICENSES in src/license_gate.rs: that file is
+# the single source of truth, and tests/test_component_licenses.py parses both and
+# fails when they diverge. Banning a license by name is redundant here; the explicit
+# blacklist lives in license_gate.rs (DENIED_LICENSES).
+#
+# Unicode-DFS-2016 is present because unicode-ident (via proc-macro2/syn ->
+# serde_derive) declares "(MIT OR Apache-2.0) AND Unicode-DFS-2016".
 
 [licenses]
 allow = [

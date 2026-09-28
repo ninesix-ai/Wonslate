@@ -10,6 +10,11 @@
 #   python script/build.py --test     # build + run all tests (Rust + .NET + Python FFI)
 #   python script/build.py --unit     # build + Rust & .NET tests only
 #   python script/build.py --ffi      # build + Python smoke only (FFI, sidecar e2e, ct2 unit, XAML + hook lint)
+#
+# Application control note: on a host where Smart App Control (or another code
+# integrity policy) blocks the freshly built native library, the two smoke tests
+# that cross the FFI boundary are reported as SKIP instead of FAIL. That is an
+# environment condition rather than a product defect; see docs/09.
 import argparse
 import os
 import shutil
@@ -34,6 +39,25 @@ def native_lib_name() -> str:
 def run(cmd, cwd=None) -> int:
     print("  $ " + " ".join(str(c) for c in cmd), flush=True)
     return subprocess.run([str(c) for c in cmd], cwd=str(cwd) if cwd else None).returncode
+
+
+def run_teeing(cmd, cwd=None) -> tuple[int, str]:
+    """Run a command, echo its output as it arrives, and also return it.
+
+    Needed where the caller must inspect the output (application control blocks
+    surface as text) without hiding it from the operator.
+    """
+    print("  $ " + " ".join(str(c) for c in cmd), flush=True)
+    proc = subprocess.Popen([str(c) for c in cmd], cwd=str(cwd) if cwd else None,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace")
+    chunks: list[str] = []
+    if proc.stdout is not None:
+        for line in proc.stdout:
+            chunks.append(line)
+            print(line, end="", flush=True)
+    proc.wait()
+    return proc.returncode, "".join(chunks)
 
 
 def build_rust() -> Path:
@@ -73,11 +97,91 @@ def run_dotnet_tests() -> int:
         print("  [SKIP] Wonslate.UI.Tests not present", flush=True)
         return 0
     print("  -- .NET xUnit tests (dotnet test) --", flush=True)
-    return run(["dotnet", "test", str(proj), "-c", "Release", "--nologo"])
+    rc, out = run_teeing(["dotnet", "test", str(proj), "-c", "Release", "--nologo"])
+    if rc != 0 and app_control_blocked_output(out):
+        print(f"  [SKIP] dotnet test blocked by application control "
+              f"(state={app_control_state()})", flush=True)
+        print("         No test result is trustworthy on this host.", flush=True)
+        print_app_control_hint()
+        return 0
+    return rc
+
+
+# Windows application control (Smart App Control) block codes. A policy block
+# on the native library is an environment condition, not a product defect.
+SAC_BLOCK_CODES = {4551, 1260, 225}
+
+# Smoke tests that load the Rust cdylib across the FFI boundary; they cannot run
+# when application control blocks that library.
+NATIVE_LIB_TESTS = {"test_phase1_ffi.py", "test_sidecar_e2e.py"}
+
+# Markers that identify an application control block inside subprocess output.
+# dotnet reports the policy HRESULT rather than a WinError and the surrounding
+# sentence is localized, so several spellings are matched. Deliberately no bare
+# "4551": a plain number can occur in unrelated test output and would mask real
+# failures.
+SAC_OUTPUT_MARKERS = (
+    "0x800711c7",                  # ERROR_BLOCKED_BY_APPLICATION_CONTROL_POLICY
+    "0x11c7",
+    "winerror 4551",
+    "application control policy",
+    "应用程序控制策略",
+)
+
+
+def app_control_blocked_output(text: str) -> bool:
+    """Return True when command output shows a code integrity policy block."""
+    low = text.lower()
+    return any(marker in low for marker in SAC_OUTPUT_MARKERS)
+
+
+def app_control_state() -> str:
+    """Return Smart App Control state: 'off' / 'enforcement' / 'assessment' / 'unknown'."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SYSTEM\CurrentControlSet\Control\CI\Policy") as key:
+            val, _ = winreg.QueryValueEx(key, "VerifiedAndReputablePolicyState")
+        return {0: "off", 1: "enforcement", 2: "assessment"}.get(int(val), "unknown")
+    except (OSError, ImportError):
+        return "unknown"
+
+
+def print_app_control_hint() -> None:
+    """Explain how to clear an application control block on a dev machine."""
+    if app_control_state() == "off":
+        print("         The setting reads off but the policy is still enforced; "
+              "a reboot is required after changing it.", flush=True)
+    print("         Fix: Windows Security > App & browser control > "
+          "Smart App Control > Off", flush=True)
+
+
+def native_lib_blocked() -> int | None:
+    """Return the WinError if application control blocks the engine library.
+
+    Any other load failure (missing dependency, wrong architecture) returns None
+    so the real defect still surfaces as a FAIL.
+    """
+    lib = ENGINE / "target" / "release" / native_lib_name()
+    if not lib.exists():
+        return None
+    try:
+        import ctypes
+        ctypes.CDLL(str(lib))
+    except OSError as exc:
+        code = getattr(exc, "winerror", None)
+        return code if code in SAC_BLOCK_CODES else None
+    return None
 
 
 def run_ffi_smoke() -> int:
     rc = 0
+    blocked = native_lib_blocked()
+    if blocked is not None:
+        print(f"  [SKIP] application control blocks {native_lib_name()} "
+              f"(WinError {blocked}, state={app_control_state()})", flush=True)
+        print("         FFI smoke cannot run on this host.", flush=True)
+        print_app_control_hint()
     for name in ("test_phase1_ffi.py", "test_sidecar_e2e.py",
                  "test_ct2_sidecar.py", "test_xaml_lint.py",
                  "test_pre_commit_hook.py", "test_component_licenses.py",
@@ -89,6 +193,9 @@ def run_ffi_smoke() -> int:
         if shutil.which("python") is None:
             print("  [SKIP] python not on PATH", flush=True)
             return rc
+        if blocked is not None and name in NATIVE_LIB_TESTS:
+            print(f"  [SKIP] {name} needs {native_lib_name()} (blocked)", flush=True)
+            continue
         print(f"  -- {name} --", flush=True)
         rc |= run([sys.executable or "python", str(script)], cwd=ROOT)
     return rc

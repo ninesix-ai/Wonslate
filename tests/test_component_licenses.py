@@ -15,6 +15,10 @@ two fail-closed checks:
 2. REGISTERED_DEPS entries must carry a provenance note (a comment naming the
    official source on the line above), so no dependency can be whitelisted by
    name alone without saying where it comes from.
+3. deny.toml's [licenses] allow list (the crate-layer gate run by cargo-deny in
+   CI) must be identical to ALLOWED_LICENSES. The two layers previously drifted
+   (deny.toml allowed Unicode-DFS-2016, the Rust list did not), and a whitelist
+   that disagrees with the gate it mirrors is not a gate.
 
 The Rust unit test `license_gate::registered_deps_are_all_compliant` covers
 the license-value side (every registered license must be in the allow-list);
@@ -28,6 +32,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATE_RS = os.path.join(ROOT, "translator-engine", "src", "license_gate.rs")
+DENY_TOML = os.path.join(ROOT, "translator-engine", "deny.toml")
 
 # Names allowed to skip explicit registration because they are pulled in
 # transitively by a registered parent (transitive licenses are covered by the
@@ -53,8 +58,26 @@ def _segment(text, marker):
     return text[start:end]
 
 
+def _strip_line_comments(text):
+    """Drop `//` comment prose so quoted strings inside comments are not read as data.
+
+    Without this, a comment that names a license (e.g. documenting an upstream
+    "AND Unicode-DFS-2016" expression) would be parsed as a list entry. The split
+    is on the first `//` of a line, which is safe for these lists because none of
+    their string literals contain `//`.
+    """
+    return "\n".join(line.split("//", 1)[0] for line in text.splitlines())
+
+
 def parse_allowed(text):
-    return set(QUOTED_RE.findall(_segment(text, "ALLOWED_LICENSES")))
+    seg = _strip_line_comments(_segment(text, "ALLOWED_LICENSES"))
+    return set(QUOTED_RE.findall(seg))
+
+
+def parse_deny_allow(text):
+    """Return the licence set from deny.toml's [licenses] allow list."""
+    m = re.search(r"allow\s*=\s*\[(.*?)\]", text, re.S)
+    return set(QUOTED_RE.findall(m.group(1))) if m else set()
 
 
 def parse_registered(text):
@@ -120,6 +143,16 @@ def run_checks():
         if entry["license"] not in allowed:
             failures.append(f"registered dep '{name}' license "
                             f"'{entry['license']}' not in allow-list")
+
+    # Check 4: the crate-layer gate must mirror the source-of-truth allow list.
+    with open(DENY_TOML, encoding="utf-8") as fh:
+        deny_allow = parse_deny_allow(fh.read())
+    if deny_allow != allowed:
+        missing = sorted(allowed - deny_allow) or "none"
+        extra = sorted(deny_allow - allowed) or "none"
+        failures.append("deny.toml allow list diverges from ALLOWED_LICENSES "
+                        f"(missing in deny.toml: {missing}; "
+                        f"only in deny.toml: {extra})")
     return failures
 
 

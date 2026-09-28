@@ -140,16 +140,24 @@ impl TmStore {
     }
 
     pub fn tm_increment_hit(&self, hash: &str) -> Result<(), EngineError> {
-        {
+        let found = {
             let mut idx = self.tm_index.write()
                 .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
-            if let Some(rec) = idx.get_mut(hash) { rec.entry.hit_count += 1; }
+            match idx.get_mut(hash) {
+                Some(rec) => { rec.entry.hit_count += 1; true }
+                None => false,
+            }
+        };
+        if !found {
+            return Ok(());
         }
         // Refresh the LRU cache view so hit_count read via lookup only ever grows
         if let Some(c) = crate::tm::cache::TM_CACHE.get() {
             c.bump_hit_count(hash);
         }
-        Ok(())
+        // Hit counts are TM data: mark dirty so they reach disk on the normal flush
+        // path instead of being lost when the process dies before the next upsert.
+        self.bump_tm_dirty()
     }
 
     pub fn tm_flag_bad(&self, hash: &str) -> Result<(), EngineError> {

@@ -117,8 +117,7 @@ pub extern "C" fn tt_init(config_json: *const c_char) -> *mut c_char {
         let _raw = unsafe { read_cstr(config_json) }.unwrap_or_else(|| "{}".into());
 
         config::ensure_dirs().ok();
-        let routes_path = config::routes_yaml_path();
-        config::load(&routes_path);
+        config::load();
 
         let data_dir = config::data_dir().join("data");
         let (cache_sz, warmup_n) = (config::get().tm_cache_size, config::get().tm_warmup_n);

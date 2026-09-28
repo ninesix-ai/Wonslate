@@ -32,7 +32,7 @@ fn ensure_init() {
         let _ = std::fs::remove_file(&gl_file);
 
         // Load default config (TM enabled; distillation off to avoid side effects).
-        translator_engine::config::load(&dir.join("no_such_routes.yaml"));
+        translator_engine::config::load();
 
         tm::init(&dir, 100, 10)
             .expect("TM init failed");

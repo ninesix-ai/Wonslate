@@ -37,12 +37,20 @@ pub struct Dep {
 
 /// Permissive, closed-source-commercial-friendly whitelist
 /// (exact match; unknown licenses are denied by default).
+///
+/// This list is the single source of truth for allowed licenses: `deny.toml`
+/// mirrors it for the crate layer, and tests/test_component_licenses.py fails
+/// when the two lists diverge.
 pub const ALLOWED_LICENSES: &[&str] = &[
     "Apache-2.0",
     "MIT",
     "ISC",
     "BSD-3-Clause",
     "CC0-1.0",
+    // Unicode data-file/software license. Required in practice: unicode-ident
+    // (pulled by proc-macro2 / syn -> serde_derive) declares
+    // "(MIT OR Apache-2.0) AND Unicode-DFS-2016". Permissive, commercial OK.
+    "Unicode-DFS-2016",
 ];
 
 /// Known-dangerous blacklist (for self-check and warnings only; the verdict
@@ -114,6 +122,7 @@ mod tests {
         assert!(is_allowed("ISC"));
         assert!(is_allowed("BSD-3-Clause"));
         assert!(is_allowed("CC0-1.0"));
+        assert!(is_allowed("Unicode-DFS-2016"));
     }
 
     #[test]

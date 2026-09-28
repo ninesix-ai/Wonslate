@@ -46,10 +46,14 @@ impl Default for Config {
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
-pub fn load(_config_path: &std::path::Path) {
-    // Build the effective config from defaults + environment overrides, then install
-    // it as the process-global singleton (the first call wins). The path argument is
-    // reserved for a future file-based config and is intentionally not read yet.
+/// Install the process-global config (the first call wins).
+///
+/// The effective config is the built-in defaults overlaid with `LT_*` /
+/// `WONSLATE_*` environment overrides; there is no config file. Routing rules
+/// live in code (`router.rs`), and `tt_init`'s `config_json` is likewise not
+/// consumed yet. The previous signature took a path that was never read, which
+/// advertised a file-based config that does not exist.
+pub fn load() {
     let cfg = from_env_with(&|k| std::env::var(k).ok());
     let _ = CONFIG.set(cfg);
     lt_info!("[config] loaded");
@@ -120,10 +124,6 @@ fn data_dir_from(lookup: &dyn Fn(&str) -> Option<String>) -> PathBuf {
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     { PathBuf::from("./lt-data") }
-}
-
-pub fn routes_yaml_path() -> PathBuf {
-    data_dir().join("config").join("routes.yaml")
 }
 
 pub fn ensure_dirs() -> Result<(), crate::error::EngineError> {

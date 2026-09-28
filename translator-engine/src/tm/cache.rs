@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! In-memory cache (HashMap + simple FIFO eviction, zero external deps)
+//! In-memory cache (HashMap + LRU eviction, zero external deps)
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock};
@@ -13,12 +13,25 @@ pub struct TmCache {
 
 struct CacheInner {
     map: HashMap<String, TmEntry>,
-    order: VecDeque<String>,   // FIFO eviction order
+    /// Recency order: front = least recently used, back = most recently used.
+    order: VecDeque<String>,
     capacity: usize,
+}
+
+impl CacheInner {
+    /// Mark `hash` as most recently used (no-op when it is not tracked yet).
+    fn touch(&mut self, hash: &str) {
+        if let Some(pos) = self.order.iter().position(|h| h == hash) {
+            self.order.remove(pos);
+        }
+        self.order.push_back(hash.to_string());
+    }
 }
 
 impl TmCache {
     pub fn new(capacity: usize) -> Self {
+        // A zero capacity must not empty the cache on every insert; floor it at 1.
+        let capacity = capacity.max(1);
         Self {
             inner: Mutex::new(CacheInner {
                 map: HashMap::with_capacity(capacity),
@@ -29,24 +42,23 @@ impl TmCache {
     }
 
     pub fn get(&self, hash: &str) -> Option<TmEntry> {
-        self.inner.lock().ok()?.map.get(hash).cloned()
+        let mut c = self.inner.lock().ok()?;
+        let entry = c.map.get(hash).cloned()?;
+        // A read is a use; without this touch the cache degenerates into FIFO.
+        c.touch(hash);
+        Some(entry)
     }
 
     pub fn put(&self, hash: String, entry: TmEntry) {
         if let Ok(mut c) = self.inner.lock() {
-            // Existing key: remove the old slot before re-inserting (emulates an LRU touch)
-            if c.map.remove(&hash).is_some() {
-                let pos = c.order.iter().position(|h| h == &hash);
-                if let Some(p) = pos { c.order.remove(p); }
-            }
-            // At capacity: FIFO evicts the oldest entry
-            while c.map.len() >= c.capacity {
-                if let Some(old) = c.order.pop_front() {
-                    c.map.remove(&old);
-                } else { break; }
-            }
-            c.order.push_back(hash.clone());
+            c.touch(&hash);                 // insert new key, or refresh recency
             c.map.insert(hash, entry);
+            while c.map.len() > c.capacity {
+                match c.order.pop_front() {
+                    Some(old) => { c.map.remove(&old); }
+                    None => break,
+                }
+            }
         }
     }
 
@@ -128,8 +140,8 @@ mod tests {
     }
 
     #[test]
-    fn capacity_eviction_uses_fifo_order() {
-        // capacity 3, insert 4: the oldest must be evicted
+    fn capacity_eviction_drops_the_least_recently_used() {
+        // capacity 3, insert 4 without reading: the oldest insert must be evicted
         let c = TmCache::new(3);
         c.put("a".into(), e("A", 0.9));
         c.put("b".into(), e("B", 0.9));
@@ -139,6 +151,19 @@ mod tests {
         assert!(c.get("b").is_some());
         assert!(c.get("c").is_some());
         assert!(c.get("d").is_some());
+    }
+
+    #[test]
+    fn a_read_refreshes_recency_and_saves_the_entry() {
+        // True LRU (not FIFO): reading "a" makes "b" the eviction victim instead.
+        let c = TmCache::new(3);
+        c.put("a".into(), e("A", 0.9));
+        c.put("b".into(), e("B", 0.9));
+        c.put("c".into(), e("C", 0.9));
+        assert!(c.get("a").is_some(), "a must be cached before the read counts");
+        c.put("d".into(), e("D", 0.9));
+        assert!(c.get("b").is_none(), "b is least recently used once a was read");
+        assert!(c.get("a").is_some(), "the read entry survived");
     }
 
     #[test]
