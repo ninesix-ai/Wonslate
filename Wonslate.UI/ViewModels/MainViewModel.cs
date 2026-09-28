@@ -58,31 +58,65 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string EngineVersion => EngineNative.Version();
 
-    /// <summary>Selectable languages (the offline engines currently support EN<->ZH; more pairs grow with the Phase 2 engines).</summary>
+    /// <summary>Source-language code that asks the engine to detect it (pipeline.rs: "auto" or empty).</summary>
+    public const string AutoDetectCode = "auto";
+
+    /// <summary>One selectable language: the engine code plus the label shown in the UI.</summary>
     public sealed record LangOption(string Code, string DisplayName);
-    public IReadOnlyList<LangOption> Languages { get; } = new[]
+
+    /// <summary>
+    /// Languages the router treats as common (router.rs is_common_pair). Selecting one
+    /// still needs the matching local model to translate offline; without it the
+    /// pipeline reports an explicit fallback instead of pretending to succeed.
+    /// </summary>
+    private static readonly LangOption[] RealLanguages =
     {
-        new LangOption("en", "English"),
         new LangOption("zh", "中文"),
+        new LangOption("en", "English"),
+        new LangOption("ja", "日本語"),
+        new LangOption("ko", "한국어"),
+        new LangOption("fr", "Français"),
+        new LangOption("de", "Deutsch"),
+        new LangOption("es", "Español"),
+        new LangOption("ru", "Русский"),
+        new LangOption("pt", "Português"),
+        new LangOption("it", "Italiano"),
+        new LangOption("ar", "العربية"),
     };
 
-    /// <summary>Source language code (e.g. en / zh).</summary>
+    /// <summary>Concrete languages, offered for both sides of the pair.</summary>
+    public IReadOnlyList<LangOption> Languages => RealLanguages;
+
+    /// <summary>Source choices: auto-detection first, then every concrete language.</summary>
+    public IReadOnlyList<LangOption> SourceLanguages { get; } =
+        new[] { new LangOption(AutoDetectCode, "自动检测") }.Concat(RealLanguages).ToArray();
+
+    /// <summary>Source language code (a concrete code, or "auto" to let the engine detect it).</summary>
     public string SourceLang
     {
         get => _sourceLang;
-        set { _sourceLang = value; OnPropertyChanged(); }
+        set
+        {
+            _sourceLang = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanExchangeLanguages));
+        }
     }
 
-    /// <summary>Target language code.</summary>
+    /// <summary>Target language code (always concrete: nothing can be translated into "auto").</summary>
     public string TargetLang
     {
         get => _targetLang;
         set { _targetLang = value; OnPropertyChanged(); }
     }
 
-    /// <summary>Swap source and target languages.</summary>
+    /// <summary>Swapping needs a concrete source; "auto" has no meaningful target side.</summary>
+    public bool CanExchangeLanguages => _sourceLang != AutoDetectCode;
+
+    /// <summary>Swap source and target languages (no-op while the source is auto-detected).</summary>
     public void ExchangeLanguages()
     {
+        if (!CanExchangeLanguages) return;
         (_sourceLang, _targetLang) = (_targetLang, _sourceLang);
         OnPropertyChanged(nameof(SourceLang));
         OnPropertyChanged(nameof(TargetLang));

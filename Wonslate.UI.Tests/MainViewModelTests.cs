@@ -199,4 +199,79 @@ public class MainViewModelTests
         Assert.Contains(nameof(MainViewModel.SourceLang), raised);
         Assert.Contains(nameof(MainViewModel.TargetLang), raised);
     }
+
+    // ---- Multi-language coverage (N-05) ----------------------------------
+
+    [Fact]
+    public void Languages_OffersAtLeastElevenCommonLanguages()
+    {
+        // Mirrors router.rs is_common_pair. Whether a pair can actually translate
+        // offline depends on the local model being installed; an uninstalled pair
+        // falls back explicitly rather than silently.
+        var vm = new MainViewModel();
+        Assert.True(vm.Languages.Count >= 11, $"expected >= 11 languages, got {vm.Languages.Count}");
+        foreach (var code in new[] { "zh", "en", "ja", "ko", "fr", "de", "es", "ru", "pt", "it", "ar" })
+        {
+            Assert.Contains(vm.Languages, l => l.Code == code);
+        }
+    }
+
+    [Fact]
+    public void Languages_NeverOfferAutoDetectAsATarget()
+    {
+        // Nothing can be translated into "auto"; only the source side offers it.
+        var vm = new MainViewModel();
+        Assert.DoesNotContain(vm.Languages, l => l.Code == MainViewModel.AutoDetectCode);
+    }
+
+    [Fact]
+    public void SourceLanguages_OfferAutoDetectPlusEveryConcreteLanguage()
+    {
+        var vm = new MainViewModel();
+        Assert.Equal(MainViewModel.AutoDetectCode, vm.SourceLanguages[0].Code);
+        Assert.Equal(vm.Languages.Count + 1, vm.SourceLanguages.Count);
+    }
+
+    [Fact]
+    public void BuildRequestJson_ReflectsAutoDetectSource()
+    {
+        var vm = new MainViewModel { SourceLang = MainViewModel.AutoDetectCode, TargetLang = "ja" };
+        var json = vm.BuildRequestJson("hello");
+        Assert.Contains("\"source_lang\":\"auto\"", json);
+        Assert.Contains("\"target_lang\":\"ja\"", json);
+    }
+
+    [Fact]
+    public void BuildRequestJson_ReflectsAnExtendedLanguagePair()
+    {
+        // A non en/zh pair must reach the engine request untouched.
+        var vm = new MainViewModel { SourceLang = "de", TargetLang = "ar" };
+        var json = vm.BuildRequestJson("hallo");
+        Assert.Contains("\"source_lang\":\"de\"", json);
+        Assert.Contains("\"target_lang\":\"ar\"", json);
+    }
+
+    [Fact]
+    public void ExchangeLanguages_IsDisabledWhileSourceIsAutoDetect()
+    {
+        var vm = new MainViewModel { SourceLang = MainViewModel.AutoDetectCode, TargetLang = "zh" };
+        Assert.False(vm.CanExchangeLanguages);
+
+        vm.ExchangeLanguages();   // must never put "auto" on the target side
+
+        Assert.Equal(MainViewModel.AutoDetectCode, vm.SourceLang);
+        Assert.Equal("zh", vm.TargetLang);
+    }
+
+    [Fact]
+    public void SourceLang_ToAutoDetect_RaisesCanExchangeLanguages()
+    {
+        var vm = new MainViewModel();
+        var raised = new System.Collections.Generic.List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.SourceLang = MainViewModel.AutoDetectCode;
+
+        Assert.Contains(nameof(MainViewModel.CanExchangeLanguages), raised);
+    }
 }

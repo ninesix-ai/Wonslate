@@ -26,10 +26,11 @@
         <!-- Language-pair picker (decoupled source / target) -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
             <TextBlock Text="源语言:" VerticalAlignment="Center" Margin="0,0,6,0" />
-            <ComboBox Width="130" ItemsSource="{Binding Languages}" DisplayMemberPath="DisplayName"
+            <ComboBox Width="130" ItemsSource="{Binding SourceLanguages}" DisplayMemberPath="DisplayName"
                       SelectedValuePath="Code" SelectedValue="{Binding SourceLang, Mode=TwoWay}" />
             <Button Content="⇄ 交换" Width="72" Margin="10,0" Click="ExchangeButton_Click"
-                    ToolTip="交换源/目标语言" />
+                    IsEnabled="{Binding CanExchangeLanguages}"
+                    ToolTip="交换源/目标语言（源语言为「自动检测」时不可用）" />
             <TextBlock Text="目标语言:" VerticalAlignment="Center" Margin="6,0,6,0" />
             <ComboBox Width="130" ItemsSource="{Binding Languages}" DisplayMemberPath="DisplayName"
                       SelectedValuePath="Code" SelectedValue="{Binding TargetLang, Mode=TwoWay}" />
@@ -59,7 +60,7 @@
                      FontSize="16" Padding="6" Foreground="#0a7d33" />
         </GroupBox>
 
-        <TextBlock DockPanel.Dock="Bottom" Text="当前离线引擎支持 英↔中（demo 词表）；更多语言对需接入 Argos/MADLAD（Phase 2）或本机 Ollama 后生效。"
+        <TextBlock DockPanel.Dock="Bottom" Text="离线翻译需要该语言对已安装本地模型（当前 en↔zh 走 Argos/CT2，安装见 script/fetch_argos_models.py）；未安装的语对会显式回落，上方标签显示「兜底降级」。"
                    Foreground="#888" TextWrapping="Wrap" Margin="0,8,0,0" />
     </DockPanel>
 </Window>
