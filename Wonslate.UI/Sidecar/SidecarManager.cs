@@ -42,42 +42,48 @@ internal sealed class SidecarManager
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMilliseconds(1500) };
 
     private readonly SidecarSpec _spec;
-    private readonly Func<SidecarSpec, bool> _launch;
-    private readonly Func<string, bool> _probe;
-    private readonly Action<int> _sleep;
-    private readonly Action<SidecarSpec> _kill;
+    // Every step is nullable: null means "use the built-in Process / HttpClient implementation".
+    // A production instance therefore injects nothing at all (no null! placeholders).
+    private readonly Func<SidecarSpec, bool>? _launch;
+    private readonly Func<string, bool>? _probe;
+    private readonly Action<int>? _sleep;
+    private readonly Action<SidecarSpec>? _kill;
 
+    // Guards _proc / _processOwned / _state: Start runs on a worker thread while the UI
+    // thread (or Stop at shutdown) may read the state at any moment.
+    private readonly object _gate = new();
     private Process? _proc;
     private bool _processOwned;
+    private SidecarState _state = SidecarState.Stopped;
 
-    public SidecarState State { get; private set; } = SidecarState.Stopped;
+    public SidecarState State { get { lock (_gate) { return _state; } } }
 
-    /// <summary>Test / custom constructor: inject each step's delegate.</summary>
+    /// <summary>Endpoint label (argos / madlad), used by the startup diagnostics line.</summary>
+    public string Name => _spec.Name;
+
+    /// <summary>Test / custom constructor: inject each step's delegate (null = built-in implementation).</summary>
     public SidecarManager(
         SidecarSpec spec,
-        Func<SidecarSpec, bool> launch,
-        Func<string, bool> healthProbe,
-        Action<int> sleep,
+        Func<SidecarSpec, bool>? launch,
+        Func<string, bool>? healthProbe,
+        Action<int>? sleep,
         Action<SidecarSpec>? kill = null)
     {
         _spec = spec;
         _launch = launch;
         _probe = healthProbe;
         _sleep = sleep;
-        _kill = kill ?? (_ => { });
+        _kill = kill;
     }
 
-    /// <summary>Production constructor: built-in Process launch + HttpClient health probe.</summary>
+    /// <summary>Production constructor: no injection, the built-in launcher and health probe are used.</summary>
     public SidecarManager(SidecarSpec spec)
-        : this(spec, launch: null!, healthProbe: null!, sleep: null!, kill: null!)
+        : this(spec, launch: null, healthProbe: null, sleep: null, kill: null)
     {
     }
 
     /// <summary>Build production instances for the argos / madlad endpoints.</summary>
     public static SidecarManager ForEndpoint(SidecarSpec spec) => new(spec);
-
-    // Concrete production delegates (used when nothing was injected) -- swapped lazily.
-    static SidecarManager() { }
 
     /// <summary>Start and wait for readiness. true = Ready; false = Failed (never throws).</summary>
     public bool Start()
@@ -88,18 +94,18 @@ internal sealed class SidecarManager
         if (!string.IsNullOrWhiteSpace(_spec.ExePath))
         {
             bool ok = _launch is { } ? _launch(_spec) : LaunchProcess(_spec);
-            if (!ok) { State = SidecarState.Failed; return false; }
-            _processOwned = true;
+            if (!ok) { SetState(SidecarState.Failed); return false; }
+            lock (_gate) { _processOwned = true; }
         }
 
         // Poll health until ready or timeout (probe exceptions count as unhealthy; never rethrown)
         long deadline = Environment.TickCount64 + _spec.healthTimeoutMs;
         while (true)
         {
-            if (SafeProbe()) { State = SidecarState.Ready; return true; }
+            if (SafeProbe()) { SetState(SidecarState.Ready); return true; }
             if (Environment.TickCount64 >= deadline)
             {
-                State = SidecarState.Failed;
+                SetState(SidecarState.Failed);
                 ReleaseOwnedProcess();   // do not leave a zombie process behind if it will not come up
                 return false;
             }
@@ -110,13 +116,17 @@ internal sealed class SidecarManager
     /// <summary>Stop: kill only a process this instance really launched; every state transitions to Stopped.</summary>
     public void Stop()
     {
-        if (_processOwned)
+        bool owned;
+        lock (_gate) { owned = _processOwned; }
+        if (owned)
         {
             _kill?.Invoke(_spec);
             ReleaseOwnedProcess();
         }
-        State = SidecarState.Stopped;
+        SetState(SidecarState.Stopped);
     }
+
+    private void SetState(SidecarState next) { lock (_gate) { _state = next; } }
 
     private bool SafeProbe()
     {
@@ -139,8 +149,10 @@ internal sealed class SidecarManager
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
-            _proc = Process.Start(psi);
-            return _proc is { };
+            var proc = Process.Start(psi);
+            if (proc is null) return false;
+            lock (_gate) { _proc = proc; }
+            return true;
         }
         catch
         {
@@ -163,12 +175,22 @@ internal sealed class SidecarManager
 
     private void ReleaseOwnedProcess()
     {
+        Process? proc;
+        lock (_gate)
+        {
+            proc = _proc;
+            _proc = null;
+            _processOwned = false;
+        }
         try
         {
-            if (_proc is { } && !_proc.HasExited) _proc.Kill(entireProcessTree: true);
-            _proc?.Dispose();
+            if (proc is { } && !proc.HasExited) proc.Kill(entireProcessTree: true);
+            proc?.Dispose();
         }
-        catch { /* 尽力回收，忽略 */ }
-        finally { _proc = null; _processOwned = false; }
+        catch
+        {
+            // Best effort only: an already-exited process needs no cleanup, and a failed
+            // kill must not turn shutdown into a crash.
+        }
     }
 }

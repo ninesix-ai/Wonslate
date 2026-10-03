@@ -38,6 +38,27 @@ internal static partial class EngineNative
     [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
     private static partial IntPtr tt_tm_lookup(string text, string sourceLang, string targetLang);
 
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr tt_tm_put(string entryJson);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr tt_tm_flag_bad(string text, string sourceLang, string targetLang);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr tt_tm_list(string sourceLang, string targetLang, uint limit);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr tt_glossary_list(string sourceLang, string targetLang);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr tt_glossary_upsert(string entryJson);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr tt_glossary_delete(string sourceTerm, string sourceLang, string targetLang);
+
+    [LibraryImport(DllName)]
+    private static partial IntPtr tt_config_json();
+
     [LibraryImport(DllName)]
     private static partial IntPtr tt_engines();
 
@@ -46,11 +67,13 @@ internal static partial class EngineNative
 
     // ---- Public wrappers --------------------------------------------------------
 
-    /// <summary>Initialize the Rust core (call once at app start).</summary>
-    public static void Init(string configJson = "{}")
+    /// <summary>Initialize the Rust core (call once at app start). The ack is returned so a
+    /// failed initialization can be surfaced in the UI instead of being swallowed.</summary>
+    public static AckDto Init(string configJson = "{}")
     {
         IntPtr ptr = tt_init(configJson);
-        if (ptr != IntPtr.Zero) tt_free_string(ptr);
+        try { return AckDto.FromJson(Marshal.PtrToStringUTF8(ptr) ?? "{}"); }
+        finally { if (ptr != IntPtr.Zero) tt_free_string(ptr); }
     }
 
     /// <summary>Shut the Rust core down (call at app exit).</summary>
@@ -85,6 +108,66 @@ internal static partial class EngineNative
     {
         IntPtr raw = tt_tm_lookup(text, sourceLang, targetLang);
         try { return Marshal.PtrToStringUTF8(raw) ?? "null"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>Write one translation pair into the TM (JSON ack).</summary>
+    public static string TmPut(string entryJson)
+    {
+        IntPtr raw = tt_tm_put(entryJson);
+        try { return Marshal.PtrToStringUTF8(raw) ?? "{}"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>Mark one TM entry bad: it stops being served and disappears from the list (JSON ack).</summary>
+    public static string TmFlagBad(string text, string sourceLang, string targetLang)
+    {
+        IntPtr raw = tt_tm_flag_bad(text, sourceLang, targetLang);
+        try { return Marshal.PtrToStringUTF8(raw) ?? "{}"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>List the active TM entries of one language pair (JSON array string).</summary>
+    public static string TmList(string sourceLang, string targetLang, uint limit = 200)
+    {
+        IntPtr raw = tt_tm_list(sourceLang, targetLang, limit);
+        try { return Marshal.PtrToStringUTF8(raw) ?? "[]"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>List the glossary terms of one language pair (JSON array string).</summary>
+    public static string GlossaryList(string sourceLang, string targetLang)
+    {
+        IntPtr raw = tt_glossary_list(sourceLang, targetLang);
+        try { return Marshal.PtrToStringUTF8(raw) ?? "[]"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>Insert or update one glossary term (JSON ack).</summary>
+    public static string GlossaryUpsert(string entryJson)
+    {
+        IntPtr raw = tt_glossary_upsert(entryJson);
+        try { return Marshal.PtrToStringUTF8(raw) ?? "{}"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>Delete one glossary term by key (JSON ack).</summary>
+    public static string GlossaryDelete(string sourceTerm, string sourceLang, string targetLang)
+    {
+        IntPtr raw = tt_glossary_delete(sourceTerm, sourceLang, targetLang);
+        try { return Marshal.PtrToStringUTF8(raw) ?? "{}"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>
+    /// The routing that is actually in force, plus which files and environment variables
+    /// produced it (JSON object). Used by the settings page to show the effective value
+    /// rather than the value the user thinks they set.
+    /// </summary>
+    public static string ConfigJson()
+    {
+        IntPtr raw = tt_config_json();
+        try { return Marshal.PtrToStringUTF8(raw) ?? "{}"; }
         finally { tt_free_string(raw); }
     }
 
@@ -168,6 +251,78 @@ internal static partial class EngineNative
                     false, "unknown", "", "", "", null, "fallback",
                     0, 0, "PARSE", ex.Message);
             }
+        }
+    }
+
+    /// <summary>Shared JSON options for the Rust snake_case contract. CJK text stays
+    /// literal instead of \uXXXX-escaped: the Rust side reads UTF-8 either way, and the
+    /// stored TM / glossary files stay human-readable.</summary>
+    internal static readonly System.Text.Json.JsonSerializerOptions SnakeCase = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower,
+        DictionaryKeyPolicy   = System.Text.Json.JsonNamingPolicy.SnakeCaseLower,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+}
+
+// ---- Write-endpoint ack / management DTOs ----------------------------------------
+// Top-level (not nested in EngineNative) because the ViewModel exposes them as public
+// properties for WPF binding, while the interop class itself stays internal.
+
+/// <summary>Response of the write-only endpoints: {"ok":true} or {"ok":false,"error":..,"message":..}.</summary>
+public sealed record AckDto(bool Ok, string? Error, string? Message)
+{
+    public static AckDto FromJson(string json)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<AckDto>(json, EngineNative.SnakeCase)
+                ?? new AckDto(false, "PARSE", "empty ack");
+        }
+        catch (Exception ex)
+        {
+            return new AckDto(false, "PARSE", ex.Message);
+        }
+    }
+}
+
+/// <summary>One TM entry as reported by tt_tm_list / tt_tm_lookup.</summary>
+public sealed record TmEntryDto(
+    string SourceText, string SourceLang, string TargetText, string TargetLang,
+    string Engine, float Quality, uint HitCount, string Domain)
+{
+    public static IReadOnlyList<TmEntryDto> ListFromJson(string json)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<TmEntryDto>>(json, EngineNative.SnakeCase)
+                ?? new List<TmEntryDto>();
+        }
+        catch
+        {
+            return Array.Empty<TmEntryDto>();
+        }
+    }
+}
+
+/// <summary>One glossary term as reported by tt_glossary_list.</summary>
+/// <param name="Source">Provenance (N-08): "distill" / "manual" / "tm"; null for records
+/// written before the field existed. Machine-extracted terms are the ones worth reviewing.</param>
+public sealed record GlossaryEntryDto(
+    string SourceTerm, string SourceLang, string TargetTerm, string TargetLang,
+    float Confidence, uint Frequency, string Domain, string? Source)
+{
+    public static IReadOnlyList<GlossaryEntryDto> ListFromJson(string json)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<GlossaryEntryDto>>(json, EngineNative.SnakeCase)
+                ?? new List<GlossaryEntryDto>();
+        }
+        catch
+        {
+            return Array.Empty<GlossaryEntryDto>();
         }
     }
 }

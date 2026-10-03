@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
+using System;
 using System.ComponentModel;
+using System.Threading;
+using System.Threading.Tasks;
 using Wonslate.ViewModels;
 using Xunit;
 
@@ -273,5 +276,377 @@ public class MainViewModelTests
         vm.SourceLang = MainViewModel.AutoDetectCode;
 
         Assert.Contains(nameof(MainViewModel.CanExchangeLanguages), raised);
+    }
+
+    // ---- TM / glossary management (N-07), FFI-free paths only ----------------
+
+    [Fact]
+    public void BuildTmEntryJson_CarriesThePairAsUserConfirmed()
+    {
+        var json = MainViewModel.BuildTmEntryJson("深度学习", "zh", "deep learning", "en");
+
+        Assert.Contains("\"source_text\":\"深度学习\"", json);
+        Assert.Contains("\"source_lang\":\"zh\"", json);
+        Assert.Contains("\"target_text\":\"deep learning\"", json);
+        Assert.Contains("\"target_lang\":\"en\"", json);
+        Assert.Contains("\"engine\":\"manual\"", json);
+        Assert.Contains("\"quality\":1", json);
+    }
+
+    [Fact]
+    public void BuildGlossaryEntryJson_MarksTheEntryAsUserEdited()
+    {
+        var json = MainViewModel.BuildGlossaryEntryJson("神经网络", "zh", "neural network", "en");
+
+        Assert.Contains("\"source_term\":\"神经网络\"", json);
+        Assert.Contains("\"target_term\":\"neural network\"", json);
+        // 1.0 beats any distilled confidence, so a later distillation pass cannot overwrite it.
+        Assert.Contains("\"confidence\":1", json);
+    }
+
+    [Fact]
+    public void EffectiveSourceLang_IsConcreteWhenSourceIsExplicit()
+    {
+        var vm = new MainViewModel();
+        Assert.Equal("en", vm.EffectiveSourceLang);
+        Assert.True(vm.CanManageGlossary);
+    }
+
+    [Fact]
+    public void EffectiveSourceLang_StaysEmptyForUnresolvedAutoDetect()
+    {
+        // Nothing has been translated yet, so "auto" has no concrete code to key TM/glossary writes with.
+        var vm = new MainViewModel { SourceLang = MainViewModel.AutoDetectCode };
+
+        Assert.Equal("", vm.EffectiveSourceLang);
+        Assert.False(vm.CanManageGlossary);
+    }
+
+    [Fact]
+    public void SaveCurrentToTm_WithoutOutput_SetsStatusAndSkipsFfi()
+    {
+        var vm = new MainViewModel { Input = "hello" };
+
+        vm.SaveCurrentToTm();   // no translation yet: must exit before the FFI
+
+        Assert.Contains("没有可存入的译文", vm.StatusMessage);
+        Assert.Empty(vm.TmEntries);
+    }
+
+    [Fact]
+    public void FlagBadSelectedTm_WithoutSelection_SetsStatusAndSkipsFfi()
+    {
+        var vm = new MainViewModel();
+
+        vm.FlagBadSelectedTm();
+
+        Assert.Contains("请先选择", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void SaveGlossaryTerm_WithEmptyTerm_SetsStatusAndSkipsFfi()
+    {
+        var vm = new MainViewModel { GlossarySourceTerm = "  ", GlossaryTargetTerm = "x" };
+
+        vm.SaveGlossaryTerm();
+
+        Assert.Contains("不能为空", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void SaveGlossaryTerm_UnderAutoDetect_SetsStatusAndSkipsFfi()
+    {
+        var vm = new MainViewModel
+        {
+            SourceLang = MainViewModel.AutoDetectCode,
+            GlossarySourceTerm = "神经网络",
+            GlossaryTargetTerm = "neural network",
+        };
+
+        vm.SaveGlossaryTerm();
+
+        Assert.Contains("自动检测", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void DeleteSelectedGlossaryTerm_WithoutSelection_SetsStatusAndSkipsFfi()
+    {
+        var vm = new MainViewModel();
+
+        vm.DeleteSelectedGlossaryTerm();
+
+        Assert.Contains("请先选择", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void StatusMessage_StartsEmpty_AndIsReadOnlyForTheUi()
+    {
+        var vm = new MainViewModel();
+        Assert.Equal("", vm.StatusMessage);
+
+        var prop = typeof(MainViewModel).GetProperty(nameof(MainViewModel.StatusMessage));
+        Assert.NotNull(prop);
+        Assert.False(prop!.GetSetMethod(nonPublic: true)!.IsPublic);
+    }
+
+    [Fact]
+    public void ManagementCollections_StartEmpty()
+    {
+        var vm = new MainViewModel();
+        Assert.Empty(vm.TmEntries);
+        Assert.Empty(vm.GlossaryEntries);
+        Assert.Null(vm.SelectedTmEntry);
+        Assert.Null(vm.SelectedGlossaryEntry);
+    }
+
+    // ---- Async translation: success / timeout / cancel (N-06) -----------------
+    // The engine call is injected, so these three paths are verified without the FFI.
+
+    private const string OkJson = """
+        {"ok":true,"engine":"demo","source_lang":"en","target_lang":"zh",
+         "input":"hello","output":"你好","source":"local","latency_ms":3,"confidence":0.9}
+        """;
+
+    [Fact]
+    public void Translate_SyncPath_AppliesTheResponse()
+    {
+        var vm = new MainViewModel { Input = "hello" };
+        vm.InvokeTranslate = _ => OkJson;
+
+        vm.Translate();
+
+        Assert.Equal("你好", vm.Output);
+        Assert.Contains("本地引擎", vm.EngineLabel);
+        Assert.False(vm.IsBusy);
+    }
+
+    [Fact]
+    public async Task TranslateAsync_Success_AppliesResponse()
+    {
+        var vm = new MainViewModel { Input = "hello" };
+        vm.InvokeTranslate = _ => OkJson;
+
+        await vm.TranslateAsync();
+
+        Assert.Equal("你好", vm.Output);
+        Assert.Contains("本地引擎", vm.EngineLabel);
+        Assert.False(vm.IsBusy);
+        Assert.True(vm.IsNotBusy);
+    }
+
+    [Fact]
+    public async Task TranslateAsync_WhileRunning_ReportsBusy()
+    {
+        var vm = new MainViewModel { Input = "hello" };
+        var started = new TaskCompletionSource();
+        var release = new TaskCompletionSource<string>();
+        vm.InvokeTranslate = _ =>
+        {
+            started.TrySetResult();
+            return release.Task.GetAwaiter().GetResult();
+        };
+
+        var task = vm.TranslateAsync();
+        await started.Task;
+
+        Assert.True(vm.IsBusy);
+        Assert.False(vm.IsNotBusy);   // the translate button is disabled while in flight
+
+        release.SetResult(OkJson);
+        await task;
+
+        Assert.False(vm.IsBusy);
+        Assert.True(vm.IsNotBusy);
+    }
+
+    [Fact]
+    public async Task TranslateAsync_Timeout_RetriesOnceThenReportsTimeout()
+    {
+        var vm = new MainViewModel { Input = "hello", TranslateTimeout = TimeSpan.FromMilliseconds(400) };
+        int calls = 0;
+        var started = new TaskCompletionSource();
+        var release = new ManualResetEventSlim(false);
+        vm.InvokeTranslate = _ =>
+        {
+            Interlocked.Increment(ref calls);
+            started.TrySetResult();
+            release.Wait(TimeSpan.FromSeconds(10));
+            return OkJson;
+        };
+
+        try
+        {
+            var task = vm.TranslateAsync();
+            await started.Task;   // the first attempt is running, so the timeout cannot fire early
+            await task;
+
+            Assert.Equal(2, calls);              // one attempt + exactly one retry
+            Assert.Equal("超时", vm.EngineLabel);
+            Assert.Contains("超时", vm.Output);
+            Assert.False(vm.IsBusy);
+        }
+        finally
+        {
+            release.Set();   // let the abandoned calls finish so no thread is left blocked
+        }
+    }
+
+    [Fact]
+    public async Task TranslateAsync_FirstAttemptTooSlow_RetrySucceeds()
+    {
+        var vm = new MainViewModel { Input = "hello", TranslateTimeout = TimeSpan.FromMilliseconds(400) };
+        int calls = 0;
+        var firstStarted = new TaskCompletionSource();
+        var releaseFirst = new ManualResetEventSlim(false);
+        vm.InvokeTranslate = _ =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                firstStarted.TrySetResult();
+                releaseFirst.Wait(TimeSpan.FromSeconds(10));   // overruns the timeout
+                return "{}";
+            }
+            return OkJson;
+        };
+
+        try
+        {
+            var task = vm.TranslateAsync();
+            await firstStarted.Task;
+            await task;
+
+            Assert.Equal(2, calls);
+            Assert.Equal("你好", vm.Output);   // the slow first result is dropped, never applied late
+            Assert.False(vm.IsBusy);
+        }
+        finally
+        {
+            releaseFirst.Set();
+        }
+    }
+
+    [Fact]
+    public async Task TranslateAsync_Cancelled_ReportsCancellation()
+    {
+        var vm = new MainViewModel { Input = "hello" };
+        var started = new TaskCompletionSource();
+        var release = new ManualResetEventSlim(false);
+        vm.InvokeTranslate = _ =>
+        {
+            started.TrySetResult();
+            release.Wait(TimeSpan.FromSeconds(10));
+            return "{}";
+        };
+
+        try
+        {
+            var task = vm.TranslateAsync();
+            await started.Task;
+
+            vm.CancelTranslate();   // what the cancel button does
+            await task;
+
+            Assert.Equal("已取消", vm.EngineLabel);
+            Assert.Equal("翻译已取消", vm.StatusMessage);
+            Assert.False(vm.IsBusy);
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    [Fact]
+    public async Task TranslateAsync_CancelledToken_ReportsCancellation()
+    {
+        var vm = new MainViewModel { Input = "hello" };
+        var release = new ManualResetEventSlim(false);
+        vm.InvokeTranslate = _ => { release.Wait(TimeSpan.FromSeconds(10)); return "{}"; };
+        using var cts = new CancellationTokenSource();
+
+        try
+        {
+            var task = vm.TranslateAsync(cts.Token);
+            cts.Cancel();
+            await task;
+
+            Assert.Equal("已取消", vm.EngineLabel);
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    [Fact]
+    public void CancelTranslate_WithoutInFlightCall_IsNoOp()
+    {
+        var vm = new MainViewModel();
+
+        vm.CancelTranslate();
+
+        Assert.False(vm.IsBusy);
+        Assert.Equal("", vm.Output);
+    }
+
+    [Fact]
+    public async Task TranslateAsync_ThrowingEngine_ReportsTheException_NotAnEscalation()
+    {
+        var vm = new MainViewModel { Input = "hello" };
+        vm.InvokeTranslate = _ => throw new InvalidOperationException("native library missing");
+
+        await vm.TranslateAsync();
+
+        Assert.Equal("调用失败", vm.EngineLabel);
+        Assert.Contains("native library missing", vm.Output);
+        Assert.False(vm.IsBusy);
+    }
+
+    // ---- Busy / diagnostics surface (N-06) -----------------------------------
+
+    [Fact]
+    public void IsNotBusy_StartsTrue_AndHasNoSetter()
+    {
+        var vm = new MainViewModel();
+        Assert.True(vm.IsNotBusy);
+
+        var prop = typeof(MainViewModel).GetProperty(nameof(MainViewModel.IsNotBusy));
+        Assert.NotNull(prop);
+        Assert.Null(prop!.GetSetMethod(nonPublic: true));
+    }
+
+    [Fact]
+    public void SetDiagnostics_PublishesAndNotifies()
+    {
+        var vm = new MainViewModel();
+        string? raised = null;
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.Diagnostics)) raised = e.PropertyName;
+        };
+
+        vm.SetDiagnostics("引擎初始化失败：TM_ERROR");
+
+        Assert.Contains("初始化失败", vm.Diagnostics);
+        Assert.Equal(nameof(MainViewModel.Diagnostics), raised);
+    }
+
+    [Fact]
+    public void SetDiagnostics_NullBecomesEmpty()
+    {
+        var vm = new MainViewModel();
+        vm.SetDiagnostics(null!);
+        Assert.Equal("", vm.Diagnostics);
+    }
+
+    [Fact]
+    public void Diagnostics_StartsEmpty_AndIsReadOnlyForTheUi()
+    {
+        var vm = new MainViewModel();
+        Assert.Equal("", vm.Diagnostics);
+
+        var prop = typeof(MainViewModel).GetProperty(nameof(MainViewModel.Diagnostics));
+        Assert.NotNull(prop);
+        Assert.False(prop!.GetSetMethod(nonPublic: true)!.IsPublic);
     }
 }

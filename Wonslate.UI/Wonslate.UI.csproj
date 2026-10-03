@@ -33,9 +33,14 @@
           Condition="Exists('..\translator-engine\target\release\translator_engine.dll')" />
   </ItemGroup>
 
-  <!-- No ASR/TTS packages here: the voice stack is not wired into the WPF app yet,
-       and no code in this project references sherpa-onnx. Shipping it would drag
-       multi-platform native runtimes into the artifact for nothing. The AsrDemo /
-       TtsDemo projects keep the reference until the voice pipeline lands. -->
+  <ItemGroup>
+    <!-- N-10: the voice pipeline (Audio/SherpaVoiceStages.cs) is the reference this
+         dependency was waiting for (see the R6 note: sherpa was removed in the
+         baseline cleanup as a dead dependency and is re-added here because code in
+         this project now uses it). win-x64 only: the other platforms' native
+         runtimes stay out of the artifact until the cross-platform client lands. -->
+    <PackageReference Include="org.k2fsa.sherpa.onnx" Version="1.13.8" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.win-x64" Version="1.13.8" />
+  </ItemGroup>
 
 </Project>

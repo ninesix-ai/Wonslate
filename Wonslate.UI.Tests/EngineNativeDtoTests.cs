@@ -127,4 +127,98 @@ public class EngineNativeDtoTests
         Assert.False(r.Ok);
         Assert.Equal("PARSE", r.Error);
     }
+
+    // ---- Write-endpoint ack ---------------------------------------------------
+
+    [Fact]
+    public void AckDto_ParsesSuccess()
+    {
+        var ack = AckDto.FromJson("""{"ok":true}""");
+        Assert.True(ack.Ok);
+        Assert.Null(ack.Error);
+    }
+
+    [Fact]
+    public void AckDto_ParsesEngineError()
+    {
+        var ack = AckDto.FromJson(
+            """{"ok":false,"error":"TM_ERROR","message":"not initialized"}""");
+        Assert.False(ack.Ok);
+        Assert.Equal("TM_ERROR", ack.Error);
+        Assert.Equal("not initialized", ack.Message);
+    }
+
+    [Fact]
+    public void AckDto_GarbageJsonDoesNotThrow()
+    {
+        var ack = AckDto.FromJson("not json");
+        Assert.False(ack.Ok);
+        Assert.Equal("PARSE", ack.Error);
+    }
+
+    // ---- TM / glossary list DTOs ----------------------------------------------
+
+    [Fact]
+    public void TmEntryDto_ListParsesSnakeCasePayload()
+    {
+        var json = """
+            [{"source_text":"深度学习","source_lang":"zh","target_text":"deep learning",
+              "target_lang":"en","engine":"manual","quality":1.0,"hit_count":3,"domain":""}]
+            """;
+        var list = TmEntryDto.ListFromJson(json);
+
+        Assert.Single(list);
+        Assert.Equal("深度学习", list[0].SourceText);
+        Assert.Equal("zh", list[0].SourceLang);
+        Assert.Equal("deep learning", list[0].TargetText);
+        Assert.Equal("en", list[0].TargetLang);
+        Assert.Equal(3u, list[0].HitCount);
+    }
+
+    [Fact]
+    public void TmEntryDto_ListOnEngineErrorReturnsEmpty()
+    {
+        // A TM_ERROR object (not an array) must degrade to an empty list, never throw.
+        var list = TmEntryDto.ListFromJson(
+            """{"ok":false,"error":"TM_ERROR","message":"not initialized"}""");
+        Assert.Empty(list);
+    }
+
+    [Fact]
+    public void TmEntryDto_EmptyJsonReturnsEmpty()
+    {
+        Assert.Empty(TmEntryDto.ListFromJson(""));
+        Assert.Empty(TmEntryDto.ListFromJson("[]"));
+    }
+
+    [Fact]
+    public void GlossaryEntryDto_ListParsesSnakeCasePayload()
+    {
+        var json = """
+            [{"source_term":"神经网络","source_lang":"zh","target_term":"neural network",
+              "target_lang":"en","confidence":0.92,"frequency":15,"domain":"","source":"distill"}]
+            """;
+        var list = GlossaryEntryDto.ListFromJson(json);
+
+        Assert.Single(list);
+        Assert.Equal("神经网络", list[0].SourceTerm);
+        Assert.Equal("neural network", list[0].TargetTerm);
+        Assert.Equal(0.92f, list[0].Confidence, 3);
+        Assert.Equal(15u, list[0].Frequency);
+        Assert.Equal("distill", list[0].Source);
+    }
+
+    [Fact]
+    public void GlossaryEntryDto_WithoutProvenanceYieldsNull()
+    {
+        // Records written before N-08 carry no source; the row must still load.
+        var json = """
+            [{"source_term":"x","source_lang":"zh","target_term":"y","target_lang":"en",
+              "confidence":0.9,"frequency":1,"domain":""}]
+            """;
+        var list = GlossaryEntryDto.ListFromJson(json);
+
+        Assert.Single(list);
+        Assert.Null(list[0].Source);
+    }
 }
