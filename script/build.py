@@ -113,7 +113,8 @@ SAC_BLOCK_CODES = {4551, 1260, 225}
 
 # Smoke tests that load the Rust cdylib across the FFI boundary; they cannot run
 # when application control blocks that library.
-NATIVE_LIB_TESTS = {"test_phase1_ffi.py", "test_sidecar_e2e.py"}
+NATIVE_LIB_TESTS = {"test_phase1_ffi.py", "test_sidecar_e2e.py",
+                    "test_domain_pack_loader.py"}
 
 # Markers that identify an application control block inside subprocess output.
 # dotnet reports the policy HRESULT rather than a WinError and the surrounding
@@ -184,6 +185,8 @@ def run_ffi_smoke() -> int:
         print_app_control_hint()
     for name in ("test_phase1_ffi.py", "test_sidecar_e2e.py",
                  "test_ct2_sidecar.py", "test_bench_flores.py",
+                 "test_bench_domain_av.py", "test_domain_pack_loader.py",
+                 "test_install_glossary_pack.py",
                  "test_xaml_lint.py",
                  "test_pre_commit_hook.py", "test_component_licenses.py",
                  "test_source_lint.py"):

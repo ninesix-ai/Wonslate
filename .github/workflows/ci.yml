@@ -77,6 +77,8 @@ jobs:
           python tests/test_ct2_sidecar.py
           python tests/test_bench_flores.py
           python tests/test_bench_domain_av.py
+          python tests/test_domain_pack_loader.py
+          python tests/test_install_glossary_pack.py
           python tests/test_xaml_lint.py
           python tests/test_pre_commit_hook.py
           python tests/test_component_licenses.py
