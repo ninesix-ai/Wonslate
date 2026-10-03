@@ -1,5 +1,6 @@
 # Build output
-bin/
+**/bin/Debug/
+**/bin/Release/
 obj/
 target/
 
@@ -26,3 +27,7 @@ lt-data/
 TestResults/
 coverage/
 *.tmp
+
+# Qoder / AI coding-agent metadata (hook state, finding ledger, run history);
+# nested anywhere in the tree -- never part of source.
+.mimosa/
