@@ -70,11 +70,13 @@ jobs:
       - name: Build engine (cdylib)
         run: cargo build --release
         working-directory: translator-engine
-      - name: Python smoke (FFI, sidecar e2e + unit, XAML + source lint, hook guards)
+      - name: Python smoke (FFI, sidecar e2e + unit, benchmark path + lint, hook guards)
         run: |
           python tests/test_phase1_ffi.py
           python tests/test_sidecar_e2e.py
           python tests/test_ct2_sidecar.py
+          python tests/test_bench_flores.py
+          python tests/test_bench_domain_av.py
           python tests/test_xaml_lint.py
           python tests/test_pre_commit_hook.py
           python tests/test_component_licenses.py

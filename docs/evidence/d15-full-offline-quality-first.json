@@ -1,0 +1,140 @@
+{
+  "generated_at": "2026-09-30T22:42:22",
+  "corpus": {
+    "file": "cmn.txt",
+    "rows": 31990,
+    "sha256": "d766002332a8f21099afd7427138d44f06bed7486a18f7f0f26f217092667d73"
+  },
+  "config": {
+    "requests": 3000,
+    "new_ratio": 0.3,
+    "reuse_distribution": "zipf(alpha=1.0)",
+    "reuse_window": 200,
+    "seed": 20260929,
+    "mode": "full",
+    "pair": "en->zh",
+    "cloud_cny_per_mchar": 49.0
+  },
+  "result": {
+    "requests": 3000,
+    "unique_content_requests": 915,
+    "reuse_share": 0.695,
+    "tm_hit": {
+      "count": 2203,
+      "rate": 0.7343,
+      "characters_served": 22917,
+      "characters_share": 0.7178,
+      "refused_by_quality_floor": 0
+    },
+    "by_source": {
+      "local": 797,
+      "tm_hit": 2203
+    },
+    "latency_ms": {
+      "tm_hit": {
+        "n": 2203,
+        "p50": 0.0,
+        "p95": 0.0,
+        "mean": 0.0
+      },
+      "local": {
+        "n": 797,
+        "p50": 48.0,
+        "p95": 117.0,
+        "mean": 55.3
+      },
+      "ai_upgraded": {
+        "n": 0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "mean": 0.0
+      },
+      "fallback": {
+        "n": 0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "mean": 0.0
+      }
+    },
+    "confidence": {
+      "local": {
+        "n": 797,
+        "mean": 0.88,
+        "min": 0.88,
+        "max": 0.88,
+        "distinct_values": 1
+      },
+      "ai_upgraded": {
+        "n": 0,
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "distinct_values": 0
+      },
+      "fallback": {
+        "n": 0,
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "distinct_values": 0
+      }
+    },
+    "derived": {
+      "local_results_below_full_mode_threshold": 0,
+      "local_results_below_full_mode_threshold_share": 0.0,
+      "cloud_cost_avoided_cny_at_49_per_mchar": 1.1229
+    },
+    "hit_rate_curve_by_decile": [
+      {
+        "window": "1-300",
+        "requests": 300,
+        "hit_rate": 0.7433
+      },
+      {
+        "window": "301-600",
+        "requests": 300,
+        "hit_rate": 0.7267
+      },
+      {
+        "window": "601-900",
+        "requests": 300,
+        "hit_rate": 0.7567
+      },
+      {
+        "window": "901-1200",
+        "requests": 300,
+        "hit_rate": 0.7067
+      },
+      {
+        "window": "1201-1500",
+        "requests": 300,
+        "hit_rate": 0.7233
+      },
+      {
+        "window": "1501-1800",
+        "requests": 300,
+        "hit_rate": 0.8033
+      },
+      {
+        "window": "1801-2100",
+        "requests": 300,
+        "hit_rate": 0.7033
+      },
+      {
+        "window": "2101-2400",
+        "requests": 300,
+        "hit_rate": 0.7567
+      },
+      {
+        "window": "2401-2700",
+        "requests": 300,
+        "hit_rate": 0.7267
+      },
+      {
+        "window": "2701-3000",
+        "requests": 300,
+        "hit_rate": 0.6967
+      }
+    ]
+  }
+}

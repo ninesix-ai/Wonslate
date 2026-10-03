@@ -67,7 +67,21 @@ python script/build.py --run      # 构建后启动 Wonslate.exe（Windows）
 | `你好` | zh → en | `hello` |
 | `你好世界` | zh → en | `hello world` |
 
-`i love the world` 是刻意保留的例子：词表未收录的词按原样透传，因此 demo 引擎展示的是词级替换而非真正翻译。其余已注册引擎各有前置条件：`argos` 与 `madlad` 通过本机 sidecar 通信（`sidecar/ct2_sidecar.py` 目前只提供 mock 后端，接入真实 CTranslate2/Argos 权重尚未完成），`ollama` 需要本机运行 Ollama 并已拉取模型。
+`i love the world` 是刻意保留的例子：词表未收录的词按原样透传，因此 demo 引擎展示的是词级替换而非真正翻译。其余已注册引擎各有前置条件：
+
+- `argos`（实时插槽，端口 11435）：真实 CTranslate2 推理，需先 `python script/fetch_argos_models.py` 下载语言对包（默认 en↔zh，每对约 85 MB）；
+- `madlad`（全语言插槽，端口 11436）：真实 MADLAD-400-3B int8 推理，单个检查点覆盖 450+ 语言码任意互译，需先 `python script/fetch_madlad_model.py`（约 3 GB）；
+- `ollama`（L3 质量升级）：需本机运行 Ollama 并已拉取模型（默认 `qwen3:8b`）。
+
+模型档位对应的硬件门槛见 [docs/hardware-requirements.md](docs/hardware-requirements.md)；三引擎在同一测试集上的质量/速度对比见 [docs/translation-benchmark.md](docs/translation-benchmark.md)。
+
+## 文档
+
+- [用户使用说明（UI/UX）](docs/user-guide.md)：界面操作、模式与隐私、TM / 术语表、语音、设置与常见问题
+- [缩写与术语解释](docs/terminology.md)：TM / FFI / ASR / CT2 / MADLAD 等全量对照
+- [SDK 说明](docs/sdk.md)：C ABI FFI 契约、集成示例与版本兼容承诺
+- [MCP 接入](docs/mcp.md)：把 Wonslate 注册为 AI 客户端（ZCode / Claude Desktop 等）的翻译工具
+- [硬件配置要求](docs/hardware-requirements.md) · [翻译质量基准](docs/translation-benchmark.md) · [文档索引](docs/README.md)
 
 ## 安全
 

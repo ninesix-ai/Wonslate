@@ -80,10 +80,29 @@ shipped binary (`mode=realtime`, `privacy=true`, `engine=demo`), not an aspirati
 
 `i love the world` is listed on purpose: words the glossary does not know are passed
 through unchanged, so the demo engine demonstrates word-level substitution rather than
-translation. The other registered engines need their own prerequisites: `argos` and
-`madlad` talk to a local sidecar (`sidecar/ct2_sidecar.py`, which ships a mock backend —
-loading a real CTranslate2/Argos checkpoint is still open), and `ollama` needs a running
-Ollama with a pulled model.
+translation. The other registered engines need their own prerequisites:
+
+- `argos` (realtime slot, port 11435): real CTranslate2 inference; download the
+  per-pair packages first with `python script/fetch_argos_models.py` (default en<->zh,
+  ~85 MB per pair);
+- `madlad` (all-language slot, port 11436): real MADLAD-400-3B int8 inference -- one
+  checkpoint translates among 450+ language codes; fetch it with
+  `python script/fetch_madlad_model.py` (~3 GB);
+- `ollama` (L3 quality upgrade): needs a running Ollama with a pulled model
+  (default `qwen3:8b`).
+
+Hardware requirements per model tier: [docs/hardware-requirements.md](docs/hardware-requirements.md);
+a measured quality/latency comparison of the three engines: [docs/translation-benchmark.md](docs/translation-benchmark.md).
+
+## Documentation
+
+User documentation is written in Chinese:
+
+- [User guide (UI/UX)](docs/user-guide.md) — interface walkthrough, modes & privacy, TM / glossary, voice, settings, FAQ
+- [Terminology & abbreviations](docs/terminology.md) — TM, FFI, ASR, CT2, MADLAD and more
+- [SDK guide (C ABI / FFI)](docs/sdk.md) — exported functions, JSON contracts, integration samples, compatibility promises
+- [MCP integration](docs/mcp.md) — register Wonslate as a translation tool for AI clients (ZCode, Claude Desktop, ...)
+- [Hardware requirements](docs/hardware-requirements.md) · [Translation benchmark](docs/translation-benchmark.md) · [Docs index](docs/README.md)
 
 ## Security
 

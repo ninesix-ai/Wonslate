@@ -1,0 +1,139 @@
+{
+  "generated_at": "2026-09-30T21:43:17",
+  "corpus": {
+    "file": "cmn.txt",
+    "rows": 31990,
+    "sha256": "d766002332a8f21099afd7427138d44f06bed7486a18f7f0f26f217092667d73"
+  },
+  "config": {
+    "requests": 400,
+    "new_ratio": 0.3,
+    "reuse_distribution": "zipf(alpha=1.0)",
+    "reuse_window": 200,
+    "seed": 20260929,
+    "mode": "full",
+    "pair": "en->zh",
+    "cloud_cny_per_mchar": 49.0
+  },
+  "result": {
+    "requests": 400,
+    "unique_content_requests": 121,
+    "reuse_share": 0.6975,
+    "tm_hit": {
+      "count": 299,
+      "rate": 0.7475,
+      "characters_served": 2426,
+      "characters_share": 0.7392
+    },
+    "by_source": {
+      "ai_upgraded": 101,
+      "tm_hit": 299
+    },
+    "latency_ms": {
+      "tm_hit": {
+        "n": 299,
+        "p50": 0.0,
+        "p95": 0.0,
+        "mean": 0.0
+      },
+      "local": {
+        "n": 0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "mean": 0.0
+      },
+      "ai_upgraded": {
+        "n": 101,
+        "p50": 467.0,
+        "p95": 18621.0,
+        "mean": 3943.5
+      },
+      "fallback": {
+        "n": 0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "mean": 0.0
+      }
+    },
+    "confidence": {
+      "local": {
+        "n": 0,
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "distinct_values": 0
+      },
+      "ai_upgraded": {
+        "n": 101,
+        "mean": 0.95,
+        "min": 0.95,
+        "max": 0.95,
+        "distinct_values": 1
+      },
+      "fallback": {
+        "n": 0,
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "distinct_values": 0
+      }
+    },
+    "derived": {
+      "local_results_below_full_mode_threshold": 0,
+      "local_results_below_full_mode_threshold_share": 0.0,
+      "cloud_cost_avoided_cny_at_49_per_mchar": 0.1189
+    },
+    "hit_rate_curve_by_decile": [
+      {
+        "window": "1-40",
+        "requests": 40,
+        "hit_rate": 0.7
+      },
+      {
+        "window": "41-80",
+        "requests": 40,
+        "hit_rate": 0.7
+      },
+      {
+        "window": "81-120",
+        "requests": 40,
+        "hit_rate": 0.7
+      },
+      {
+        "window": "121-160",
+        "requests": 40,
+        "hit_rate": 0.825
+      },
+      {
+        "window": "161-200",
+        "requests": 40,
+        "hit_rate": 0.725
+      },
+      {
+        "window": "201-240",
+        "requests": 40,
+        "hit_rate": 0.775
+      },
+      {
+        "window": "241-280",
+        "requests": 40,
+        "hit_rate": 0.75
+      },
+      {
+        "window": "281-320",
+        "requests": 40,
+        "hit_rate": 0.75
+      },
+      {
+        "window": "321-360",
+        "requests": 40,
+        "hit_rate": 0.825
+      },
+      {
+        "window": "361-400",
+        "requests": 40,
+        "hit_rate": 0.725
+      }
+    ]
+  }
+}

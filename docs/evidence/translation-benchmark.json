@@ -1,0 +1,1837 @@
+{
+  "date": "2026-10-02",
+  "segments_per_direction": 6,
+  "qwen_model": "qwen3:8b",
+  "runs": [
+    {
+      "engine": "argos",
+      "direction": "en->zh",
+      "chrf": 38.0,
+      "bleu": 44.1,
+      "latency_mean_s": 0.08,
+      "latency_median_s": 0.07,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "明天的会议早上九点开始，请你今晚把合同看一遍。",
+          "hypothesis": "会议明天早上九点开始 所以今晚请审查合同"
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "云计算让小公司可以租用强大的服务器，而不必自己购买硬件。",
+          "hypothesis": "云计算让小公司租用强大的服务器,而不是购买自己的硬件."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "长城每年吸引数百万游客，尤其是在秋假期间。",
+          "hypothesis": "长城每年吸引数百万游客,特别是在秋季假期."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "我们的客服团队会在二十四小时内回复大部分邮件。",
+          "hypothesis": "我们的客户支持小组在二十四小时内 回复了大多数邮件"
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "我忘了带伞，突如其来的雨把我包里的文件淋湿了。",
+          "hypothesis": "我忘了我的雨伞 突然雨淋湿了我的包里的文件"
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "学习第二门语言会改变你看待母语的方式。",
+          "hypothesis": "学习第二语言会改变你对自己的看法。"
+        }
+      ]
+    },
+    {
+      "engine": "argos",
+      "direction": "zh->en",
+      "chrf": 60.9,
+      "bleu": 30.0,
+      "latency_mean_s": 0.09,
+      "latency_median_s": 0.1,
+      "errors": [],
+      "samples": [
+        {
+          "source": "明天的会议早上九点开始，请你今晚把合同看一遍。",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "Tomorrow's meeting starts at 9:00 a.m., so please read the contract tonight."
+        },
+        {
+          "source": "云计算让小公司可以租用强大的服务器，而不必自己购买硬件。",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small companies to rent powerful servers without having to purchase hardware themselves."
+        },
+        {
+          "source": "长城每年吸引数百万游客，尤其是在秋假期间。",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Wall attracts millions of visitors each year, especially during the fall holidays."
+        },
+        {
+          "source": "我们的客服团队会在二十四小时内回复大部分邮件。",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer service team will respond to most of the mail in 24 hours."
+        },
+        {
+          "source": "我忘了带伞，突如其来的雨把我包里的文件淋湿了。",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella and suddenly the rain wets the documents in my bag."
+        },
+        {
+          "source": "学习第二门语言会改变你看待母语的方式。",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language will change the way you look at your mother tongue."
+        }
+      ]
+    },
+    {
+      "engine": "argos",
+      "direction": "en->ja",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "ja->en",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "en->ko",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "ko->en",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "en->fr",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "fr->en",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "en->de",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "de->en",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "en->es",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "es->en",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "en->ru",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "ru->en",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "en->ar",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "ar->en",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "zh->ja",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "argos",
+      "direction": "ja->zh",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": null,
+      "latency_median_s": null,
+      "errors": [
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable",
+        "HTTPError: HTTP Error 503: Service Unavailable"
+      ],
+      "samples": []
+    },
+    {
+      "engine": "madlad",
+      "direction": "en->zh",
+      "chrf": 42.0,
+      "bleu": 47.7,
+      "latency_mean_s": 2.9,
+      "latency_median_s": 3.01,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "明天的会议早上九点开始，请你今晚把合同看一遍。",
+          "hypothesis": "会议明天早上九点开始 所以请今晚查看合同"
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "云计算让小公司可以租用强大的服务器，而不必自己购买硬件。",
+          "hypothesis": "云计算让小型公司可以租用功能强大的服务器,而不是购买自己的硬件。"
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "长城每年吸引数百万游客，尤其是在秋假期间。",
+          "hypothesis": "长城每年吸引数百万游客,尤其是在秋季假期期间。"
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "我们的客服团队会在二十四小时内回复大部分邮件。",
+          "hypothesis": "我们的客户支持团队会在二十四小时内回复大多数电子邮件。"
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "我忘了带伞，突如其来的雨把我包里的文件淋湿了。",
+          "hypothesis": "我忘记了我的雨伞,突然的雨浸湿了我的包里的文件。"
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "学习第二门语言会改变你看待母语的方式。",
+          "hypothesis": "学习第二语言会改变你对自己语言的看法。"
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "zh->en",
+      "chrf": 72.2,
+      "bleu": 50.7,
+      "latency_mean_s": 2.67,
+      "latency_median_s": 2.65,
+      "errors": [],
+      "samples": [
+        {
+          "source": "明天的会议早上九点开始，请你今晚把合同看一遍。",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "Tomorrow &apos; s meeting begins at 9 a.m., and I would ask you to review the contract tonight."
+        },
+        {
+          "source": "云计算让小公司可以租用强大的服务器，而不必自己购买硬件。",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small businesses to rent powerful servers without having to buy hardware themselves."
+        },
+        {
+          "source": "长城每年吸引数百万游客，尤其是在秋假期间。",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays."
+        },
+        {
+          "source": "我们的客服团队会在二十四小时内回复大部分邮件。",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our support team responds to most emails within twenty-four hours."
+        },
+        {
+          "source": "我忘了带伞，突如其来的雨把我包里的文件淋湿了。",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot to take an umbrella, and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "学习第二门语言会改变你看待母语的方式。",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way you look at your mother tongue."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "en->ja",
+      "chrf": 40.4,
+      "bleu": 46.3,
+      "latency_mean_s": 4.13,
+      "latency_median_s": 3.8,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "明日の会議は朝9時に始まるので、今夜中に契約書に目を通しておいてください。",
+          "hypothesis": "会議は明日の朝９時に始まりますので、今夜契約書を確認してください。"
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "クラウドコンピューティングのおかげで、小さな会社は自社でハードウェアを買わなくても強力なサーバーを借りられます。",
+          "hypothesis": "クラウドコンピューティングは，自社のハードウェアを購入する代わりに，小規模企業が強力なサーバをレンタルすることを可能にする。"
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "万里の長城は、特に秋の休暇の間、毎年何百万人もの観光客を魅了しています。",
+          "hypothesis": "万里の長城は毎年、特に秋の休暇中に数百万人の訪問者を惹きつける。"
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "弊社のカスタマーサポートチームは、ほとんどのメールに24時間以内に返信します。",
+          "hypothesis": "私たちの顧客サポートチームは、ほとんどのメールに24時間以内に返信します。"
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "傘を忘れてしまい、突然の雨でカバンの中の書類が濡れてしまいました。",
+          "hypothesis": "私は傘を忘れて、突然の雨がバッグの中の文書を濡らした。"
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "第二言語を学ぶと、母語の見方が変わります。",
+          "hypothesis": "第二言語を学ぶことで 自分の言語についての考え方が変わる。"
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "ja->en",
+      "chrf": 64.3,
+      "bleu": 31.1,
+      "latency_mean_s": 3.14,
+      "latency_median_s": 2.81,
+      "errors": [],
+      "samples": [
+        {
+          "source": "明日の会議は朝9時に始まるので、今夜中に契約書に目を通しておいてください。",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "Tomorrow's meeting starts at 9:00 a.m., so please have a look at the contract tonight."
+        },
+        {
+          "source": "クラウドコンピューティングのおかげで、小さな会社は自社でハードウェアを買わなくても強力なサーバーを借りられます。",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Thanks to cloud computing, a small company can borrow a powerful server without buying its own hardware."
+        },
+        {
+          "source": "万里の長城は、特に秋の休暇の間、毎年何百万人もの観光客を魅了しています。",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall of China attracts millions of tourists every year, especially during the autumn holidays."
+        },
+        {
+          "source": "弊社のカスタマーサポートチームは、ほとんどのメールに24時間以内に返信します。",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer support team will reply to most emails within 24 hours."
+        },
+        {
+          "source": "傘を忘れてしまい、突然の雨でカバンの中の書類が濡れてしまいました。",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella and the documents in my bag got wet from the sudden rain."
+        },
+        {
+          "source": "第二言語を学ぶと、母語の見方が変わります。",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "When you learn a second language, your view of your mother tongue changes."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "en->ko",
+      "chrf": 41.7,
+      "bleu": 47.9,
+      "latency_mean_s": 4.31,
+      "latency_median_s": 4.02,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "내일 회의는 아침 9시에 시작되니, 오늘 밤 안에 계약서를 검토해 주세요.",
+          "hypothesis": "미팅은 내일 아침 9시에 시작하니까 오늘 밤에 계약서를 검토해주세요"
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "클라우드 컴퓨팅 덕분에 작은 회사들도 하드웨어를 직접 사지 않고 강력한 서버를 빌릴 수 있습니다.",
+          "hypothesis": "클라우드 컴퓨팅을 통해 소규모 기업은 자체 하드웨어를 구입하는 대신 강력한 서버를 임대할 수 있습니다."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "만리장성은 특히 가을 휴가 기간에 매년 수백만 명의 관광객을 끌어들입니다.",
+          "hypothesis": "만리장성은 특히 가을 휴가 기간에 매년 수백만 명의 방문객을 유치합니다."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "저희 고객 지원팀은 대부분의 이메일에 24시간 이내에 답장합니다.",
+          "hypothesis": "저희 고객 지원팀은 24시간 이내에 대부분의 이메일에 응답합니다."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "우산을 가져오는 것을 잊어버려서 갑작스러운 비에 가방 속 서류가 젖었습니다.",
+          "hypothesis": "나는 내 우산을 잊었고, 갑자기 비가 내 가방에있는 서류를 젖혔다."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "제2언어를 배우면 모국어를 바라보는 방식이 달라집니다.",
+          "hypothesis": "두 번째 언어를 배우는 것은 자신의 언어에 대해 생각하는 방식을 바꿉니다."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "ko->en",
+      "chrf": 66.5,
+      "bleu": 41.8,
+      "latency_mean_s": 2.71,
+      "latency_median_s": 2.71,
+      "errors": [],
+      "samples": [
+        {
+          "source": "내일 회의는 아침 9시에 시작되니, 오늘 밤 안에 계약서를 검토해 주세요.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "Tomorrow's meeting starts at 9:00 a.m., so please review the contract by tonight."
+        },
+        {
+          "source": "클라우드 컴퓨팅 덕분에 작은 회사들도 하드웨어를 직접 사지 않고 강력한 서버를 빌릴 수 있습니다.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "With cloud computing, even small businesses can rent powerful servers without buying hardware themselves."
+        },
+        {
+          "source": "만리장성은 특히 가을 휴가 기간에 매년 수백만 명의 관광객을 끌어들입니다.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of tourists every year, especially during the autumn holidays."
+        },
+        {
+          "source": "저희 고객 지원팀은 대부분의 이메일에 24시간 이내에 답장합니다.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer support team responds to most emails within 24 hours."
+        },
+        {
+          "source": "우산을 가져오는 것을 잊어버려서 갑작스러운 비에 가방 속 서류가 젖었습니다.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot to bring an umbrella and the sudden rain wetted the papers in my bag."
+        },
+        {
+          "source": "제2언어를 배우면 모국어를 바라보는 방식이 달라집니다.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way we look at our mother tongue."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "en->fr",
+      "chrf": 79.2,
+      "bleu": 63.9,
+      "latency_mean_s": 3.16,
+      "latency_median_s": 3.14,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "La réunion commence demain matin à neuf heures, alors merci de relire le contrat ce soir.",
+          "hypothesis": "La réunion commence à neuf heures demain matin, veuillez donc examiner le contrat ce soir."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "L'informatique en nuage permet aux petites entreprises de louer des serveurs puissants au lieu d'acheter leur propre matériel.",
+          "hypothesis": "L'informatique en nuage permet aux petites entreprises de louer des serveurs puissants au lieu d'acheter leur propre matériel."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "La Grande Muraille attire des millions de visiteurs chaque année, surtout pendant les vacances d'automne.",
+          "hypothesis": "La Grande Muraille attire des millions de visiteurs chaque année, en particulier pendant les vacances d'automne."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "Notre équipe d'assistance répond à la plupart des courriels en moins de vingt-quatre heures.",
+          "hypothesis": "Notre équipe de soutien à la clientèle répond à la plupart des courriels dans les vingt-quatre heures."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "J'ai oublié mon parapluie et la pluie soudaine a trempé les documents dans mon sac.",
+          "hypothesis": "J'ai oublié mon parapluie, et la pluie soudaine a trempé les documents dans mon sac."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "Apprendre une seconde langue change la façon dont on perçoit sa langue maternelle.",
+          "hypothesis": "L’apprentissage d’une deuxième langue change la façon dont vous pensez à la vôtre."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "fr->en",
+      "chrf": 78.7,
+      "bleu": 60.1,
+      "latency_mean_s": 2.53,
+      "latency_median_s": 2.45,
+      "errors": [],
+      "samples": [
+        {
+          "source": "La réunion commence demain matin à neuf heures, alors merci de relire le contrat ce soir.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting starts tomorrow morning at nine o'clock, so please reread the contract tonight."
+        },
+        {
+          "source": "L'informatique en nuage permet aux petites entreprises de louer des serveurs puissants au lieu d'acheter leur propre matériel.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small businesses to rent powerful servers instead of buying their own hardware."
+        },
+        {
+          "source": "La Grande Muraille attire des millions de visiteurs chaque année, surtout pendant les vacances d'automne.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of visitors every year, especially during the fall holidays."
+        },
+        {
+          "source": "Notre équipe d'assistance répond à la plupart des courriels en moins de vingt-quatre heures.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our support team responds to most emails in less than twenty-four hours."
+        },
+        {
+          "source": "J'ai oublié mon parapluie et la pluie soudaine a trempé les documents dans mon sac.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "Apprendre une seconde langue change la façon dont on perçoit sa langue maternelle.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way we perceive our mother tongue."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "en->de",
+      "chrf": 77.7,
+      "bleu": 53.3,
+      "latency_mean_s": 3.51,
+      "latency_median_s": 3.5,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "Das Treffen beginnt morgen früh um neun Uhr, bitte gehe heute Abend den Vertrag durch.",
+          "hypothesis": "Das Treffen beginnt morgen um neun Uhr, also lesen Sie bitte den Vertrag heute Abend durch."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "Cloud Computing ermöglicht kleinen Unternehmen, leistungsstarke Server zu mieten, statt eigene Hardware zu kaufen.",
+          "hypothesis": "Cloud Computing ermöglicht es kleinen Unternehmen, leistungsstarke Server zu mieten, anstatt eigene Hardware zu kaufen."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "Die Große Mauer zieht jedes Jahr Millionen von Besuchern an, besonders während der Herbstferien.",
+          "hypothesis": "Die Chinesische Mauer zieht jedes Jahr Millionen von Besuchern an, vor allem während der Herbstferien."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "Unser Kundenservice beantwortet die meisten E-Mails innerhalb von vierundzwanzig Stunden.",
+          "hypothesis": "Unser Kundendienstteam antwortet auf die meisten E-Mails innerhalb von vierundzwanzig Stunden."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "Ich habe meinen Schirm vergessen, und der plötzliche Regen hat die Dokumente in meiner Tasche durchnässt.",
+          "hypothesis": "Ich habe meinen Regenschirm vergessen, und der plötzliche Regen hat die Dokumente in meiner Tasche durchnässt."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "Eine zweite Sprache zu lernen verändert die Sicht auf die eigene Muttersprache.",
+          "hypothesis": "Das Erlernen einer zweiten Sprache verändert die Art und Weise, wie Sie über Ihre eigene denken."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "de->en",
+      "chrf": 83.3,
+      "bleu": 70.9,
+      "latency_mean_s": 2.55,
+      "latency_median_s": 2.55,
+      "errors": [],
+      "samples": [
+        {
+          "source": "Das Treffen beginnt morgen früh um neun Uhr, bitte gehe heute Abend den Vertrag durch.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting starts tomorrow morning at nine o'clock, please go through the contract tonight."
+        },
+        {
+          "source": "Cloud Computing ermöglicht kleinen Unternehmen, leistungsstarke Server zu mieten, statt eigene Hardware zu kaufen.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small businesses to rent powerful servers instead of buying their own hardware."
+        },
+        {
+          "source": "Die Große Mauer zieht jedes Jahr Millionen von Besuchern an, besonders während der Herbstferien.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays."
+        },
+        {
+          "source": "Unser Kundenservice beantwortet die meisten E-Mails innerhalb von vierundzwanzig Stunden.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer service team responds to most emails within twenty-four hours."
+        },
+        {
+          "source": "Ich habe meinen Schirm vergessen, und der plötzliche Regen hat die Dokumente in meiner Tasche durchnässt.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella, and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "Eine zweite Sprache zu lernen verändert die Sicht auf die eigene Muttersprache.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way you view your mother tongue."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "en->es",
+      "chrf": 86.0,
+      "bleu": 71.9,
+      "latency_mean_s": 3.11,
+      "latency_median_s": 3.2,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "La reunión empieza mañana a las nueve de la mañana, así que revisa el contrato esta noche.",
+          "hypothesis": "La reunión comienza a las nueve de mañana por la mañana, así que por favor revise el contrato esta noche."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "La computación en la nube permite a las pequeñas empresas alquilar servidores potentes en lugar de comprar su propio hardware.",
+          "hypothesis": "La computación en la nube permite a las pequeñas empresas alquilar servidores potentes en lugar de comprar su propio hardware."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "La Gran Muralla atrae a millones de visitantes cada año, especialmente durante las vacaciones de otoño.",
+          "hypothesis": "La Gran Muralla atrae a millones de visitantes cada año, especialmente durante las vacaciones de otoño."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "Nuestro equipo de atención al cliente responde a la mayoría de los correos en menos de veinticuatro horas.",
+          "hypothesis": "Nuestro equipo de atención al cliente responde a la mayoría de los correos electrónicos dentro de las veinticuatro horas."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "Olvidé mi paraguas y la lluvia repentina empapó los documentos que llevaba en la bolsa.",
+          "hypothesis": "Olvidé mi paraguas, y la lluvia repentina empapó los documentos en mi bolso."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "Aprender un segundo idioma cambia la manera en que ves el tuyo.",
+          "hypothesis": "Aprender un segundo idioma cambia la forma en que piensas sobre el tuyo."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "es->en",
+      "chrf": 80.8,
+      "bleu": 63.6,
+      "latency_mean_s": 2.46,
+      "latency_median_s": 2.58,
+      "errors": [],
+      "samples": [
+        {
+          "source": "La reunión empieza mañana a las nueve de la mañana, así que revisa el contrato esta noche.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting starts tomorrow at nine in the morning, so review the contract tonight."
+        },
+        {
+          "source": "La computación en la nube permite a las pequeñas empresas alquilar servidores potentes en lugar de comprar su propio hardware.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small businesses to rent powerful servers instead of buying their own hardware."
+        },
+        {
+          "source": "La Gran Muralla atrae a millones de visitantes cada año, especialmente durante las vacaciones de otoño.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of visitors every year, especially during the fall holidays."
+        },
+        {
+          "source": "Nuestro equipo de atención al cliente responde a la mayoría de los correos en menos de veinticuatro horas.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer service team responds to most emails in less than twenty-four hours."
+        },
+        {
+          "source": "Olvidé mi paraguas y la lluvia repentina empapó los documentos que llevaba en la bolsa.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "Aprender un segundo idioma cambia la manera en que ves el tuyo.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way you see your own."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "en->ru",
+      "chrf": 70.9,
+      "bleu": 45.3,
+      "latency_mean_s": 3.27,
+      "latency_median_s": 3.3,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "Совещание начнётся завтра в девять утра, поэтому, пожалуйста, просмотрите договор сегодня вечером.",
+          "hypothesis": "Встреча начинается в девять завтра утром, так что, пожалуйста, ознакомьтесь с контрактом сегодня вечером."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "Облачные вычисления позволяют небольшим компаниям арендовать мощные серверы вместо покупки собственного оборудования.",
+          "hypothesis": "Облачные вычисления позволяют небольшим компаниям арендовать мощные серверы вместо покупки собственного оборудования."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "Великая Китайская стена ежегодно привлекает миллионы посетителей, особенно в осенние каникулы.",
+          "hypothesis": "Великая стена привлекает миллионы посетителей каждый год, особенно во время осенних каникул."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "Наша служба поддержки отвечает на большинство писем в течение двадцати четырёх часов.",
+          "hypothesis": "Наша команда поддержки клиентов отвечает на большинство писем в течение двадцати четырех часов."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "Я забыл зонт, и внезапный дождь промочил документы в моей сумке.",
+          "hypothesis": "Я забыла свой зонтик, и внезапный дождь смочил документы в моей сумке."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "Изучение второго языка меняет то, как ты смотришь на родной.",
+          "hypothesis": "Изучение второго языка меняет то, как вы думаете о своем собственном."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "ru->en",
+      "chrf": 80.9,
+      "bleu": 63.1,
+      "latency_mean_s": 2.86,
+      "latency_median_s": 2.69,
+      "errors": [],
+      "samples": [
+        {
+          "source": "Совещание начнётся завтра в девять утра, поэтому, пожалуйста, просмотрите договор сегодня вечером.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting starts tomorrow at nine in the morning, so please review the treaty tonight."
+        },
+        {
+          "source": "Облачные вычисления позволяют небольшим компаниям арендовать мощные серверы вместо покупки собственного оборудования.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small businesses to rent powerful servers instead of buying their own hardware."
+        },
+        {
+          "source": "Великая Китайская стена ежегодно привлекает миллионы посетителей, особенно в осенние каникулы.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall of China attracts millions of visitors every year, especially during the autumn holidays."
+        },
+        {
+          "source": "Наша служба поддержки отвечает на большинство писем в течение двадцати четырёх часов.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our support team attempts to respond to most support requests within twenty-four hours."
+        },
+        {
+          "source": "Я забыл зонт, и внезапный дождь промочил документы в моей сумке.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella, and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "Изучение второго языка меняет то, как ты смотришь на родной.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way you look at your mother tongue."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "en->ar",
+      "chrf": 59.5,
+      "bleu": 28.1,
+      "latency_mean_s": 3.18,
+      "latency_median_s": 3.16,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "يبدأ الاجتماع في التاسعة من صباح الغد، لذا يُرجى مراجعة العقد الليلة.",
+          "hypothesis": "الاجتماع يبدأ في الساعة التاسعة صباح الغد لذا رجاءً استعرض العقد الليلة"
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "تتيح الحوسبة السحابية للشركات الصغيرة استئجار خوادم قوية بدلاً من شراء أجهزتها الخاصة.",
+          "hypothesis": "ويتيح الحوسبة السحابية للشركات الصغيرة استئجار خواديم قوية بدلاً من شراء معداتها الخاصة."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "تجذب سور الصين العظيم ملايين الزوار كل عام، وخاصةً خلال عطلة الخريف.",
+          "hypothesis": "ويجتذب السور العظيم ملايين الزوار كل عام، ولا سيما خلال عطلة الخريف."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "يرد فريق دعم العملاء لدينا على معظم الرسائل خلال أربع وعشرين ساعة.",
+          "hypothesis": "ويرد فريق دعم العملاء على معظم رسائل البريد الإلكتروني في غضون أربع وعشرين ساعة."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "نسيت مظلتي، فبللت الأمطار المفاجئة المستندات التي في حقيبتي.",
+          "hypothesis": "لقد نسيت مظلي، والمطر المفاجئ ابتلع الوثائق في حقيبتي."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "إن تعلّم لغة ثانية يُغيّر الطريقة التي تنظر بها إلى لغتك الأم.",
+          "hypothesis": "تعلم لغة ثانية يغير الطريقة التي تفكر بها في لغتك."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "ar->en",
+      "chrf": 83.9,
+      "bleu": 67.9,
+      "latency_mean_s": 2.89,
+      "latency_median_s": 2.6,
+      "errors": [],
+      "samples": [
+        {
+          "source": "يبدأ الاجتماع في التاسعة من صباح الغد، لذا يُرجى مراجعة العقد الليلة.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting starts at 9 a.m. tomorrow, so please review the contract tonight."
+        },
+        {
+          "source": "تتيح الحوسبة السحابية للشركات الصغيرة استئجار خوادم قوية بدلاً من شراء أجهزتها الخاصة.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small businesses to rent powerful servers instead of buying their own hardware."
+        },
+        {
+          "source": "تجذب سور الصين العظيم ملايين الزوار كل عام، وخاصةً خلال عطلة الخريف.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall of China attracts millions of visitors every year, especially during the autumn holidays."
+        },
+        {
+          "source": "يرد فريق دعم العملاء لدينا على معظم الرسائل خلال أربع وعشرين ساعة.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer support team responds to most messages within twenty-four hours."
+        },
+        {
+          "source": "نسيت مظلتي، فبللت الأمطار المفاجئة المستندات التي في حقيبتي.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella, and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "إن تعلّم لغة ثانية يُغيّر الطريقة التي تنظر بها إلى لغتك الأم.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way you look at your mother tongue."
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "zh->ja",
+      "chrf": 32.0,
+      "bleu": 37.9,
+      "latency_mean_s": 3.37,
+      "latency_median_s": 3.57,
+      "errors": [],
+      "samples": [
+        {
+          "source": "这家餐厅的招牌菜是麻辣火锅，周末经常要排队等位。",
+          "reference": "このレストランの看板メニューは麻辣火鍋で、週末はよく順番待ちの列ができます。",
+          "hypothesis": "このレストランはチーズケーキを提供しており、週末には定期的にチーズケーキが販売されている。"
+        },
+        {
+          "source": "高铁把北京和上海之间的行程缩短到了四个半小时。",
+          "reference": "高鉄は北京と上海の間の移動時間を4時間半まで短縮しました。",
+          "hypothesis": "高速鉄道は北京と上海の間の所要時間を4時間半に短縮した。"
+        },
+        {
+          "source": "春节期间，数以亿计的人返乡与家人团聚。",
+          "reference": "春節の時期には、何億人もの人々が故郷に帰って家族と団らんします。",
+          "hypothesis": "春節には数百万人が家族とともに帰郷する。"
+        },
+        {
+          "source": "这款应用支持离线翻译，在没有网络的地方也能用。",
+          "reference": "このアプリはオフライン翻訳に対応しているので、ネットがない場所でも使えます。",
+          "hypothesis": "このアプリケーションはオフライン翻訳をサポートしており、ネットワーク接続がない場所でも使える。"
+        },
+        {
+          "source": "他把古典诗词翻译成现代语言，让年轻人更容易理解。",
+          "reference": "彼は古典詩詞を現代語に翻訳して、若者にも分かりやすくしています。",
+          "hypothesis": "彼は古典詩を現代の言語に翻訳し、若者に理解しやすくした。"
+        },
+        {
+          "source": "茶文化在中国已有几千年的历史，如今传遍了世界。",
+          "reference": "茶文化は中国で数千年の歴史を持ち、今では世界中に広まっています。",
+          "hypothesis": "中国における茶の歴史は数千年に及び、現在では世界中に広まっている。"
+        }
+      ]
+    },
+    {
+      "engine": "madlad",
+      "direction": "ja->zh",
+      "chrf": 52.2,
+      "bleu": 57.6,
+      "latency_mean_s": 3.0,
+      "latency_median_s": 3.05,
+      "errors": [],
+      "samples": [
+        {
+          "source": "このレストランの看板メニューは麻辣火鍋で、週末はよく順番待ちの列ができます。",
+          "reference": "这家餐厅的招牌菜是麻辣火锅，周末经常要排队等位。",
+          "hypothesis": "餐厅的招牌菜是麻辣火锅，周末经常排队等候。"
+        },
+        {
+          "source": "高鉄は北京と上海の間の移動時間を4時間半まで短縮しました。",
+          "reference": "高铁把北京和上海之间的行程缩短到了四个半小时。",
+          "hypothesis": "高铁将北京与上海之间的旅行时间缩短至4小时半。"
+        },
+        {
+          "source": "春節の時期には、何億人もの人々が故郷に帰って家族と団らんします。",
+          "reference": "春节期间，数以亿计的人返乡与家人团聚。",
+          "hypothesis": "春节期间，数十亿人回家与家人团聚。"
+        },
+        {
+          "source": "このアプリはオフライン翻訳に対応しているので、ネットがない場所でも使えます。",
+          "reference": "这款应用支持离线翻译，在没有网络的地方也能用。",
+          "hypothesis": "该应用程序支持离线翻译，即使在没有网络的地方也可以使用。"
+        },
+        {
+          "source": "彼は古典詩詞を現代語に翻訳して、若者にも分かりやすくしています。",
+          "reference": "他把古典诗词翻译成现代语言，让年轻人更容易理解。",
+          "hypothesis": "他把古典诗歌翻译成现代语言，让年轻人更容易理解。"
+        },
+        {
+          "source": "茶文化は中国で数千年の歴史を持ち、今では世界中に広まっています。",
+          "reference": "茶文化在中国已有几千年的历史，如今传遍了世界。",
+          "hypothesis": "茶文化在中国有着数千年的历史，现在已经传播到世界各地。"
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "en->zh",
+      "chrf": 47.1,
+      "bleu": 53.5,
+      "latency_mean_s": 2.36,
+      "latency_median_s": 1.18,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "明天的会议早上九点开始，请你今晚把合同看一遍。",
+          "hypothesis": "会议明天早上九点开始，请今晚查看合同。"
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "云计算让小公司可以租用强大的服务器，而不必自己购买硬件。",
+          "hypothesis": "云计算使小型企业能够租用强大的服务器，而不是购买自己的硬件。"
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "长城每年吸引数百万游客，尤其是在秋假期间。",
+          "hypothesis": "长城每年吸引数百万游客，尤其是在国庆假期期间。"
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "我们的客服团队会在二十四小时内回复大部分邮件。",
+          "hypothesis": "我们的客户服务团队通常在24小时内回复大多数电子邮件。"
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "我忘了带伞，突如其来的雨把我包里的文件淋湿了。",
+          "hypothesis": "我忘记带伞，突如其来的雨把包里的文件都淋湿了。"
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "学习第二门语言会改变你看待母语的方式。",
+          "hypothesis": "学习第二语言会改变你对自己思维方式。"
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "zh->en",
+      "chrf": 69.1,
+      "bleu": 46.0,
+      "latency_mean_s": 1.32,
+      "latency_median_s": 1.33,
+      "errors": [],
+      "samples": [
+        {
+          "source": "明天的会议早上九点开始，请你今晚把合同看一遍。",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting tomorrow starts at 9 a.m. Please read through the contract tonight."
+        },
+        {
+          "source": "云计算让小公司可以租用强大的服务器，而不必自己购买硬件。",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small companies to rent powerful servers without having to purchase hardware themselves."
+        },
+        {
+          "source": "长城每年吸引数百万游客，尤其是在秋假期间。",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of tourists every year, especially during the autumn holiday."
+        },
+        {
+          "source": "我们的客服团队会在二十四小时内回复大部分邮件。",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer service team will reply to most emails within 24 hours."
+        },
+        {
+          "source": "我忘了带伞，突如其来的雨把我包里的文件淋湿了。",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot to bring an umbrella, and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "学习第二门语言会改变你看待母语的方式。",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way you view your native language."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "en->ja",
+      "chrf": 45.0,
+      "bleu": 49.3,
+      "latency_mean_s": 1.96,
+      "latency_median_s": 1.7,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "明日の会議は朝9時に始まるので、今夜中に契約書に目を通しておいてください。",
+          "hypothesis": "明け方の九時に会議が始まるので、今夜は契約書を確認してください。"
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "クラウドコンピューティングのおかげで、小さな会社は自社でハードウェアを買わなくても強力なサーバーを借りられます。",
+          "hypothesis": "クラウドコンピューティングにより、小規模企業は自前のハードウェアを購入するのではなく、パワフルなサーバーをレンタルできます。"
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "万里の長城は、特に秋の休暇の間、毎年何百万人もの観光客を魅了しています。",
+          "hypothesis": "万里の長城は毎年何百万人もの観光客を惹きつけるが、特に秋の祝日にその人気はさらに高くなる。"
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "弊社のカスタマーサポートチームは、ほとんどのメールに24時間以内に返信します。",
+          "hypothesis": "お客様サポートチームは、ほとんどのメールにおよそ24時間以内に返信いたします。"
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "傘を忘れてしまい、突然の雨でカバンの中の書類が濡れてしまいました。",
+          "hypothesis": "傘を忘れて、急な雨でバッグの中の書類が濡れてしまいました。"
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "第二言語を学ぶと、母語の見方が変わります。",
+          "hypothesis": "第二言語を学ぶことは、自分の考え方を変えてくれる。"
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "ja->en",
+      "chrf": 73.9,
+      "bleu": 52.3,
+      "latency_mean_s": 1.35,
+      "latency_median_s": 1.39,
+      "errors": [],
+      "samples": [
+        {
+          "source": "明日の会議は朝9時に始まるので、今夜中に契約書に目を通しておいてください。",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting tomorrow starts at 9 AM, so please review the contract tonight."
+        },
+        {
+          "source": "クラウドコンピューティングのおかげで、小さな会社は自社でハードウェアを買わなくても強力なサーバーを借りられます。",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Thanks to cloud computing, small companies can rent powerful servers without having to buy their own hardware."
+        },
+        {
+          "source": "万里の長城は、特に秋の休暇の間、毎年何百万人もの観光客を魅了しています。",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of tourists every year, especially during the autumn holidays."
+        },
+        {
+          "source": "弊社のカスタマーサポートチームは、ほとんどのメールに24時間以内に返信します。",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer support team replies to most emails within 24 hours."
+        },
+        {
+          "source": "傘を忘れてしまい、突然の雨でカバンの中の書類が濡れてしまいました。",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella and the documents in my bag got wet from the sudden rain."
+        },
+        {
+          "source": "第二言語を学ぶと、母語の見方が変わります。",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes your perspective on your native language."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "en->ko",
+      "chrf": 38.3,
+      "bleu": 41.9,
+      "latency_mean_s": 2.29,
+      "latency_median_s": 2.15,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "내일 회의는 아침 9시에 시작되니, 오늘 밤 안에 계약서를 검토해 주세요.",
+          "hypothesis": "내일 아침 9시에 회의가 시작되므로, 오늘 밤에 계약서를 검토해 주세요."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "클라우드 컴퓨팅 덕분에 작은 회사들도 하드웨어를 직접 사지 않고 강력한 서버를 빌릴 수 있습니다.",
+          "hypothesis": "클라우드 컴퓨팅은 소규모 기업이 자체 하드웨어를 구입하는 대신 강력한 서버를 대여할 수 있게 해줍니다."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "만리장성은 특히 가을 휴가 기간에 매년 수백만 명의 관광객을 끌어들입니다.",
+          "hypothesis": "대만의 금강산은 매년 수백만 명의 관광객을 끌어모으며 특히 가을 휴일에는 더욱 많은 방문객을 기록합니다."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "저희 고객 지원팀은 대부분의 이메일에 24시간 이내에 답장합니다.",
+          "hypothesis": "고객 지원 팀은 대부분의 이메일을 24시간 이내에 답변해 드립니다."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "우산을 가져오는 것을 잊어버려서 갑작스러운 비에 가방 속 서류가 젖었습니다.",
+          "hypothesis": "나는 우산을 잊었고, 갑작스러운 비는 가방에 있는 문서들을 적셨다."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "제2언어를 배우면 모국어를 바라보는 방식이 달라집니다.",
+          "hypothesis": "두 번째 언어를 배우는 것은 당신이 자신의 생각 방식을 바꾸게 한다."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "ko->en",
+      "chrf": 69.1,
+      "bleu": 39.8,
+      "latency_mean_s": 1.47,
+      "latency_median_s": 1.49,
+      "errors": [],
+      "samples": [
+        {
+          "source": "내일 회의는 아침 9시에 시작되니, 오늘 밤 안에 계약서를 검토해 주세요.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting is scheduled to start at 9 a.m. tomorrow, so please review the contract by tonight."
+        },
+        {
+          "source": "클라우드 컴퓨팅 덕분에 작은 회사들도 하드웨어를 직접 사지 않고 강력한 서버를 빌릴 수 있습니다.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Thanks to cloud computing, even small companies can rent powerful servers without having to buy hardware themselves."
+        },
+        {
+          "source": "만리장성은 특히 가을 휴가 기간에 매년 수백만 명의 관광객을 끌어들입니다.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of tourists every year, especially during the autumn holiday period."
+        },
+        {
+          "source": "저희 고객 지원팀은 대부분의 이메일에 24시간 이내에 답장합니다.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer support team replies to most emails within 24 hours."
+        },
+        {
+          "source": "우산을 가져오는 것을 잊어버려서 갑작스러운 비에 가방 속 서류가 젖었습니다.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot to bring an umbrella and my documents in my bag got wet in the sudden rain."
+        },
+        {
+          "source": "제2언어를 배우면 모국어를 바라보는 방식이 달라집니다.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way you look at your native language."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "en->fr",
+      "chrf": 68.8,
+      "bleu": 52.7,
+      "latency_mean_s": 1.83,
+      "latency_median_s": 1.82,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "La réunion commence demain matin à neuf heures, alors merci de relire le contrat ce soir.",
+          "hypothesis": "La réunion commence à neuf heures demain matin, donc veuillez relire le contrat ce soir."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "L'informatique en nuage permet aux petites entreprises de louer des serveurs puissants au lieu d'acheter leur propre matériel.",
+          "hypothesis": "Le cloud computing permet aux petites entreprises de louer des serveurs puissants au lieu d'acheter leurs propres équipements."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "La Grande Muraille attire des millions de visiteurs chaque année, surtout pendant les vacances d'automne.",
+          "hypothesis": "La Grande Muraille attire des millions de visiteurs chaque année, notamment pendant les vacances d'automne."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "Notre équipe d'assistance répond à la plupart des courriels en moins de vingt-quatre heures.",
+          "hypothesis": "L'équipe de support client répond à la plupart des emails dans les 24 heures."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "J'ai oublié mon parapluie et la pluie soudaine a trempé les documents dans mon sac.",
+          "hypothesis": "J'ai oublié mon parapluie, et la pluie soudaine a imbibé les documents de mon sac."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "Apprendre une seconde langue change la façon dont on perçoit sa langue maternelle.",
+          "hypothesis": "Apprendre une seconde langue change la manière dont vous pensez à votre propre."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "fr->en",
+      "chrf": 78.3,
+      "bleu": 60.4,
+      "latency_mean_s": 1.31,
+      "latency_median_s": 1.29,
+      "errors": [],
+      "samples": [
+        {
+          "source": "La réunion commence demain matin à neuf heures, alors merci de relire le contrat ce soir.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting starts tomorrow morning at nine o'clock, so please read through the contract this evening."
+        },
+        {
+          "source": "L'informatique en nuage permet aux petites entreprises de louer des serveurs puissants au lieu d'acheter leur propre matériel.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small businesses to lease powerful servers instead of purchasing their own hardware."
+        },
+        {
+          "source": "La Grande Muraille attire des millions de visiteurs chaque année, surtout pendant les vacances d'automne.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of visitors every year, especially during autumn holidays."
+        },
+        {
+          "source": "Notre équipe d'assistance répond à la plupart des courriels en moins de vingt-quatre heures.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our support team replies to most emails within twenty-four hours."
+        },
+        {
+          "source": "J'ai oublié mon parapluie et la pluie soudaine a trempé les documents dans mon sac.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "Apprendre une seconde langue change la façon dont on perçoit sa langue maternelle.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way one perceives their native language."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "en->de",
+      "chrf": 74.5,
+      "bleu": 51.2,
+      "latency_mean_s": 2.01,
+      "latency_median_s": 2.04,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "Das Treffen beginnt morgen früh um neun Uhr, bitte gehe heute Abend den Vertrag durch.",
+          "hypothesis": "Die Besprechung fängt morgen früh um neun an, also bitte überprüfen Sie den Vertrag heute Abend."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "Cloud Computing ermöglicht kleinen Unternehmen, leistungsstarke Server zu mieten, statt eigene Hardware zu kaufen.",
+          "hypothesis": "Cloud Computing ermöglicht es kleinen Unternehmen, leistungsstarke Server zu mieten, anstatt eigene Hardware zu kaufen."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "Die Große Mauer zieht jedes Jahr Millionen von Besuchern an, besonders während der Herbstferien.",
+          "hypothesis": "Die Große Mauer zieht jedes Jahr Millionen von Besuchern an, besonders während der Herbstferien."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "Unser Kundenservice beantwortet die meisten E-Mails innerhalb von vierundzwanzig Stunden.",
+          "hypothesis": "Unser Kundenservice antwortet auf die meisten E-Mails innerhalb von 24 Stunden."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "Ich habe meinen Schirm vergessen, und der plötzliche Regen hat die Dokumente in meiner Tasche durchnässt.",
+          "hypothesis": "Ich habe mein Regenschirm vergessen, und der plötzliche Regen hat die Dokumente in meiner Tasche befeuchtet."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "Eine zweite Sprache zu lernen verändert die Sicht auf die eigene Muttersprache.",
+          "hypothesis": "Das Lernen einer zweiten Sprache verändert die Art und Weise, wie du deine eigene Sprache wahrnimmst."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "de->en",
+      "chrf": 80.5,
+      "bleu": 68.6,
+      "latency_mean_s": 1.31,
+      "latency_median_s": 1.36,
+      "errors": [],
+      "samples": [
+        {
+          "source": "Das Treffen beginnt morgen früh um neun Uhr, bitte gehe heute Abend den Vertrag durch.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting starts tomorrow morning at nine o'clock, please go through the contract tonight."
+        },
+        {
+          "source": "Cloud Computing ermöglicht kleinen Unternehmen, leistungsstarke Server zu mieten, statt eigene Hardware zu kaufen.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing enables small businesses to rent powerful servers instead of buying their own hardware."
+        },
+        {
+          "source": "Die Große Mauer zieht jedes Jahr Millionen von Besuchern an, besonders während der Herbstferien.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays."
+        },
+        {
+          "source": "Unser Kundenservice beantwortet die meisten E-Mails innerhalb von vierundzwanzig Stunden.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer service replies to most emails within twenty-four hours."
+        },
+        {
+          "source": "Ich habe meinen Schirm vergessen, und der plötzliche Regen hat die Dokumente in meiner Tasche durchnässt.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella, and the sudden rain soaked the documents in my pocket."
+        },
+        {
+          "source": "Eine zweite Sprache zu lernen verändert die Sicht auf die eigene Muttersprache.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the perspective on one's native language."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "en->es",
+      "chrf": 76.0,
+      "bleu": 56.5,
+      "latency_mean_s": 1.9,
+      "latency_median_s": 1.86,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "La reunión empieza mañana a las nueve de la mañana, así que revisa el contrato esta noche.",
+          "hypothesis": "La reunión comienza a las nueve mañana, por lo tanto, por favor revise el contrato esta noche."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "La computación en la nube permite a las pequeñas empresas alquilar servidores potentes en lugar de comprar su propio hardware.",
+          "hypothesis": "La nube de computación permite que las pequeñas empresas alquilen servidores potentes en lugar de comprar su propia hardware."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "La Gran Muralla atrae a millones de visitantes cada año, especialmente durante las vacaciones de otoño.",
+          "hypothesis": "La Gran Muralla atrae a millones de visitantes cada año, especialmente durante las vacaciones de otoño."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "Nuestro equipo de atención al cliente responde a la mayoría de los correos en menos de veinticuatro horas.",
+          "hypothesis": "Nuestro equipo de soporte al cliente responde a la mayoría de los correos electrónicos dentro de las veinticuatro horas."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "Olvidé mi paraguas y la lluvia repentina empapó los documentos que llevaba en la bolsa.",
+          "hypothesis": "Olvidé mi paraguas y la lluvia repentina empapó los documentos de mi bolsa."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "Aprender un segundo idioma cambia la manera en que ves el tuyo.",
+          "hypothesis": "Aprender un segundo idioma cambia la forma en que piensas sobre tu propio."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "es->en",
+      "chrf": 83.5,
+      "bleu": 69.6,
+      "latency_mean_s": 1.32,
+      "latency_median_s": 1.36,
+      "errors": [],
+      "samples": [
+        {
+          "source": "La reunión empieza mañana a las nueve de la mañana, así que revisa el contrato esta noche.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting starts tomorrow at nine in the morning, so check the contract tonight."
+        },
+        {
+          "source": "La computación en la nube permite a las pequeñas empresas alquilar servidores potentes en lugar de comprar su propio hardware.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small businesses to rent powerful servers instead of buying their own hardware."
+        },
+        {
+          "source": "La Gran Muralla atrae a millones de visitantes cada año, especialmente durante las vacaciones de otoño.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays."
+        },
+        {
+          "source": "Nuestro equipo de atención al cliente responde a la mayoría de los correos en menos de veinticuatro horas.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer service team responds to most emails within twenty-four hours."
+        },
+        {
+          "source": "Olvidé mi paraguas y la lluvia repentina empapó los documentos que llevaba en la bolsa.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella, and the sudden rain soaked the documents I had in my bag."
+        },
+        {
+          "source": "Aprender un segundo idioma cambia la manera en que ves el tuyo.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way you see your own."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "en->ru",
+      "chrf": 67.7,
+      "bleu": 38.4,
+      "latency_mean_s": 2.16,
+      "latency_median_s": 2.31,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "Совещание начнётся завтра в девять утра, поэтому, пожалуйста, просмотрите договор сегодня вечером.",
+          "hypothesis": "Встреча начинается в девять утра завтра, поэтому, пожалуйста, пересмотрите контракт сегодня вечером."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "Облачные вычисления позволяют небольшим компаниям арендовать мощные серверы вместо покупки собственного оборудования.",
+          "hypothesis": "Облачные вычисления позволяют малым компаниям арендовать мощные серверы вместо покупки собственного оборудования."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "Великая Китайская стена ежегодно привлекает миллионы посетителей, особенно в осенние каникулы.",
+          "hypothesis": "Великая Китайская стена привлекает миллионы туристов каждый год, особенно во время осенних праздников."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "Наша служба поддержки отвечает на большинство писем в течение двадцати четырёх часов.",
+          "hypothesis": "Наша команда поддержки клиентов отвечает на большинство писем в течение двадцати четырех часов."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "Я забыл зонт, и внезапный дождь промочил документы в моей сумке.",
+          "hypothesis": "Я забыл свой зонтик, и внезапный дождь промокнул документы в моем рюкзаке."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "Изучение второго языка меняет то, как ты смотришь на родной.",
+          "hypothesis": "Учение второго языка меняет способ вашего восприятия собственного."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "ru->en",
+      "chrf": 82.2,
+      "bleu": 67.3,
+      "latency_mean_s": 1.33,
+      "latency_median_s": 1.36,
+      "errors": [],
+      "samples": [
+        {
+          "source": "Совещание начнётся завтра в девять утра, поэтому, пожалуйста, просмотрите договор сегодня вечером.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting will start tomorrow at nine in the morning, so please review the contract tonight."
+        },
+        {
+          "source": "Облачные вычисления позволяют небольшим компаниям арендовать мощные серверы вместо покупки собственного оборудования.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small companies to rent powerful servers instead of buying their own equipment."
+        },
+        {
+          "source": "Великая Китайская стена ежегодно привлекает миллионы посетителей, особенно в осенние каникулы.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Chinese Wall attracts millions of visitors every year, especially during the autumn holidays."
+        },
+        {
+          "source": "Наша служба поддержки отвечает на большинство писем в течение двадцати четырёх часов.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our support service replies to most emails within twenty-four hours."
+        },
+        {
+          "source": "Я забыл зонт, и внезапный дождь промочил документы в моей сумке.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella, and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "Изучение второго языка меняет то, как ты смотришь на родной.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes how you look at your native language."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "en->ar",
+      "chrf": 55.3,
+      "bleu": 22.3,
+      "latency_mean_s": 1.95,
+      "latency_median_s": 1.96,
+      "errors": [],
+      "samples": [
+        {
+          "source": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "reference": "يبدأ الاجتماع في التاسعة من صباح الغد، لذا يُرجى مراجعة العقد الليلة.",
+          "hypothesis": "تبدأ الاجتماع الساعة التاسعة غدًا الصباح، لذلك يرجى مراجعة العقد الليلة."
+        },
+        {
+          "source": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "reference": "تتيح الحوسبة السحابية للشركات الصغيرة استئجار خوادم قوية بدلاً من شراء أجهزتها الخاصة.",
+          "hypothesis": "الحوسبة السحابية تتيح للشركات الصغيرة إيجار خوادم قوية بدلًا من شراء معداتهم الخاصة."
+        },
+        {
+          "source": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "reference": "تجذب سور الصين العظيم ملايين الزوار كل عام، وخاصةً خلال عطلة الخريف.",
+          "hypothesis": "الجدار العظيم يجذب ملايين الزوار كل عام، خاصة خلال عطلة الخريف."
+        },
+        {
+          "source": "Our customer support team replies to most emails within twenty-four hours.",
+          "reference": "يرد فريق دعم العملاء لدينا على معظم الرسائل خلال أربع وعشرين ساعة.",
+          "hypothesis": "فريق دعم العملاء لدينا يرد على معظم البريد الإلكتروني خلال 24 ساعة."
+        },
+        {
+          "source": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "reference": "نسيت مظلتي، فبللت الأمطار المفاجئة المستندات التي في حقيبتي.",
+          "hypothesis": "نسيت أميّتي، وانسكبت الأمطار المفاجئة على الوثائق في حقيبتي."
+        },
+        {
+          "source": "Learning a second language changes the way you think about your own.",
+          "reference": "إن تعلّم لغة ثانية يُغيّر الطريقة التي تنظر بها إلى لغتك الأم.",
+          "hypothesis": "تعلم لغة ثانية تغير طريقة تفكيرك في لغتك الأم."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "ar->en",
+      "chrf": 83.2,
+      "bleu": 69.6,
+      "latency_mean_s": 1.34,
+      "latency_median_s": 1.37,
+      "errors": [],
+      "samples": [
+        {
+          "source": "يبدأ الاجتماع في التاسعة من صباح الغد، لذا يُرجى مراجعة العقد الليلة.",
+          "reference": "The meeting starts at nine tomorrow morning, so please review the contract tonight.",
+          "hypothesis": "The meeting starts at nine in the morning, so please review the contract tonight."
+        },
+        {
+          "source": "تتيح الحوسبة السحابية للشركات الصغيرة استئجار خوادم قوية بدلاً من شراء أجهزتها الخاصة.",
+          "reference": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.",
+          "hypothesis": "Cloud computing allows small businesses to rent powerful servers instead of buying their own equipment."
+        },
+        {
+          "source": "تجذب سور الصين العظيم ملايين الزوار كل عام، وخاصةً خلال عطلة الخريف.",
+          "reference": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.",
+          "hypothesis": "The Great Wall of China attracts millions of visitors every year, especially during the autumn holidays."
+        },
+        {
+          "source": "يرد فريق دعم العملاء لدينا على معظم الرسائل خلال أربع وعشرين ساعة.",
+          "reference": "Our customer support team replies to most emails within twenty-four hours.",
+          "hypothesis": "Our customer support team responds to most messages within twenty-four hours."
+        },
+        {
+          "source": "نسيت مظلتي، فبللت الأمطار المفاجئة المستندات التي في حقيبتي.",
+          "reference": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.",
+          "hypothesis": "I forgot my umbrella, and the sudden rain soaked the documents in my bag."
+        },
+        {
+          "source": "إن تعلّم لغة ثانية يُغيّر الطريقة التي تنظر بها إلى لغتك الأم.",
+          "reference": "Learning a second language changes the way you think about your own.",
+          "hypothesis": "Learning a second language changes the way you look at your first language."
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "zh->ja",
+      "chrf": 46.4,
+      "bleu": 52.4,
+      "latency_mean_s": 1.76,
+      "latency_median_s": 1.75,
+      "errors": [],
+      "samples": [
+        {
+          "source": "这家餐厅的招牌菜是麻辣火锅，周末经常要排队等位。",
+          "reference": "このレストランの看板メニューは麻辣火鍋で、週末はよく順番待ちの列ができます。",
+          "hypothesis": "このレストランの看板メニューは麻辣鍋で、土日には並ぶことがよくあります。"
+        },
+        {
+          "source": "高铁把北京和上海之间的行程缩短到了四个半小时。",
+          "reference": "高鉄は北京と上海の間の移動時間を4時間半まで短縮しました。",
+          "hypothesis": "高速鉄道により、北京と上海間の移動時間は4時間半に短縮されました。"
+        },
+        {
+          "source": "春节期间，数以亿计的人返乡与家人团聚。",
+          "reference": "春節の時期には、何億人もの人々が故郷に帰って家族と団らんします。",
+          "hypothesis": "春節期間、数えきれないほどの人々が故郷へ帰って家族と団らんする。"
+        },
+        {
+          "source": "这款应用支持离线翻译，在没有网络的地方也能用。",
+          "reference": "このアプリはオフライン翻訳に対応しているので、ネットがない場所でも使えます。",
+          "hypothesis": "このアプリはオフライン翻訳をサポートしており、ネットワークがない場所でも使用できます。"
+        },
+        {
+          "source": "他把古典诗词翻译成现代语言，让年轻人更容易理解。",
+          "reference": "彼は古典詩詞を現代語に翻訳して、若者にも分かりやすくしています。",
+          "hypothesis": "彼は古典詩詞を現代の言語に翻訳し、若者に理解しやすくしました。"
+        },
+        {
+          "source": "茶文化在中国已有几千年的历史，如今传遍了世界。",
+          "reference": "茶文化は中国で数千年の歴史を持ち、今では世界中に広まっています。",
+          "hypothesis": "茶文化は中国では数千年の歴史を持ち、現在では世界中に広まりました。"
+        }
+      ]
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "ja->zh",
+      "chrf": 55.0,
+      "bleu": 59.2,
+      "latency_mean_s": 1.26,
+      "latency_median_s": 1.23,
+      "errors": [],
+      "samples": [
+        {
+          "source": "このレストランの看板メニューは麻辣火鍋で、週末はよく順番待ちの列ができます。",
+          "reference": "这家餐厅的招牌菜是麻辣火锅，周末经常要排队等位。",
+          "hypothesis": "这家餐厅的招牌菜是麻辣火锅，周末常常排长队。"
+        },
+        {
+          "source": "高鉄は北京と上海の間の移動時間を4時間半まで短縮しました。",
+          "reference": "高铁把北京和上海之间的行程缩短到了四个半小时。",
+          "hypothesis": "高铁将北京和上海之间的行程时间缩短到了4个半小时。"
+        },
+        {
+          "source": "春節の時期には、何億人もの人々が故郷に帰って家族と団らんします。",
+          "reference": "春节期间，数以亿计的人返乡与家人团聚。",
+          "hypothesis": "春节期间，数亿人会回到家乡与家人团聚。"
+        },
+        {
+          "source": "このアプリはオフライン翻訳に対応しているので、ネットがない場所でも使えます。",
+          "reference": "这款应用支持离线翻译，在没有网络的地方也能用。",
+          "hypothesis": "此应用程序支持离线翻译，即使在没有网络的环境下也可以使用。"
+        },
+        {
+          "source": "彼は古典詩詞を現代語に翻訳して、若者にも分かりやすくしています。",
+          "reference": "他把古典诗词翻译成现代语言，让年轻人更容易理解。",
+          "hypothesis": "他将古典诗词翻译成现代汉语，使年轻人更容易理解。"
+        },
+        {
+          "source": "茶文化は中国で数千年の歴史を持ち、今では世界中に広まっています。",
+          "reference": "茶文化在中国已有几千年的历史，如今传遍了世界。",
+          "hypothesis": "茶文化在中国已有数千年的历史，如今已传播到世界各地。"
+        }
+      ]
+    }
+  ]
+}
