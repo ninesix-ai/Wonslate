@@ -7,6 +7,18 @@
 | 文件 | domain | 语言对 | 版本 | 条目数 |
 |---|---|---|---|---|
 | `av-zh-en.json` | `av` | zh → en | 2026.10 | 266 |
+| `software-ui-en-<lang>.json` ×10 | `software-ui` | en → de / fr / es / pt-BR / ru / it / pl / tr / ja / ko | 2026.10 | 14 each |
+
+> `software-ui` 收录**产品中立**的桌面应用常用标签（About / Settings / Cancel / Keep on Top
+> …）。每行取自一个 Apache-2.0 桌面应用已过本地化门禁的线上文案，不是机翻产物。
+>
+> 它的存在理由：短标签脱离语境时模型会翻错。实测同一引擎同一输入，只有 `domain` 不同：
+> `About` → ja 无域得到「について」（残缺），带 `domain="software-ui"` 得到
+> 「このアプリについて」；`Keep on Top` → de 分别为 "Immer oben" 与
+> "Immer im Vordergrund"。
+>
+> 注意：域行只在请求携带该 `domain` 时才会被读到，而当前界面不传 `domain`，因此导入后
+> 需调用方显式带域（或界面提供域选择器）才会生效。
 
 ## 文件格式契约
 

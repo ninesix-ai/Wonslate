@@ -1,0 +1,67 @@
+{
+  "domain": "software-ui",
+  "source_lang": "en",
+  "target_lang": "it",
+  "version": "2026.10",
+  "license": "Apache-2.0",
+  "attribution": "Mined from the shipped UI strings of Vonvert (Apache-2.0, https://github.com/ninesix-ai/Vonvert) -- every row is a value that already passed that project's localization parity gates, not a fresh machine translation. Review individual pairs before trusting them; confidence is stamped 1.0 on import by design.",
+  "notes": "Product-neutral desktop/application vocabulary only: no brand, no audio signal-chain jargon. Rows are prompt-level term guidance for engines that accept a prompt -- the Argos/MADLAD sidecars ignore glossary injection. Domain is non-empty, so these surface only when the caller passes domain=\"software-ui\"; the UI currently sends no domain, so importing this pack changes nothing until a domain selector exists.",
+  "entries": [
+    {
+      "source_term": "About",
+      "target_term": "Informazioni"
+    },
+    {
+      "source_term": "Settings",
+      "target_term": "Impostazioni"
+    },
+    {
+      "source_term": "Language",
+      "target_term": "Lingua"
+    },
+    {
+      "source_term": "Import",
+      "target_term": "Importa"
+    },
+    {
+      "source_term": "Export",
+      "target_term": "Esporta"
+    },
+    {
+      "source_term": "Help",
+      "target_term": "Guida"
+    },
+    {
+      "source_term": "Close",
+      "target_term": "Chiudi"
+    },
+    {
+      "source_term": "Cancel",
+      "target_term": "Annulla"
+    },
+    {
+      "source_term": "Save",
+      "target_term": "Salva"
+    },
+    {
+      "source_term": "Delete",
+      "target_term": "Cancella"
+    },
+    {
+      "source_term": "Remove",
+      "target_term": "Rimuovi"
+    },
+    {
+      "source_term": "Error",
+      "target_term": "Errore"
+    },
+    {
+      "source_term": "Default",
+      "target_term": "Predefinito"
+    },
+    {
+      "source_term": "Keep on Top",
+      "target_term": "Sempre in primo piano"
+    }
+  ]
+}
