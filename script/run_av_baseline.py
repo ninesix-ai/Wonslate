@@ -107,19 +107,22 @@ def preflight(args) -> list[str]:
         problems.append(f"AV seed pack missing at {PACK_PATH}")
     if not SIDECAR_PY.is_file():
         problems.append(f"sidecar script missing at {SIDECAR_PY}")
-    # Sidecars need their model dirs; check via WONSLATE_DATA_DIR / default.
-    from bench_domain_av import resolve_av_root  # noqa: WPS433 (local import)
-    # reuse the same default_data_dir helper the sidecar uses
+    # Sidecars need their model dirs; check via default_data_dir(). Argos and
+    # madlad are the two CT2 backends the bench hits; ollama is checked
+    # separately below via its HTTP endpoint.
     sys.path.insert(0, str(REPO))
     try:
         from sidecar.ct2_sidecar import default_data_dir  # noqa: WPS433
         models_root = default_data_dir() / "models"
-        if not (models_root / "sense-voice").exists():
+        if "argos" in args.engines and not (models_root / "argos").exists():
             problems.append(
-                f"argos / madlad / whisper model roots live under {models_root}; "
-                "run `python script/fetch_argos_models.py` and "
-                "`python script/fetch_madlad_model.py` to populate.")
-    except (ImportError, Exception):  # noqa: BLE001 (broad on purpose -- preflight)
+                f"argos packages missing at {models_root / 'argos'}. Run:\n"
+                "    python script/fetch_argos_models.py")
+        if "madlad" in args.engines and not (models_root / "madlad").exists():
+            problems.append(
+                f"MADLAD-400 CT2 checkpoint missing at {models_root / 'madlad'}. Run:\n"
+                "    python script/fetch_madlad_model.py")
+    except ImportError:
         pass
     # Ollama check is only meaningful when we plan to bench against it.
     if "ollama-qwen" in args.engines and not _probe_url(OLLAMA_URL, timeout=3):
