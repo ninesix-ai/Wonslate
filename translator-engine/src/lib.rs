@@ -355,9 +355,54 @@ pub extern "C" fn tt_glossary_list(
     let result = catch_unwind(AssertUnwindSafe(|| {
         let s = unsafe { read_cstr(source_lang) }.unwrap_or_default();
         let t = unsafe { read_cstr(target_lang) }.unwrap_or_default();
-        let entries = tm::glossary_list(&s, &t, 500).unwrap_or_default();
+        // S11: an empty request domain returns only generic rows -- which is exactly
+        // what every pre-S11 glossary contained, so this stays visually identical for
+        // existing users. Callers that want a domain-scoped view go through
+        // `tt_glossary_list_with_domain`.
+        let entries = tm::glossary_list(&s, &t, "", 500).unwrap_or_default();
         let vals: Vec<serde_json::Value> = entries.iter().map(|e| e.to_json()).collect();
         serde_json::to_string(&vals).unwrap_or_else(|_| "[]".into())
     }));
     to_c_string(&result.unwrap_or_else(|_| "[]".to_string()))
+}
+
+/// S11: domain-scoped glossary fetch. `domain` empty == generic rows only;
+/// `domain="av"` == generic ∪ av (specific rows win over same-source generic
+/// ones). The store filter matches `tm::glossary_list`'s contract.
+#[no_mangle]
+pub extern "C" fn tt_glossary_list_with_domain(
+    source_lang: *const c_char,
+    target_lang: *const c_char,
+    domain: *const c_char,
+    limit: u32,
+) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let s = unsafe { read_cstr(source_lang) }.unwrap_or_default();
+        let t = unsafe { read_cstr(target_lang) }.unwrap_or_default();
+        let d = unsafe { read_cstr(domain) }.unwrap_or_default();
+        let cap = if limit == 0 { 500usize } else { limit as usize };
+        let entries = tm::glossary_list(&s, &t, &d, cap).unwrap_or_default();
+        let vals: Vec<serde_json::Value> = entries.iter().map(|e| e.to_json()).collect();
+        serde_json::to_string(&vals).unwrap_or_else(|_| "[]".into())
+    }));
+    to_c_string(&result.unwrap_or_else(|_| "[]".to_string()))
+}
+
+/// S11: import one seed pack in a single call. `pack_json` shape:
+/// `{"domain":"av","version":"...","entries":[{source_term,target_term,confidence?},...]}`.
+/// A non-empty pack-level domain is mandatory; every entry inherits that domain
+/// and the source tag `seed:<domain>`. Returns `{"ok":true,"imported":N}` or an
+/// `{"ok":false,"error":"..."}` shape so a caller can distinguish "no data" from
+/// "schema wrong".
+#[no_mangle]
+pub extern "C" fn tt_glossary_import_pack(pack_json: *const c_char) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let raw = unsafe { read_cstr(pack_json) }.unwrap_or_default();
+        match tm::glossary_import_pack(&raw) {
+            Ok(n) => serde_json::to_string(&serde_json::json!({"ok": true, "imported": n}))
+                .unwrap_or_else(|_| "{\"ok\":true}".into()),
+            Err(e) => e.to_json().to_string(),
+        }
+    }));
+    to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))
 }

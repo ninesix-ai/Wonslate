@@ -75,6 +75,8 @@ class GlossaryImportPackTests(unittest.TestCase):
     def test_import_pack_returns_ok_for_well_formed_pack(self):
         pack = {
             "domain": "av",
+            "source_lang": "zh",
+            "target_lang": "en",
             "version": "test-1",
             "entries": [
                 {"source_term": "语段", "target_term": "speech segment", "confidence": 1.0},
@@ -95,11 +97,26 @@ class GlossaryImportPackTests(unittest.TestCase):
     def test_import_pack_rejects_pack_without_domain(self):
         # A pack with an empty domain would pollute the generic table; refuse it
         # loudly so a caller does not think a domain-scoped import succeeded.
-        pack = {"domain": "", "version": "test-1",
+        pack = {"domain": "", "source_lang": "zh", "target_lang": "en",
+                "version": "test-1",
                 "entries": [{"source_term": "x", "target_term": "y", "confidence": 1.0}]}
         ack = self._call("tt_glossary_import_pack", json.dumps(pack))
         parsed = json.loads(ack or "{}")
         self.assertFalse(parsed.get("ok"))
+
+    def test_import_pack_rejects_pack_without_language_pair(self):
+        # A pack must declare which pair it belongs to; otherwise every entry
+        # would need its own source_lang / target_lang and the format loses its
+        # point. The store refuses such a pack explicitly. `error` carries the
+        # stable code; `message` carries the human-readable detail (see
+        # error.rs::to_json).
+        pack = {"domain": "av", "version": "test-1",
+                "entries": [{"source_term": "x", "target_term": "y", "confidence": 1.0}]}
+        ack = self._call("tt_glossary_import_pack", json.dumps(pack))
+        parsed = json.loads(ack or "{}")
+        self.assertFalse(parsed.get("ok"))
+        self.assertEqual(parsed.get("error"), "INVALID_INPUT")
+        self.assertIn("source_lang", parsed.get("message", ""))
 
 
 if __name__ == "__main__":

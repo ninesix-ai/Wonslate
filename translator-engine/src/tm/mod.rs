@@ -61,6 +61,21 @@ pub fn lookup(text: &str, source_lang: &str, target_lang: &str)
     Ok(None)
 }
 
+/// S11: same lookup, but a specific request domain refuses a cached entry that
+/// was written under a *different* specific domain. Generic entries (empty
+/// `TmEntry.domain`) always remain eligible. Cross-domain refusal is what
+/// keeps a medical TM hit from answering an AV request.
+pub fn lookup_with_domain(
+    text: &str, source_lang: &str, target_lang: &str, req_domain: &str,
+) -> Result<Option<TmEntry>, EngineError> {
+    let entry = lookup(text, source_lang, target_lang)?;
+    Ok(entry.filter(|e| {
+        req_domain.is_empty()
+            || e.domain.is_empty()
+            || e.domain == req_domain
+    }))
+}
+
 pub fn put(entry: &TmEntry) -> Result<(), EngineError> {
     TmStore::instance()
         .ok_or_else(|| EngineError::TmError("not initialized".into()))?
@@ -115,11 +130,21 @@ pub fn total_entries() -> Result<u64, EngineError> {
 pub fn glossary_list(
     source_lang: &str,
     target_lang: &str,
+    domain: &str,
     limit: usize,
 ) -> Result<Vec<GlossaryEntry>, EngineError> {
     TmStore::instance()
         .ok_or_else(|| EngineError::TmError("not initialized".into()))?
-        .glossary_list(source_lang, target_lang, limit)
+        .glossary_list(source_lang, target_lang, domain, limit)
+}
+
+/// S11: seed-pack importer. The `pack_json` must carry a non-empty `domain`; a
+/// mixed-domain or untagged file is refused so a caller cannot silently seed
+/// the generic table via what looks like a domain-scoped import.
+pub fn glossary_import_pack(pack_json: &str) -> Result<u32, EngineError> {
+    TmStore::instance()
+        .ok_or_else(|| EngineError::TmError("not initialized".into()))?
+        .glossary_import_pack(pack_json)
 }
 
 pub fn glossary_upsert(entry: &GlossaryEntry) -> Result<(), EngineError> {

@@ -50,24 +50,38 @@ fn entry(term: &str, trans: &str, domain: &str) -> GlossaryEntry {
     }
 }
 
-/// ① `glossary_list(src, tgt, domain, limit)` must return **generic ∪ specific domain**,
-/// and must not return entries from any other specific domain.
+/// ① `glossary_list(src, tgt, domain, limit)` returns **generic ∪ specific**;
+/// a specific row replaces the same-source generic one; other domains stay out.
 #[test]
 fn glossary_list_returns_generic_union_specific_domain() {
     ensure_init();
-    tm::glossary_upsert(&entry("缓冲", "buffer", "")).unwrap();          // generic
-    tm::glossary_upsert(&entry("缓冲", "audio buffer", "av")).unwrap();  // av
-    tm::glossary_upsert(&entry("缓冲", "buffer solution", "medical")).unwrap(); // other
+    // Two rows share source_term "缓冲" -- the av row must replace the generic
+    // one on an av request. A third generic row for a different term ("声道")
+    // has no av counterpart and stays visible. A medical row for the same
+    // "缓冲" must not leak.
+    tm::glossary_upsert(&entry("缓冲", "buffer", "")).unwrap();
+    tm::glossary_upsert(&entry("缓冲", "audio buffer", "av")).unwrap();
+    tm::glossary_upsert(&entry("声道", "channel", "")).unwrap();
+    tm::glossary_upsert(&entry("缓冲", "buffer solution", "medical")).unwrap();
 
-    // NEW SIGNATURE: currently tm::glossary_list takes 3 args (no domain). This line
-    // must fail to compile until the domain argument is wired in.
     let av = tm::glossary_list("zh", "en", "av", 10).unwrap();
-    assert!(av.iter().any(|e| e.domain == "" && e.target_term == "buffer"),
-        "generic term must be visible to av request");
-    assert!(av.iter().any(|e| e.domain == "av"),
-        "av-scoped term must be visible to av request");
+    // Generic rows for terms without an av counterpart stay visible.
+    assert!(av.iter().any(|e| e.source_term == "声道" && e.domain.is_empty()),
+        "generic row for a term with no av counterpart must be visible");
+    // The av-specific row wins over the same-source generic row.
+    assert!(av.iter().any(|e| e.source_term == "缓冲" && e.domain == "av"
+        && e.target_term == "audio buffer"),
+        "av-scoped row must be visible");
+    // Rows from a different specific domain never appear.
     assert!(av.iter().all(|e| e.domain != "medical"),
-        "medical-scoped term must NOT leak into av request");
+        "medical-scoped row must NOT leak into av request");
+    // Exactly one row per source_term survives (the av-vs-generic collision
+    // on the shared term is resolved in favour of the specific row).
+    let buf_rows: Vec<&GlossaryEntry> = av.iter()
+        .filter(|e| e.source_term == "缓冲").collect();
+    assert_eq!(buf_rows.len(), 1,
+        "one row per source_term after generic-vs-av dedup; got {:?}",
+        buf_rows.iter().map(|e| (&e.target_term, &e.domain)).collect::<Vec<_>>());
 }
 
 /// ② Same source term across generic and a specific domain must be storable as
@@ -188,8 +202,13 @@ fn empty_specific_domain_surfaces_a_note() {
 #[test]
 fn import_pack_materialises_domain_entries() {
     ensure_init();
+    // The pack-level source_lang / target_lang is the shipped format: a seed
+    // pack is scoped to one language pair, so we do not repeat the pair on
+    // every term. `docs/glossary-packs/av-zh-en.json` follows this shape.
     let pack_json = r#"{
         "domain": "av",
+        "source_lang": "zh",
+        "target_lang": "en",
         "version": "test-1",
         "entries": [
             {"source_term":"语段","target_term":"speech segment","confidence":1.0},
@@ -197,12 +216,16 @@ fn import_pack_materialises_domain_entries() {
         ]
     }"#;
 
-    // NEW API: translator_engine::tm::glossary_import_pack does not exist yet.
     translator_engine::tm::glossary_import_pack(pack_json).expect("pack must import");
 
     let av = tm::glossary_list("zh", "en", "av", 10).unwrap();
     assert!(av.iter().any(|e| e.source_term == "语段" && e.target_term == "speech segment"));
     assert!(av.iter().any(|e| e.source_term == "音色" && e.target_term == "speaker timbre"));
+    // Every imported row carries the pack's domain and provenance marker.
+    assert!(av.iter().all(|e| e.domain == "av" || e.domain.is_empty()));
+    assert!(av.iter().filter(|e| e.source_term == "语段" || e.source_term == "音色")
+        .all(|e| e.source == "seed:av"),
+        "imported rows must carry source=seed:av so a reviewer can spot them");
 }
 
 

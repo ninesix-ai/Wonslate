@@ -50,6 +50,17 @@ internal static partial class EngineNative
     [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
     private static partial IntPtr tt_glossary_list(string sourceLang, string targetLang);
 
+    // S11: domain-scoped glossary fetch. The Rust side returns generic rows ∪
+    // the requested specific domain; empty `domain` behaves like the v1 call.
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr tt_glossary_list_with_domain(
+        string sourceLang, string targetLang, string domain, uint limit);
+
+    // S11: one-shot seed pack importer. Payload shape is documented in
+    // translator-engine/src/lib.rs::tt_glossary_import_pack.
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr tt_glossary_import_pack(string packJson);
+
     [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
     private static partial IntPtr tt_glossary_upsert(string entryJson);
 
@@ -140,6 +151,33 @@ internal static partial class EngineNative
     {
         IntPtr raw = tt_glossary_list(sourceLang, targetLang);
         try { return Marshal.PtrToStringUTF8(raw) ?? "[]"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>
+    /// S11: list the glossary terms for one (source, target, domain) triple.
+    /// Passing an empty `domain` returns only generic rows (same set the v1
+    /// wrapper sees on a pre-S11 install); a named domain returns generic ∪
+    /// that domain, with the specific row replacing an identically-named
+    /// generic one.
+    /// </summary>
+    public static string GlossaryList(string sourceLang, string targetLang, string domain, uint limit)
+    {
+        IntPtr raw = tt_glossary_list_with_domain(sourceLang, targetLang, domain, limit);
+        try { return Marshal.PtrToStringUTF8(raw) ?? "[]"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>
+    /// S11: import one seed pack in a single call. Returns the FFI ack JSON with
+    /// `{ok, imported}` on success, `{ok:false, error, message}` on a schema
+    /// rejection. Callers pass the pack text through verbatim; the Rust layer
+    /// enforces the mandatory pack-level `domain` / `source_lang` / `target_lang`.
+    /// </summary>
+    public static string GlossaryImportPack(string packJson)
+    {
+        IntPtr raw = tt_glossary_import_pack(packJson);
+        try { return Marshal.PtrToStringUTF8(raw) ?? "{}"; }
         finally { tt_free_string(raw); }
     }
 

@@ -24,6 +24,19 @@ fn with_refusal(refused: &Option<String>, message: Option<String>) -> Option<Str
     }
 }
 
+/// Chain a domain-scope note into the same message slot the refusal helper uses.
+///
+/// Ordering: refusal (cost of a re-translation) reads first, then the domain note
+/// (why the glossary was thinner than the request implied), then any path-specific
+/// message. All three are optional; empty slots do not produce stray separators.
+fn with_domain_note(
+    refused: &Option<String>,
+    domain: &Option<String>,
+    message: Option<String>,
+) -> Option<String> {
+    with_refusal(refused, with_refusal(domain, message))
+}
+
 /// Full-featured translation (TM + routing + distillation; recommended entry).
 pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, EngineError> {
     let t0 = Instant::now();
@@ -87,7 +100,8 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
     // asked for, and this response says why it was not met.
     let mut refused_cache: Option<String> = None;
     if req.use_tm && config::get().tm_enabled {
-        if let Ok(Some(entry)) = tm::lookup(&req.input, &req.source_lang, &req.target_lang) {
+        if let Ok(Some(entry)) = tm::lookup_with_domain(
+            &req.input, &req.source_lang, &req.target_lang, &req.domain) {
             let below_floor = entry.quality < plan.tm_quality_floor;
             // Probed only where it can change the outcome, and only once a cached entry is
             // in hand: the check opens a connection, and a miss, or an entry that already
@@ -148,6 +162,21 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         ).unwrap_or_default()
     } else {
         glossary::GlossaryContext::empty()
+    };
+
+    // S11: a caller that asked for a specific domain but got only generic rows
+    // must see that in the message (REQ-B2). The generic ∪ specific union rule can
+    // legitimately return zero specific entries on a fresh install -- that is not
+    // a failure, but it is not what the caller asked for either.
+    let domain_note: Option<String> = if !req.domain.is_empty()
+        && plan.use_glossary && config::get().glossary_enabled
+        && !glossary_ctx.entries.iter().any(|e| e.domain == req.domain)
+    {
+        Some(format!(
+            "domain '{}' has no specific terms loaded; served generic only",
+            req.domain))
+    } else {
+        None
     };
 
     let local_output = local_engine.translate_with_context(
@@ -216,6 +245,10 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
                     ));
                 }
             }
+            // S11: domain scope travels with every return path so a caller
+            // looking at the response alone can tell whether the requested
+            // domain actually influenced the glossary context.
+            if let Some(n) = domain_note.clone() { notes.push(n); }
 
             let message = if notes.is_empty() { None } else { Some(notes.join("; ")) };
             let resp = TranslateResponse {
@@ -278,7 +311,7 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
                 latency_ms: t0.elapsed().as_millis() as u64,
                 confidence: confidence::AI_UPGRADE_CONFIDENCE,
                 error: None,
-                message: with_refusal(&refused_cache, None),
+                message: with_domain_note(&refused_cache, &domain_note, None),
             };
             // write to the TM
             if req.use_tm {
@@ -320,7 +353,9 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
             latency_ms: t0.elapsed().as_millis() as u64,
             confidence: 0.60,
             error: None,
-            message: with_refusal(&refused_cache, Some("AI upgrade failed, returning local result".into())),
+            message: with_domain_note(
+                &refused_cache, &domain_note,
+                Some("AI upgrade failed, returning local result".into())),
         })
     } else {
         // Final local fallback: when every engine returned nothing (e.g. sidecar absent), try demo explicitly
@@ -341,7 +376,7 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
                 latency_ms: t0.elapsed().as_millis() as u64,
                 confidence: conf,
                 error: None,
-                message: with_refusal(&refused_cache, Some(format!(
+                message: with_domain_note(&refused_cache, &domain_note, Some(format!(
                     "engine '{}' produced no result, fell back to local demo",
                     plan.local_engine_id
                 ))),

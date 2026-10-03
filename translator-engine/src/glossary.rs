@@ -57,14 +57,19 @@ impl GlossaryContext {
 }
 
 /// Fetch the most frequent / highest-confidence terms for the active pair and build this translation's context
+///
+/// S11: `domain` now actually reaches the store. A non-empty request domain
+/// returns generic ∪ specific; an empty one returns only generic. This is the
+/// wiring that was missing before -- the field was parsed, stored and echoed
+/// back but never consumed on the read path.
 pub fn build_context(
     _text: &str,
     source_lang: &str,
     target_lang: &str,
-    _domain: &str,
+    domain: &str,
     max_terms: usize,
 ) -> Result<GlossaryContext, EngineError> {
-    let entries = tm::glossary_list(source_lang, target_lang, max_terms)?;
+    let entries = tm::glossary_list(source_lang, target_lang, domain, max_terms)?;
     Ok(GlossaryContext { entries })
 }
 

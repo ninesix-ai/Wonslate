@@ -26,6 +26,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _diagnostics = "";
     private string _glossarySourceTerm = "";
     private string _glossaryTargetTerm = "";
+    private string _glossaryDomainFilter = "";
     private TmEntryDto? _selectedTmEntry;
     private GlossaryEntryDto? _selectedGlossaryEntry;
 
@@ -242,6 +243,25 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set { _glossaryTargetTerm = value; OnPropertyChanged(); }
     }
 
+    /// <summary>
+    /// S11: the domain scope of the glossary view. Empty shows only generic
+    /// rows (the pre-S11 default); a named value such as "av" shows generic ∪
+    /// that domain, with the specific row replacing an identically-named
+    /// generic one. Setting this property re-queries the store so the visible
+    /// list tracks the filter without a manual refresh.
+    /// </summary>
+    public string GlossaryDomainFilter
+    {
+        get => _glossaryDomainFilter;
+        set
+        {
+            if (_glossaryDomainFilter == value) return;
+            _glossaryDomainFilter = value ?? "";
+            OnPropertyChanged();
+            RefreshGlossary();
+        }
+    }
+
     /// <summary>Serialized TM entry for a user-confirmed pair (pure; unit-tested).</summary>
     public static string BuildTmEntryJson(
         string sourceText, string sourceLang, string targetText, string targetLang) =>
@@ -288,9 +308,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var src = EffectiveSourceLang;
         if (src.Length == 0) { StatusMessage = "源语言为自动检测，请先翻译一次再查看术语表"; return; }
         GlossaryEntries.Clear();
-        foreach (var e in GlossaryEntryDto.ListFromJson(EngineNative.GlossaryList(src, TargetLang)))
+        // S11: pass the current domain filter through to the store. An empty
+        // filter is the "generic only" query, matching the pre-S11 UI surface.
+        var json = EngineNative.GlossaryList(src, TargetLang, GlossaryDomainFilter ?? "", 500);
+        foreach (var e in GlossaryEntryDto.ListFromJson(json))
             GlossaryEntries.Add(e);
-        StatusMessage = $"术语表共 {GlossaryEntries.Count} 条（{src}→{TargetLang}）";
+        var scope = string.IsNullOrEmpty(GlossaryDomainFilter) ? "" : " / " + GlossaryDomainFilter;
+        StatusMessage = $"术语表共 {GlossaryEntries.Count} 条（{src}→{TargetLang}{scope}）";
     }
 
     /// <summary>Store the current input/output pair into the TM (user-confirmed).</summary>

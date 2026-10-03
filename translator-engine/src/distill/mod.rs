@@ -67,17 +67,26 @@ where
 /// Process a single `DistillTask`: extract candidate pairs via the term extractor and
 /// hand them to `process_pairs`. Kept thread/global-free so it can be unit-tested with
 /// an injected `upsert`; `init()` wires this to `crate::glossary::upsert`.
+///
+/// S11: the task's `domain` is stamped onto every produced entry before upsert.
+/// Previously the field defaulted to empty, so distilled rows landed in the
+/// generic table and could not be filtered back to their originating context.
+/// The extractor itself stays domain-agnostic (it scores pairs on alignment /
+/// script / edge hygiene); stamping happens at the seam.
 fn process_task(
     task: &DistillTask,
     min_conf: f32,
     upsert: &dyn Fn(&GlossaryEntry) -> Result<(), crate::error::EngineError>,
 ) -> usize {
-    let pairs = term_extractor::extract_term_pairs(
+    let mut pairs = term_extractor::extract_term_pairs(
         &task.source_text,
         &task.source_lang,
         &task.target_text,
         &task.target_lang,
     );
+    if !task.domain.is_empty() {
+        for p in pairs.iter_mut() { p.domain = task.domain.clone(); }
+    }
     process_pairs(pairs.into_iter(), min_conf, upsert)
 }
 

@@ -279,7 +279,11 @@ fn tool_glossary_list(args: &serde_json::Value) -> ToolResult {
     if src.is_empty() || tgt.is_empty() {
         return ToolResult::err("source_lang and target_lang are both required");
     }
-    let entries = tm::glossary_list(&src, &tgt, 500).unwrap_or_default();
+    // S11: optional `domain` scopes the response. Empty returns only generic rows
+    // (matching the pre-S11 behaviour every existing MCP caller relies on);
+    // a named domain returns generic ∪ specific.
+    let domain = get("domain");
+    let entries = tm::glossary_list(&src, &tgt, &domain, 500).unwrap_or_default();
     let list: Vec<serde_json::Value> = entries.iter().map(|e| e.to_json()).collect();
     ToolResult::ok(serde_json::Value::Array(list))
 }

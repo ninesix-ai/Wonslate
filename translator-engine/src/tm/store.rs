@@ -84,7 +84,14 @@ impl TmStore {
         let gl_records: Vec<GlossaryRecord> = read_records(gl_path)?;
         let mut gl_index: HashMap<String, GlossaryRecord> = HashMap::new();
         for rec in gl_records {
-            let key = gl_key(&rec.entry.source_term, &rec.entry.source_lang, &rec.entry.target_lang);
+            // S11: the on-disk key now includes the domain segment. Rows written
+            // by a pre-S11 build carry an empty `domain` field, which the
+            // GlossaryEntry default already yields on missing key -- so loading
+            // old JSON is a no-op upgrade that lands every row in the generic
+            // bucket. No destructive migration, no data rewrite on first load.
+            let key = gl_key(
+                &rec.entry.source_term, &rec.entry.source_lang,
+                &rec.entry.target_lang, &rec.entry.domain);
             gl_index.insert(key, rec);
         }
 
@@ -221,21 +228,45 @@ impl TmStore {
     // ---- Glossary operations ----------------------------------------------------
 
     pub fn glossary_list(
-        &self, source_lang: &str, target_lang: &str, limit: usize,
+        &self, source_lang: &str, target_lang: &str, domain: &str, limit: usize,
     ) -> Result<Vec<GlossaryEntry>, EngineError> {
+        // S11: "generic ∪ specific" per D-S11.2. When `domain` is empty only
+        // generic rows survive. When `domain` is non-empty, generic rows are
+        // still visible (they never contradict a specific request) and specific
+        // rows from other domains are filtered out. Per source_term we keep the
+        // more specific row, breaking further ties by higher confidence.
         let idx = self.gl_index.read()
             .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
-        let mut v: Vec<&GlossaryRecord> = idx.values()
-            .filter(|r| r.entry.source_lang == source_lang
-                      && r.entry.target_lang == target_lang)
-            .collect();
+        let mut chosen: HashMap<String, &GlossaryRecord> = HashMap::new();
+        for r in idx.values() {
+            if r.entry.source_lang != source_lang || r.entry.target_lang != target_lang {
+                continue;
+            }
+            let is_generic = r.entry.domain.is_empty();
+            let matches_specific = !domain.is_empty() && r.entry.domain == domain;
+            if !(is_generic || matches_specific) { continue; }
+            let key = r.entry.source_term.to_lowercase();
+            let take = match chosen.get(&key) {
+                None => true,
+                Some(prev) => {
+                    let prev_specific = !prev.entry.domain.is_empty();
+                    if matches_specific != prev_specific {
+                        matches_specific
+                    } else {
+                        r.entry.confidence > prev.entry.confidence
+                    }
+                }
+            };
+            if take { chosen.insert(key, r); }
+        }
+        let mut v: Vec<&GlossaryRecord> = chosen.into_values().collect();
         v.sort_by(|a, b| b.entry.confidence.partial_cmp(&a.entry.confidence)
             .unwrap_or(std::cmp::Ordering::Equal));
         Ok(v.into_iter().take(limit).map(|r| r.entry.clone()).collect())
     }
 
     pub fn glossary_upsert(&self, entry: &GlossaryEntry) -> Result<(), EngineError> {
-        let key = gl_key(&entry.source_term, &entry.source_lang, &entry.target_lang);
+        let key = gl_key(&entry.source_term, &entry.source_lang, &entry.target_lang, &entry.domain);
         {
             let mut idx = self.gl_index.write()
                 .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
@@ -259,13 +290,62 @@ impl TmStore {
     pub fn glossary_delete(
         &self, source_term: &str, source_lang: &str, target_lang: &str,
     ) -> Result<(), EngineError> {
-        let key = gl_key(source_term, source_lang, target_lang);
+        // S11: the UI delete removes the *generic* row only. Removing a specific
+        // domain row goes through a follow-up task (S11 successor) once the UI
+        // exposes a domain filter per row; widening this signature now would
+        // ripple through the FFI for no user-visible gain.
+        let key = gl_key(source_term, source_lang, target_lang, "");
         {
             let mut idx = self.gl_index.write()
                 .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
             idx.remove(&key);
         }
         self.bump_gl_dirty()
+    }
+
+    // ---- Glossary import (S11) ---------------------------------------------------
+
+    /// Import one seed pack. The pack-level `domain` is stamped onto every entry
+    /// so a caller cannot smuggle a mixed-domain file through a single endpoint.
+    /// Entries keep `source="seed:<domain>"` so a user can distinguish a shipped
+    /// pack row from a hand-added one in the UI.
+    ///
+    /// A pack also declares `source_lang` and `target_lang` at its root; per-
+    /// entry values still win if set, so a pack can carry a mostly-uniform pair
+    /// while overriding the odd row. This is the format `docs/glossary-packs/*.json`
+    /// uses -- the language pair is a property of the pack, not of each term.
+    pub fn glossary_import_pack(&self, pack_json: &str) -> Result<u32, EngineError> {
+        let v: Value = serde_json::from_str(pack_json)
+            .map_err(|e| EngineError::InvalidInput(format!("pack json: {}", e)))?;
+        let domain = v.get("domain").and_then(|x| x.as_str()).unwrap_or("");
+        if domain.is_empty() {
+            return Err(EngineError::InvalidInput(
+                "pack.domain must be non-empty (an untagged import would pollute the generic table)".into()));
+        }
+        let pack_src = v.get("source_lang").and_then(|x| x.as_str()).unwrap_or("");
+        let pack_tgt = v.get("target_lang").and_then(|x| x.as_str()).unwrap_or("");
+        if pack_src.is_empty() || pack_tgt.is_empty() {
+            return Err(EngineError::InvalidInput(
+                "pack.source_lang and pack.target_lang are required (a seed pack is scoped to one language pair)".into()));
+        }
+        let entries = v.get("entries").and_then(|x| x.as_array())
+            .ok_or_else(|| EngineError::InvalidInput("pack.entries must be an array".into()))?;
+        let mut imported = 0u32;
+        for raw in entries {
+            let mut entry = GlossaryEntry::from_json(raw);
+            entry.domain = domain.to_string();
+            if entry.source_lang.is_empty() { entry.source_lang = pack_src.to_string(); }
+            if entry.target_lang.is_empty() { entry.target_lang = pack_tgt.to_string(); }
+            if entry.source_term.is_empty() || entry.target_term.is_empty() {
+                return Err(EngineError::InvalidInput(
+                    "every pack entry must carry source_term and target_term".into()));
+            }
+            entry.source = format!("seed:{}", domain);
+            if entry.confidence <= 0.0 { entry.confidence = 1.0; }
+            self.glossary_upsert(&entry)?;
+            imported += 1;
+        }
+        Ok(imported)
     }
 
     // ---- Dirty flush ------------------------------------------------
@@ -316,8 +396,11 @@ impl TmStore {
 
 // ---- File-IO helpers (serde_json::Value by hand, no derive)--------
 
-fn gl_key(term: &str, slang: &str, tlang: &str) -> String {
-    format!("{}|{}|{}", term.to_lowercase(), slang, tlang)
+fn gl_key(term: &str, slang: &str, tlang: &str, domain: &str) -> String {
+    // S11: the domain is the fourth segment of the primary key, so the same
+    // source term can coexist as a generic row and as a per-domain override.
+    // Empty domain is the "generic" bucket; readers treat it as always-visible.
+    format!("{}|{}|{}|{}", term.to_lowercase(), slang, tlang, domain)
 }
 
 /// Read the record array from the JSON file; a missing or empty file yields an empty array
@@ -353,9 +436,13 @@ mod tests {
 
     #[test]
     fn gl_key_lowercases_term_only() {
-        assert_eq!(gl_key("Hello", "zh", "en"), gl_key("hello", "zh", "en"));
-        assert_eq!(gl_key("HELLO", "zh", "en"), gl_key("hello", "zh", "en"));
-        assert_ne!(gl_key("x", "zh", "en"), gl_key("x", "en", "zh"));
+        assert_eq!(gl_key("Hello", "zh", "en", ""), gl_key("hello", "zh", "en", ""));
+        assert_eq!(gl_key("HELLO", "zh", "en", ""), gl_key("hello", "zh", "en", ""));
+        assert_ne!(gl_key("x", "zh", "en", ""), gl_key("x", "en", "zh", ""));
+        // S11: the domain segment distinguishes generic and specific rows for the
+        // same term, so `gl_key("x","zh","en","")` and `gl_key("x","zh","en","av")`
+        // must not collide.
+        assert_ne!(gl_key("x", "zh", "en", ""), gl_key("x", "zh", "en", "av"));
     }
 
     fn temp_dir(tag: &str) -> PathBuf {
