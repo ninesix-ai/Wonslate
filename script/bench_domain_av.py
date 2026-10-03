@@ -258,15 +258,21 @@ def _run_one(engine_id, direction, src, tgt, domain=""):
     return hypotheses, metrics
 
 
-def _write_evidence(engine_id, direction, src, hypotheses, metrics, n):
+def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, domain=""):
     """Persist one engine's run so a later COMET pass or diff report can
-    pick it up. Layout mirrors docs/evidence/flores-benchmark-*.json."""
+    pick it up. Layout mirrors docs/evidence/flores-benchmark-*.json.
+
+    The domain is folded into the filename (empty -> `av-domain-<engine>.json`,
+    non-empty -> `av-domain-<engine>-<domain>.json`) so a baseline run and a
+    scoped run of the same engine coexist for the S12 T3 comparison pass."""
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    out = EVIDENCE_DIR / "av-domain-{}.json".format(engine_id)
+    tag = "-{}".format(domain) if domain else ""
+    out = EVIDENCE_DIR / "av-domain-{}{}.json".format(engine_id, tag)
     import json
     payload = {
         "engine": engine_id,
         "direction": direction,
+        "domain": domain,
         "corpus": "av-domain",
         "requested": n if n is not None else len(src),
         "evaluated": len(src),
@@ -274,21 +280,11 @@ def _write_evidence(engine_id, direction, src, hypotheses, metrics, n):
         "metrics": metrics,
         "samples": [
             {"id": i, "source": s, "reference": r, "hypothesis": h}
-            for i, (s, r, h) in enumerate(zip(src, _read_references(direction), hypotheses))
+            for i, (s, r, h) in enumerate(zip(src, tgt, hypotheses))
         ],
     }
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
-
-
-def _read_references(direction):
-    """Convenience: pull the reference column from the resolved root so
-    _write_evidence does not have to thread it through call sites."""
-    pair_prefix = "av-{}".format(direction)
-    root = resolve_av_root(None)
-    pair_dir = find_pair_dir(root, pair_prefix)
-    _, refs = load_pair(pair_dir, pair_prefix)
-    return refs
 
 
 def main(argv=None):
@@ -307,8 +303,8 @@ def main(argv=None):
         src, tgt = src[:args.n], tgt[:args.n]
     hypotheses, metrics = _run_one(args.engine, args.direction, src, tgt,
                                     args.domain)
-    out = _write_evidence(args.engine, args.direction, src, hypotheses, metrics,
-                          args.n)
+    out = _write_evidence(args.engine, args.direction, src, tgt,
+                          hypotheses, metrics, args.n, args.domain)
     print("wrote", out)
     return 0
 

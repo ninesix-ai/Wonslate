@@ -1,0 +1,15 @@
+{
+  "comment": "Sub-domain line ranges for the AV-domain evaluation corpus. 1-indexed inclusive. Sum = 300. Bench harness writes samples in corpus order, so the range maps directly onto sample IDs in the evidence JSON.",
+  "ranges": [
+    {"name": "流水线核心与信号基础（初版）",       "start": 1,   "end": 30},
+    {"name": "流水线扩展（后处理/Kokoro sid/Whisper 切片）", "start": 31,  "end": 60},
+    {"name": "信号与声码（Nyquist/mel/formant）",  "start": 61,  "end": 85},
+    {"name": "缓冲与流式",                          "start": 86,  "end": 110},
+    {"name": "编解码与容器",                        "start": 111, "end": 135},
+    {"name": "字幕与配音",                          "start": 136, "end": 160},
+    {"name": "多义词边界（buffer/stream/channel...）", "start": 161, "end": 185},
+    {"name": "UI 与项目术语",                       "start": 186, "end": 207},
+    {"name": "翻译技术（NMT/LLM/TM/蒸馏）",         "start": 208, "end": 267},
+    {"name": "批处理与项目工程约束",                "start": 268, "end": 300}
+  ]
+}
