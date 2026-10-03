@@ -226,9 +226,11 @@ def _aggregate(path: pathlib.Path | None) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def generate_report(args) -> tuple[list[dict], dict]:
+def generate_report(args):
     """Read every evidence file, compute the tables, and rewrite the report.
-    Returns the summary rows so main() can print a compact table too."""
+    Returns the summary rows so main() can print a compact table too.
+    An empty list means "declined because there is no evidence"; main()
+    uses that as a signal to exit non-zero in --report-only mode."""
     ranges = _load_ranges()
     engines = list(args.engines)
     baselines = {e: _aggregate(EVIDENCE_DIR / f"av-domain-{e}.json") for e in engines}
@@ -246,7 +248,7 @@ def generate_report(args) -> tuple[list[dict], dict]:
                   "the existing docs/av-domain-benchmark.md stays untouched.\n"
                   "         run the benches first, or pass --force to overwrite "
                   "with an empty table.")
-            return [], {}
+            return []
 
     def _metric(payload, key):
         if not payload:
@@ -452,7 +454,7 @@ def main(argv=None) -> int:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
     if args.report_only:
-        summary, _ = generate_report(args)
+        summary = generate_report(args)
         if not summary:
             # generate_report declined (no evidence). Exit non-zero so a
             # caller chaining on `&&` notices.
@@ -496,7 +498,7 @@ def main(argv=None) -> int:
                     score_comet(base)
                     if scoped:
                         score_comet(scoped)
-        summary, _ = generate_report(args)
+        summary = generate_report(args)
     except subprocess.CalledProcessError as exc:
         print(f"subprocess failed: {exc.cmd} (exit {exc.returncode})", file=sys.stderr)
         return 2
