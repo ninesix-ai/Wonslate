@@ -197,7 +197,10 @@ def run_bench(engine: str, direction: str, domain: str, n: int | None) -> pathli
 
 def score_comet(path: pathlib.Path) -> None:
     _hr(f"COMET scoring: {path.name}")
-    subprocess.check_call([sys.executable, str(SCORE_PY), "--input", str(path)])
+    # score_comet.py takes evidence JSON paths as positional args, not
+    # --input; nargs="+" so a batch is possible, but we call it once per
+    # file so a single crash does not lose the others.
+    subprocess.check_call([sys.executable, str(SCORE_PY), str(path)])
 
 
 def _load_ranges() -> list[dict]:

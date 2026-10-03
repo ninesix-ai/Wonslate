@@ -64,9 +64,24 @@ PAIRS = ("av-zh-en",)
 
 # Engine ids this harness accepts. Must stay in lock-step with the four
 # registered ids in translator-engine/src/engine/mod.rs -- the AI leg
-# is exposed as `ollama-qwen` on the FFI side (engine name as reported),
+# is exposed as `ollama-qwen` on the FFI side (the reported Engine.name()),
 # not by the internal "ollama" id, so callers can see which model ran.
 ENGINES = ("argos", "madlad", "ollama-qwen")
+
+# bench_translation.build_engines uses short ids: "argos", "madlad", "qwen".
+# The FFI's get_engine looks up "argos", "madlad", "ollama". This table
+# translates the user-facing "ollama-qwen" once, so the harness's own
+# surface stays aligned with the FFI's reported name.
+_BT_ID = {"ollama-qwen": "qwen"}
+_FFI_ID = {"ollama-qwen": "ollama"}
+
+
+def _bt_id(engine_id):
+    return _BT_ID.get(engine_id, engine_id)
+
+
+def _ffi_id(engine_id):
+    return _FFI_ID.get(engine_id, engine_id)
 
 
 class AvDataNotFound(Exception):
@@ -87,13 +102,36 @@ def resolve_av_root(explicit_root=None):
 
     A blank or whitespace-only environment value counts as unset, so a
     stray `set WONSLATE_AV_DIR=` cannot resolve the current directory
-    instead -- matches resolve_flores_root in bench_flores.py (S10 T1)."""
+    instead -- matches resolve_flores_root in bench_flores.py (S10 T1).
+
+    A fourth fallback resolves the in-repo starter at ``script/eval-data``
+    whenever the default user-data root has no pair files. That lets a
+    fresh clone run the harness end to end without any manual copy step;
+    users who have already populated the per-OS root (e.g. after
+    expanding the corpus) keep that as the winner because it is checked
+    before the fallback fires.
+    """
     if explicit_root:
         return pathlib.Path(explicit_root)
     from_env = os.environ.get(AV_DIR_ENV, "").strip()
     if from_env:
         return pathlib.Path(from_env)
-    return _default_data_dir() / DEFAULT_AV_SUBDIR
+    default_root = _default_data_dir() / DEFAULT_AV_SUBDIR
+    # Look for a pair file at either layout under default_root
+    # (nested <root>/<prefix>/<prefix>.src or bare <root>/<prefix>.src).
+    def _has_pair(root):
+        for prefix in PAIRS:
+            for candidate in (root / prefix / (prefix + ".src"),
+                              root / (prefix + ".src")):
+                if candidate.is_file():
+                    return True
+        return False
+    if _has_pair(default_root):
+        return default_root
+    starter = ROOT / "script" / "eval-data"
+    if starter.is_dir() and _has_pair(starter):
+        return starter
+    return default_root
 
 
 def _pair_dir_candidates(root, prefix):
@@ -194,7 +232,7 @@ def _translate_via_ffi(engine_id, src_lang, tgt_lang, text, domain=""):
     UI does when the user picks one explicitly."""
     lib = _load_engine_for_translate()
     body = json.dumps({
-        "engine_id": engine_id,
+        "engine_id": _ffi_id(engine_id),
         "input": text,
         "source_lang": src_lang,
         "target_lang": tgt_lang,
@@ -246,15 +284,24 @@ def _run_one(engine_id, direction, src, tgt, domain=""):
     this task does not own."""
     src_lang, tgt_lang = direction.split("-")
     if not domain:
+        from argparse import Namespace
         from bench_translation import build_engines, score  # noqa: WPS433 (lazy)
-        engines = build_engines([engine_id])
-        engine = engines[engine_id]
+        ns = Namespace(engines=[_bt_id(engine_id)],
+                       argos_port=11435, madlad_port=11436,
+                       qwen_port=11434, qwen_model="qwen3:8b")
+        engines = build_engines(ns)
+        engine = engines[0]
         hypotheses = [engine.translate(line, src_lang, tgt_lang) for line in src]
     else:
         from bench_translation import score  # noqa: WPS433 (lazy)
         hypotheses = [_translate_via_ffi(engine_id, src_lang, tgt_lang, line, domain)[0]
                       for line in src]
-    metrics = score(hypotheses, tgt, src_lang=src_lang, tgt_lang=tgt_lang)
+    # bench_translation.score returns a (chrf, bleu) tuple, not a dict;
+    # normalise it here so the evidence JSON has a stable shape that the
+    # report generator can read. score_comet.py adds "comet" to the same
+    # metrics dict after a live run.
+    chrf, bleu = score(hypotheses, tgt, tgt_lang)
+    metrics = {"chrF": chrf, "BLEU": bleu}
     return hypotheses, metrics
 
 
