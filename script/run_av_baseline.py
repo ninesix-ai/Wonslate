@@ -80,6 +80,10 @@ CDLL_PATHS = [
 ]
 
 SIDECAR_PORTS = {"argos": 11435, "madlad": 11436}
+# The bench engine id is not the same string as the sidecar's --backend
+# flag: sidecar/ct2_sidecar.py uses "ct2" for the argos packages and
+# "madlad" for the MADLAD checkpoint. The mapping keeps one source of truth.
+SIDECAR_BACKENDS = {"argos": "ct2", "madlad": "madlad"}
 OLLAMA_URL = "http://127.0.0.1:11434/api/tags"
 OLLAMA_MODEL = "qwen3:8b"
 DIRECTIONS = ("zh-en",)   # the starter corpus is zh->en; en->zh is S12 T2
@@ -149,18 +153,20 @@ def _start_sidecar(engine: str, port: int) -> subprocess.Popen:
     log = open(EVIDENCE_DIR / f"sidecar-{engine}.log", "ab", buffering=0)
     env = os.environ.copy()
     env.setdefault("WONSLATE_ENGINE", engine)
+    backend = SIDECAR_BACKENDS[engine]
     proc = subprocess.Popen(
-        [sys.executable, str(SIDECAR_PY), "--engine", engine, "--port", str(port)],
+        [sys.executable, str(SIDECAR_PY), "--backend", backend, "--port", str(port)],
         stdout=log, stderr=log, cwd=REPO, env=env)
     deadline = time.time() + 120
     while time.time() < deadline:
         if _sidecar_running(port):
-            print(f"  [sidecar] {engine} ready on {port}")
+            print(f"  [sidecar] {engine} ready on {port} (backend={backend})")
             return proc
         if proc.poll() is not None:
             raise SystemExit(
-                f"{engine} sidecar exited early (code {proc.returncode}); "
-                f"see {log.name}")
+                f"{engine} sidecar exited early (code {proc.returncode})\n"
+                f"  command: python {SIDECAR_PY} --backend {backend} --port {port}\n"
+                f"  log:     {log.name}")
         time.sleep(2)
     proc.terminate()
     raise SystemExit(f"{engine} sidecar did not become healthy on {port} in 120s")
