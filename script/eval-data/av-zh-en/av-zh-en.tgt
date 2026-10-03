@@ -28,3 +28,273 @@ A longer GOP lowers bitrate but makes seek response sluggish; live streaming usu
 Word error rate and character error rate are not interchangeable; Chinese benchmarks typically report character error rate.
 FLORES-101 is general domain, still a distributional mismatch with the confidential-document and batch-localization scenarios this product targets.
 The glossary is looked up by language pair; entries with the same source term collide between generic and domain rows, so the primary key needs a domain segment.
+Lowering the voice activity detection threshold cuts breathing into speech segments as well; raising it swallows weak syllables at sentence ends.
+Post-processing for automatic speech recognition usually involves two independent steps: punctuation restoration and number normalization.
+In neural machine translation the encoder squeezes the source sentence into a context vector and the decoder autoregressively generates the target sentence.
+The text-to-speech frontend runs three stages -- tokenization, grapheme-to-phoneme conversion and prosody prediction -- and a failure in any of them hurts naturalness.
+Streaming recognition differs from offline recognition not only in latency but also in the consistency between prefix hypotheses and the final result.
+The most common trade-off when productizing real-time interpretation is "buying accuracy with latency", and the sliding-window size directly determines both.
+A batch localization pipeline must survive a thousand-sentence run for hours without crashing, which makes checkpoint-resume and idempotent retries hard requirements.
+Speech translation and text translation share the same routing: TM hit, privacy clamp, per-language-pair tiering, confidence gating and AI upgrade.
+Endpoint detection is stricter than VAD -- it has to distinguish "sentence finished" from "pause inside a sentence".
+Speaker diarization works well on meeting recordings but degrades visibly on podcasts with overlapping speech.
+Expressive speech synthesis needs an extra prosody conditioning channel and cannot rely on the text frontend alone.
+Zero-shot speaker cloning can start from just five seconds of reference audio but is sensitive to sample rate and signal-to-noise ratio.
+A speech recognition confidence score cannot be lifted directly into a translation confidence score; their calibration curves are entirely different.
+Among Kokoro's Mandarin voices at sid 45-52, 52 handles CJK/Latin code-switching best while 48 sits closer to a broadcast tone.
+Whisper-style models drift on long audio, so the standard slicing policy follows VAD boundaries rather than a fixed 30 seconds.
+The causality constraint in streaming ASR means the current hypothesis cannot look ahead to future frames -- a fundamental difference from offline models.
+Real-time subtitles usually stabilize the prefix and let the suffix float, so a single sentence is not rewritten three times for the reader.
+Batch localization jobs often run overnight, so log aggregation and assertion-style failures must be replayable after the fact.
+End-to-end speech translation collapses ASR, MT and TTS into a single model, trading interpretability for lower latency.
+The audio sample rate and bit depth set the Nyquist ceiling; 16 kHz speech can only carry content below 8 kHz.
+A vocoder inverts the spectrum back into a waveform -- Griffin-Lim is slow and muddy, while neural vocoders are fast and clean.
+Fundamental-frequency estimation usually uses autocorrelation or YIN; both are accurate on voiced segments, but unvoiced segments are noise by definition.
+The first 40 cepstral coefficients already cover most of the spectral detail the human ear can distinguish.
+Down-mixing stereo to mono should normalize by energy rather than average samples, otherwise the phase difference between channels colors the output.
+Silence compression keeps only the segments VAD flags as speech, saving 30 to 50 percent of the length on typical meeting recordings.
+Resampling from 48 kHz to 16 kHz must apply an anti-aliasing low-pass filter first, otherwise high frequencies fold into the speech band.
+Field recordings with a signal-to-noise ratio below 10 dB usually need denoising before being sent to ASR.
+Pre-emphasis filtering lifts high frequencies so that later feature extraction is more sensitive to weak fricatives.
+A Hamming window is standard during framing and noticeably reduces the Gibbs ringing a rectangular window would introduce.
+A 25 fps frame rate is normal for film; 50 fps makes viewers feel it "looks too much like news footage".
+Raising bit depth from 16 to 24 does not increase loudness but improves dynamic range and quantization noise noticeably.
+Audio-video sync has to leave a small buffer skew in the encoding chain -- video is typically about 20 ms behind audio.
+Down-mixing from 5.1 to stereo should use Dolby Pro Logic rather than a straight sum.
+Spectral centroid, zero-crossing rate and energy are enough to separate music from speech.
+The mel scale mirrors the non-linear frequency perception of human hearing; a linear FFT binning does not match psychoacoustics.
+Pitch period and formants are the two most basic concepts in the physical model of speech production.
+Voiceprint recognition and speaker diarization are not the same: the first identifies a fixed set of speakers, the second only clusters without identities.
+Insufficient audio buffering causes dropouts, insufficient video buffering causes frame skips -- different symptoms but the same root cause is backpressure.
+In streaming protocols chunk and packet are often used interchangeably, but for latency accounting they are two different concepts.
+A jitter buffer dynamically retargets delay -- pushing it down to 20 ms when the network is good and stretching it to 200 ms when the network is bad.
+Any throughput bottleneck in a pipeline will back up everything upstream, so the backpressure signal has to propagate all the way to the input.
+TCP retransmission ruins real-time behaviour; low-latency audio and video usually ride on UDP with forward error correction.
+Keyframes spaced too far apart make seeking stutter; too close and the bitrate doubles for the same quality.
+Chunked processing needs 50 percent overlap between adjacent chunks, otherwise the energy estimate jumps at the boundaries.
+Flush means "emit everything currently in the buffer and terminate this segment".
+If backpressure is not designed in an end-to-end pipeline, a slow consumer at the tail stalls the entire chain.
+Buffer prefetch usually counts in frames, not in seconds, because a frame is the atomic unit of the model.
+Streaming synthesis boundaries should land after a word or phrase; cutting at a particle or conjunction is audibly jarring.
+When the datagram transport protocol drops one or two packets, the decoder should gracefully conceal rather than crash.
+Constant bitrate suits broadcast, variable bitrate suits storage -- their buffering models are completely different.
+The container only handles packaging and synchronisation; the codec handles compression. Turning an mkv into an mp4 needs no re-encoding.
+The network abstraction layer of the bitstream carries timing and composition information; missing it leaves the decoder unable to render correctly.
+The encoder must declare its profile and level explicitly so the player can decide whether it can accept this stream.
+Demultiplexing means splitting a container into its video, audio and subtitle tracks without decoding anything.
+Lossless compression entropy-codes the waveform and can restore it bit-for-bit; lossy compression introduces quantization error.
+Transcoding between different source and target codecs must go through a frame buffer for reorder.
+Intra-frame prediction depends only on the current frame; inter-frame prediction references other frames, and the two propagate errors differently.
+A larger motion-estimation search radius is more accurate but slower; 16 pixels is the common default.
+Entropy coding uses Huffman or arithmetic coding -- the latter is slightly more efficient but carries patent and complexity overhead.
+Rate control should be content-aware: lower bitrate for static scenes, higher bitrate for motion-heavy scenes.
+Each generation from AVC to HEVC to VVC roughly halves the bitrate for the same quality but doubles the complexity.
+Opus adapts between 6 and 512 kbps and is the default choice for voice on the internet.
+FLAC compresses losslessly around 5:1 and is suited to archiving masters; MP3 is lossy and should never be secondarily compressed.
+Video subtitles have to handle three independent problems: line-width wrapping, character encoding and missing glyphs.
+SubRip only has timing and text fields, weak styling; ASS adds event and style sections and can express karaoke effects.
+WebVTT is the W3C-defined subtitle format for the web and slots straight into HTML5 players.
+Word-level timestamps require forced-alignment output; ASR alone only provides segment-level timing.
+Subtitle line breaks should follow meaning rather than character count; splitting "audio-video sync" across two lines wrecks readability.
+Burning in subtitles means extracting frames, drawing captions and re-encoding -- each step can add a generation of loss.
+Lip-sync algorithms track mouth keypoints on real people and match frame-by-frame energy envelopes on animation.
+When dubbing, duck the original audio by 12 dB or viewers will miss the new voice.
+Voiceover scenes usually keep a little background ambience; pure silence makes the viewer drop out of the scene.
+Multi-role dubbing must synthesise each speaker separately by diarization result, then remux by timestamp.
+When bilingual subtitles have mismatched segment counts, split segments rather than let them drift out of phase.
+Timeline drift accumulates on long videos; check the anchors by hand every ten minutes.
+Extracting an audio track usually uses ffmpeg's -vn flag; the cost is remuxing, not re-encoding.
+Embedding subtitles into the video stream lets even non-subtitle players display them, at the cost of losing the on/off toggle.
+Remuxing a video where the codec has not changed can copy packet-by-packet and finish in seconds.
+Frame-accurate subtitle alignment requires millisecond timestamps; segment-level accuracy is not enough for fast speech.
+SMPTE 12-hour timecode has drop-frame and non-drop-frame variants at 30 fps; state which one when synchronising across systems.
+Dubbing scripts must match the duration of the original video; when writing translations, estimate the syllable budget from visible mouth openness.
+A model checkpoint should store weights, optimiser state and the tokenizer together, so resuming training and inference are both easy.
+Subword tokenization breaks unknown words into combinable pieces; vocabulary size and merge granularity are directly related.
+Byte-pair encoding starts from characters and repeatedly merges the most frequent pairs, producing a vocabulary optimised for that corpus.
+Word embeddings map symbols into continuous space so that semantically similar words lie close together in the vector space.
+Attention allows the decoder at every step to softly inspect every position in the source sentence.
+The Transformer replaces recurrence with self-attention -- high parallelism during training, but KV-cache cost at inference time.
+Quantising to int8 shrinks the model to about a third of its size; the speed gain depends on hardware and operators.
+Half-precision fp16 keeps the dynamic range of floats and is used heavily in training; int8 is used heavily in inference.
+Knowledge distillation feeds the soft labels of a large model into a small model so the latter approaches the former's accuracy.
+The teacher might have 30B parameters and the student only 1B; a distilled student loses surprisingly little on a narrow task.
+Fine-tuning continues training on a domain-specific corpus at a much lower learning rate than pretraining.
+LoRA only trains two low-rank matrices, less than one percent of the base model's parameter count.
+At inference time, larger batch size raises throughput but also latency; realtime pipelines usually lock batch=1.
+More threads are not always better; ONNX's inter-op and intra-op thread counts have to be tuned separately.
+Operator fusion collapses several small operators into one, reducing memory round-trips and scheduling overhead.
+Computation-graph optimisation is the core work of an inference framework; graph partitioning decides which operators stay on CPU and which move to GPU.
+Choosing the runtime provider matters a lot -- the same model can be 5 to 10 times faster on CUDA than on CPU.
+When VRAM is insufficient Ollama offloads some layers to main memory; throughput collapses but the process survives.
+The product of batch size and sequence length determines the VRAM cost of the KV cache.
+A multilingual model covers more than a hundred languages with one set of weights, and quality on cold pairs is usually much lower than on hot pairs.
+The tokenizer and the model's vocabulary must match exactly; a mismatch produces garbled output without raising an error.
+Temperature sampling flattens the probability distribution and yields more varied output, but translation typically wants lower temperature.
+The context window is a hard constraint on the LLM; long documents must be truncated or fed one sentence at a time.
+Listing the glossary explicitly inside the system prompt significantly reduces terminology errors but consumes input tokens.
+Few-shot examples put the user's preferred rendering directly in front of the model, which beats any abstract instruction.
+Glossaries must be filtered by the current request's language pair and domain; feeding irrelevant rows only dilutes attention.
+Translation memory matches exactly -- a hit is zero-cost; fuzzy matching is a different problem and brings ranking noise.
+Confidence gating is the switch between local output and AI upgrade; too permissive a threshold wastes API calls.
+The quality score records each TM entry's historical reliability -- AI writes at 0.95, local estimates its own, manual writes 1.0.
+Fallback degradation must carry a reason so the caller can tell "could not translate" apart from "translated wrong but degraded anyway".
+No silent degradation is this product's hard constraint: every fallback must be written into the message field.
+Distillation extracts terms from AI quality translations and feeds them back into local engines, forming a "cheaper the more you use it" flywheel.
+Hit rate and quality score fight each other -- repeatedly hitting a low-quality memory pair poisons the output.
+The LRU cache should reserve a hit-rate threshold as the warm-up signal; the cold-start phase must not evict too aggressively.
+End-to-end evaluation samples must cover three scenarios: perfect hit, cache-quality-refused re-translation, and cold translation without cache.
+Neural machine translation is extremely sensitive to the training domain -- a model trained on Wikipedia drops heavily when used on meeting transcripts.
+A large language model can translate proper nouns in a cold start using world knowledge, but without term injection the same term can drift across a long document.
+Statistical machine translation relies on phrase tables and aligned corpora; harder to maintain in production but latency is predictable.
+The real-time factor RTF is the model's compute cost divided by the audio length; only RTF below 1 makes realtime feasible.
+Time-to-first-token decides the user's gut feeling of "fast"; total time decides whether they can "wait".
+Wall-clock time is measured end-to-end and includes queuing and network round-trips; it is not the same as CPU time.
+The first inference during a cold start loads weights and builds the computation graph, taking an order of magnitude longer than steady state.
+Warmup usually fires a few synthetic requests to bring weights from disk into memory and to trigger lazy graph optimisation.
+Memory footprint is a hard constraint for desktop products -- users will accept CPU slowness but not OOM.
+Queries per second is a server metric and says little about a single-machine desktop product.
+Profiling must separate inference time, codec time and I/O time, otherwise optimisation ends up targeting the wrong thing.
+End-to-end throughput is capped by the slowest stage; find the bottleneck before optimising.
+Benchmarks must pin the seed and the sampling policy, otherwise two runs on the same model are not comparable.
+Latency measurements are ruined by concurrent downloads or antivirus scans; run them on an idle machine.
+In AV context a buffer is an audio buffer; in chemistry it is a buffer solution.
+A stream in streaming synthesis is a data stream; in statistics it is a data stream too, but in geography it is a brook.
+A channel in audio is a channel; in a message queue it is a channel; in marketing it is also a channel -- different meanings.
+A segment in VAD is a speech segment; in business it is a market segment; in geometry it is a line segment.
+In TTS, voice most often means the speaker's timbre, not the physical sense of sound.
+Speech emphasises spoken language and the acoustic signal; voice leans toward the voice quality and the speaking subject.
+Frame means frame in the codec context and also frame in the picture/window context -- only surrounding text disambiguates.
+Sample in audio is a discrete sample; in statistics it is a sampled unit -- the English word is the same.
+Model in machine learning is a trained predictor; in fashion or scale cars it is also a model.
+Pitch in speech is fundamental frequency; in baseball it is a throw; in business it is a proposal.
+Prosody appears only in phonetics -- a pure domain anchor.
+Vocoder is unique to speech engineering ("声码器"); most users will not recognise it, so the UI has to explain.
+Diarization means speaker separation; combined with recognition it answers "who said what when".
+Alignment in subtitle context is temporal alignment; in NLP it is cross-lingual alignment; in geometry it is arrangement.
+Decoder is a hardware or software component in the codec sense, and also the second half of an NMT model -- related meaning, different implementation.
+Encoder and decoder are symmetric; in neural networks both share the name, but in engineering one may be software and the other hardware.
+A codec is encoder plus decoder fused; the word is usually restricted to the compression domain.
+In video engineering a container is a container format (mkv/mp4); in software deployment a container is a Docker container.
+In real-time audio and video, latency is the sum of network and decoding delays; in computer architecture it is pipeline latency.
+Jitter means network jitter in one context and clock jitter in another -- the mechanisms differ and translation must separate them.
+Throughput and bandwidth are often conflated; the first is achieved work, the second is the theoretical ceiling.
+Chunk, packet and frame are three different granularities in streaming media and cannot all be translated as "块".
+In the LLM domain a prompt is an instruction to the model; in the OS shell it is a command prompt -- entirely different meanings.
+A token in NLP is a subword unit; in authentication it is an access token.
+Transcode re-encodes; remux only rewraps. Their quality loss profiles differ fundamentally.
+Burn-in hard-codes subtitles into the pixels; overlay draws them at render time. They sit at different stages of the pipeline.
+When recording, check microphone gain before system volume -- clipping at the input cannot be undone by any algorithm.
+Switching the output speaker on Windows rebuilds the audio graph, and many applications drop a frame during the change.
+Dragging the playhead should explicitly seek to a keyframe; otherwise viewers see a block of corrupted frames during the transition.
+The preview pane renders soft subtitles by default; hard-burn is an explicit export option.
+The timeline panel supports frame-level nudge -- left and right arrows step exactly one frame.
+Cut silence before exporting an edit, otherwise the final piece has meaningless gaps.
+When importing AV footage, explicitly pick the frame-rate interpretation policy -- mixed-source clips drop frames otherwise.
+The waveform view lets the user hand-tune VAD boundaries, which is invaluable when the auto-segmentation mis-cuts.
+When exporting bilingual subtitles, keep independent timestamps for each track -- sharing one drifts fast.
+On machines with high preview latency, loosen the VAD threshold so users see the rough segmentation before refining.
+Detect sample rate and bit depth on import; if they mismatch, offer a resampling choice instead of silently converting.
+The local engine matrix covers three real engines -- argos, madlad and ollama -- plus a built-in demo as the last fallback.
+The sidecar binds only to 127.0.0.1 to enforce the privacy invariant: no external process can touch this machine's translation stream.
+Language-pair tiering decides which engine runs; some cold pairs have no local engine at all.
+When delivering the offline bundle, ship weights, vocabularies and configuration together -- the user's first launch should not need network access.
+Quality mode and realtime mode differ not in speed but in budget: one permits AI upgrade, the other does not.
+The quality-preference toggle steers the upgrade policy of quality mode, choosing between "quality first" and "cost first".
+Fallback states explicitly that "the local model for this pair is missing", prompting the user to download rather than assume the product is broken.
+Every layer of the translation pipeline is observable: TM hit, privacy clamp, language-pair tiering, local engine, AI upgrade and confidence gating.
+The model-licence matrix is part of the outward commitment -- Silero MIT, SenseVoice MIT, Kokoro Apache-2.0 and Argos MIT all clear.
+Execution providers are tiered by operating system: Windows prefers CUDA or DirectML, macOS prefers CoreML, Linux prefers CUDA.
+The training target of neural machine translation is to minimise cross-entropy, which only partially aligns with the human intuition of "faithfulness, expressiveness, elegance".
+Translation memory and glossary solve different problems: the first reuses whole-sentence history, the second constrains word-level rendering.
+Confidence should be bound to the translation itself, not to the engine -- the same model can drift across batches.
+A fallback path must preserve request context so the next layer can see why the previous one did not run.
+No-silent-degradation requires the response message to carry the full causal chain so the caller can decide to retry or prompt the user.
+The context window is a hard constraint on the LLM; long documents must be truncated or fed one sentence at a time, never stuffed whole.
+More few-shot examples are not always better -- five high-quality examples often beat twenty low-quality ones.
+The distillation store threshold determines glossary signal-to-noise; too permissive lets wrong terms pollute every subsequent request.
+Term injection into the prompt must specify format explicitly, otherwise the model reads the Chinese terms as explanatory prose.
+A multilingual model's performance on cold pairs is bound by training corpus size, not model capacity.
+Neural machine translation's tokenizer is bound to its training corpus; using it on a different corpus makes the vocabulary hit rate collapse.
+A large language model can do machine translation but is sensitive to prompt engineering -- the same source sentence can differ by a tier depending on the prompt.
+Automatic evaluation cannot replace human evaluation; on narrow domains the correlation between chrF/BLEU/COMET and human judgement drops noticeably.
+Phrase tables in statistical machine translation degrade badly for pairs with large word-order gaps, e.g. Chinese to Finnish.
+Fuzzy match over translation memory sorts by edit distance or semantic distance; the returned top-k must stay small to avoid noise.
+Confidence gating has to be stricter in realtime mode because realtime does not allow upgrade, and looser in quality mode because AI provides a floor.
+Term injection behaves differently on local engines versus LLMs: local treats it as a hard constraint, LLMs integrate it into context before deciding.
+Distillation output must distinguish "user confirmed" from "machine extracted"; the first can overwrite the second, not the other way round.
+Hit rate and latency are usually positively correlated -- a higher hit rate means more repeated content and faster cached paths.
+In end-to-end speech translation, ASR errors propagate into MT and then into TTS, so segment-level evaluation has to run independently.
+Attention visualisation reveals which part of the source the model "looked at" but is not the same as interpretability.
+Whether translation memory uses last-write-wins or best-quality-wins yields entirely different product semantics.
+Prompt injection is one source of privacy risk for LLMs; glossary content must never include executable instructions.
+A translation engine's fallback is not a simple "return original on failure" -- it must state why the translation did not happen.
+End-to-end evaluation samples must cover short, medium and long sentences -- short polysemy and long complex sentences fail in different ways.
+User-locked entries have the highest priority: neither distillation nor seed-pack imports may overwrite them unless the user explicitly unlocks them.
+Microphone gain that is too high produces clipped waveforms with no recognisable content and degrades ASR visibly.
+Loudness normalisation for loudspeaker output must happen before encoding, not after decoding, or the dynamic range is lost.
+Silence trimming must follow VAD decisions rather than a naive energy threshold on the raw waveform.
+Cross-segment playhead jumps must trigger a flush, otherwise the previous segment's audio stays in the buffer.
+The timeline panel must distinguish video frame indices from audio sample indices; converting between them depends on frame rate and sample rate.
+Importing a subtitle file that contains a BOM must detect and strip it, or the first line carries an invisible character.
+SRT export needs millisecond precision; ASS uses centiseconds -- the two formats are not interchangeable.
+The preview pane renders soft subtitles so users can toggle tracks; the export option must stay decoupled from this choice.
+When exporting an edit that only changes timing and not content, remuxing is enough -- do not introduce unnecessary re-encoding.
+Waveform and spectrogram views are complementary: the first shows energy distribution, the second shows frequency distribution.
+Beam-forming on a microphone array markedly improves signal-to-noise for distant speakers, provided sample sync is preserved.
+Before export, verify sample rate, channels and bit depth in one pass and prompt on mismatch.
+Audio format conversion must let the caller choose whether to resample, and resampling must declare whether to use a high-quality filter.
+Every outward-published number in this project must trace back to a measured run; estimates are labelled "estimated" without exception.
+The sidecar binds only to the local loopback, and any external exposure would violate the privacy invariant explicitly.
+Language-pair tiering decides which engine runs; cold pairs may not have any local engine at all.
+When delivering an offline bundle the customer environment might be an air-gapped network, so neither models nor vocabularies may rely on runtime download.
+Quality mode promises "escalate to AI when reachable", not "stay local forever".
+The latency budget in realtime mode is a hard constraint; anything that would break it, AI upgrade included, must be explicitly disabled.
+The quality-preference toggle is a two-way choice in settings; changes take effect only on restart so routing cannot mutate mid-flight.
+Fallback must distinguish "local model missing" from "external engine unreachable"; the first invites a download, the second a retry.
+The model-licence matrix is part of the outward commitment; every new dependency goes through the licence gate.
+Execution-provider selection must go through environment variables, never hard-coded in source.
+Routing is observable: every translation exposes its route_plan over the diagnostics interface.
+Local engines and cloud engines are a hard boundary; privacy mode closes every path across that boundary.
+The translation pipeline is data-driven: routes can be edited, and any unknown configuration key is echoed back rather than silently dropped.
+Confidence estimation is not a raw model probability; it is a synthesis of quality heuristics, and the product says so.
+The end-to-end speech loop caps around 500 MB of model weight; anything larger is unfit for a first-launch download.
+Real-time interpretation products in the demo phase say "transcription plus translation"; promising "interpretation" is a narrative-discipline violation.
+A batch localization pipeline should be able to import mp4, extract audio, run ASR, translate, and write soft subtitles back -- all four steps interruptible and resumable.
+Confidential-document scenarios require every local component to be obtainable offline; network features must be globally disableable.
+The desktop client shows which engine actually ran each translation -- transparent traceability is a baseline promise of this product.
+Translation memory exports must be portable and shareable; but glossary seed packs must not carry user-private entries.
+End-to-end latency is the sum of VAD, ASR, MT and TTS; degradation in any one of them lands squarely on the user's face.
+Batch job logs must persist per sentence, so a failed rerun can resume precisely at the erroring item rather than start over.
+Long-document translation is fed segment-by-segment or section-by-section, and cross-segment consistency is carried by translation memory plus glossary.
+Localising a multi-speaker podcast first routes each diarised speaker into their own synthesis channel, then rejoins them along the timeline.
+Confidential clients typically require on-premise delivery of batch localization, and any telemetry must be globally disableable.
+The glossary import endpoint enforces pack-level domain, source_lang and target_lang to prevent polluting the generic table.
+The request's domain field propagates into the TM hit check, so cross-domain memory is refused to avoid context mis-fit.
+The distillation worker is asynchronous; when its queue is full it drops candidates rather than blocking the main path -- a deliberate latency-over-completeness choice.
+The routing table is data-driven with four precedence levels in order: routes.json < settings.json < environment variables < initialisation JSON.
+End-to-end evaluation samples carry sub-domain labels so per-group quality deltas ("pipeline core vs polysemy boundary") can be computed.
+The performance metric for batch localisation is sentences per hour; the realtime metric is end-to-end milliseconds -- two completely different scales.
+The first-launch experience of a desktop product matters: missing models must surface as a friendly UI message, not an exception.
+Local model downloads must show progress and support resumable fetch; hundreds of megabytes to gigabytes are not worth restarting from zero.
+Switching between quality and realtime mode happens per request; a single batch can freely mix them without a global toggle.
+The sidecar's lifecycle is managed by the UI layer -- health-poll on startup, graceful kill on shutdown.
+The contract between the Python sidecar and the Rust core is HTTP over JSON, with native bindings forbidden so no new dependency burden creeps in.
+Windows Smart App Control intercepts unsigned locally built DLLs, so product signing must cover every binary shipped.
+The licence gate covers Cargo.lock, Python requirements, .NET csproj files, and any third-party material referenced from the docs.
+Source-code comments are English throughout; user-facing documentation is Chinese with an English twin linked from the README.
+Every externally published number must trace back to a reproducible evaluation run -- script, seed and timestamp included.
+Docs must not carry machine drive paths; every default path resolves through data_dir.
+Build entry points are Python scripts, with a thin .bat on Windows and .sh on Linux as OS-level wrappers.
+The pre-commit hook dispatches different checks by file path and only allows a commit when every applicable check passes.
+Conventional Commits is the message convention: type(scope): subject says "what changed in which part" in a single line.
+Pathspec-scoped commits are the atomicity guarantee in concurrent collaboration; a shared staging area is easily swept by another session's commit.
+Patch files must state their line-ending policy explicitly; under autocrlf=true on Windows a checkout may otherwise break git apply.
+"缓存" is cache in a CDN context but buffer in a video buffering context; conflating them misleads the reader.
+"编码器" and "加密器" are near-homographs in Chinese but encoder and encryptor in English -- the translation must not slide.
+"解码器" and "解密器" are equally confusable: decoder versus decryptor -- decide by compression domain or security domain.
+A video keyframe and an animation keyframe share the Chinese term "关键帧" but denote different things.
+"声道" and "通道" both render as channel in English; the UI must pick one explicitly by domain rather than default.
+"分词" is tokenization in NLP but may be word segmentation in Chinese text processing -- the two operate at different granularity.
+"重采样" in audio is resampling; in statistics it is bootstrap sampling -- the surrounding domain decides the rendering.
+"预训练" and "预热" both start with "pre-" in Chinese, but they are pretraining and warmup in English -- completely different engineering meanings.
