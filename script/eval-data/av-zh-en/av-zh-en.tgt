@@ -1,0 +1,30 @@
+With streaming synthesis enabled, the time to first playable audio drops below 800 milliseconds.
+The VAD model split this recording into three speech segments and dropped the silent parts.
+After int8 quantization, Kokoro v1.1 ships at roughly 320 MB and Mandarin naturalness is close to usable.
+SenseVoice's automatic language detection is not very stable on Cantonese-Mandarin code-switched speech.
+The realtime mode runs through argos with end-to-end latency around 200 ms, fast enough for face-to-face scenarios.
+The quality mode chains madlad and ollama and prioritizes accuracy over a latency budget.
+Privacy mode is a hard invariant: no configuration can route cloud engines into the pipeline.
+Once the translation memory hit rate passes thirty percent, cost is essentially a one-time model expense.
+A buffer that is too small causes stuttering; one that is too large inflates end-to-end latency.
+The sample rate and bit depth of audio determine the volume of raw waveform data.
+Mono 16 kHz 16-bit is the most common input format for automatic speech recognition.
+Stereo dual-channel audio is usually down-mixed to mono before being fed to the ASR model in a dubbing workflow.
+A frame size of 25 ms and a frame shift of 10 ms is the standard setup for acoustic feature extraction.
+The mel spectrogram is the key intermediate representation that turns a waveform into something the model can read.
+Forced alignment lines up the reference text and the recognition output word by word, used to generate timestamps.
+Inverse text normalization converts "two thousand twenty-six" into "2026" so downstream parsing is simpler.
+In code-switched sentences, domain terminology should be pulled from the glossary rather than left to the model's imagination.
+Prompt injection into Ollama must explicitly disable thinking mode, otherwise the time to first token doubles.
+The CUDA provider gives TTS roughly a three-times speedup on this RTX 4050.
+Running a 3B int8 model on CPU is realistically 2 to 4 seconds per sentence, not fit for realtime scenarios.
+The subtitle track exported as SRT can be read directly by players without re-encoding the video.
+Bilingual subtitles require timing alignment: the Chinese and English lines must share the same time window.
+Burned-in subtitles are part of the picture, so editing them later requires re-encoding; soft subtitles can be swapped at any time.
+Dubbing and lip sync are separate concerns: the first replaces the audio, the second keeps the picture in sync.
+Audio-video sync error within 40 milliseconds is imperceptible to human viewers.
+A higher quantization parameter means a smaller bitrate but worse quality; the trade-off has to be tuned.
+A longer GOP lowers bitrate but makes seek response sluggish; live streaming usually caps it at two seconds.
+Word error rate and character error rate are not interchangeable; Chinese benchmarks typically report character error rate.
+FLORES-101 is general domain, still a distributional mismatch with the confidential-document and batch-localization scenarios this product targets.
+The glossary is looked up by language pair; entries with the same source term collide between generic and domain rows, so the primary key needs a domain segment.
