@@ -79,6 +79,20 @@ _待填。argos 的 prompt 注入路径与 madlad/qwen 不同（Marian 不读术
 
 ## 4. 复现命令
 
+**一键方式（推荐）**：先确保 sidecar 已拉模且 ollama 已启，然后双击 `run_av_baseline.bat`（Windows）或 `./run_av_baseline.sh`（Linux/macOS）。脚本会：体检环境 → 自动拉起 argos/madlad sidecar（已在则复用）→ `install_glossary_pack --domain av` → 三引擎各跑两轮 bench（baseline / scoped）→ COMET 打分 → **自动把数字回填本文件**。
+
+可选粒度：
+
+```bash
+python script/run_av_baseline.py --preflight-only   # 只体检
+python script/run_av_baseline.py --quick           # 前 20 句冒烟（跳 COMET）
+python script/run_av_baseline.py --report-only     # 从现有 evidence 重出报告
+python script/run_av_baseline.py --skip-comet      # 不跑 COMET（CPU 上很省）
+python script/run_av_baseline.py --engines argos,madlad  # 子集引擎
+```
+
+手工方式（想逐步骤看）：
+
 前提：
 
 ```bash
