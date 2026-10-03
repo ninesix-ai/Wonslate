@@ -28,6 +28,22 @@ fn host_of(url: &str) -> Option<String> {
     parse_url(url).map(|(h, _, _)| h)
 }
 
+/// Can a TCP connection be established at all? A connect-only liveness probe.
+///
+/// Used to decide whether an AI upgrade is worth attempting: a full request against a
+/// port nobody listens on costs the whole configured timeout (measured 1036 ms with a
+/// 1 s budget, and the default budget is 120 s), and the caller would learn nothing
+/// except that the service is down. Keep `timeout` short for the same reason.
+pub fn probe(url: &str, timeout: Duration) -> bool {
+    let Some((host, port, _)) = parse_url(url) else {
+        return false;
+    };
+    match format!("{}:{}", host, port).parse() {
+        Ok(addr) => std::net::TcpStream::connect_timeout(&addr, timeout).is_ok(),
+        Err(_) => false,
+    }
+}
+
 /// Assemble HTTP/1.1 request bytes (POST when a body is present, GET otherwise).
 pub fn build_http_post(url: &str, body: &[u8]) -> Option<Vec<u8>> {
     let (_, _, path) = parse_url(url)?;
@@ -103,6 +119,26 @@ mod tests {
         let s = String::from_utf8(req).unwrap();
         assert!(s.contains("POST /v1/chat/completions"));
         assert!(s.contains("Content-Length: 2"));
+    }
+
+    #[test]
+    fn probe_reports_a_listening_socket_and_a_closed_one() {
+        // The gate that stops an upgrade attempt against a service nobody runs. A real
+        // listener makes the positive case deterministic instead of depending on
+        // whatever happens to be listening on the machine.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+
+        assert!(probe(&url, Duration::from_millis(500)), "a listening socket is reachable");
+
+        drop(listener);
+        assert!(!probe(&url, Duration::from_millis(200)), "a closed port is not");
+    }
+
+    #[test]
+    fn probe_is_false_for_unparsable_or_non_http_urls() {
+        assert!(!probe("not-a-url", Duration::from_millis(50)));
+        assert!(!probe("https://127.0.0.1:443", Duration::from_millis(50)));
     }
 
     #[test]

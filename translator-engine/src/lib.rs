@@ -27,6 +27,7 @@ pub mod types;
 pub mod config;
 pub mod router;
 pub mod confidence;
+mod lang;
 pub mod glossary;
 pub mod tm;
 pub mod distill;
@@ -42,6 +43,8 @@ use types::TranslateRequest;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PANIC_JSON: &str = r#"{"ok":false,"engine":"unknown","error":"PANIC","message":"engine panicked","source":"fallback","latency_ms":0,"confidence":0.0}"#;
+/// Ack shape for write-only endpoints (no payload beyond success).
+const OK_JSON: &str = r#"{"ok":true}"#;
 
 // ---- Internal helpers ----------------------------------------------------
 
@@ -113,11 +116,14 @@ pub extern "C" fn tt_free_string(ptr: *mut c_char) {
 #[no_mangle]
 pub extern "C" fn tt_init(config_json: *const c_char) -> *mut c_char {
     let result = catch_unwind(AssertUnwindSafe(|| {
-        // Read the optional custom config_json (ignored in the MVP; file/embedded defaults are used directly)
-        let _raw = unsafe { read_cstr(config_json) }.unwrap_or_else(|| "{}".into());
+        // The caller's config_json is consumed, not decorative: routing overrides in it
+        // outrank the file and the environment. Keys this layer does not understand come
+        // back in the ack, because an embedding app that believes a setting took effect
+        // when it did not is worse off than one that is told to drop it.
+        let raw = unsafe { read_cstr(config_json) }.unwrap_or_else(|| "{}".into());
 
         config::ensure_dirs().ok();
-        config::load();
+        let ignored_keys = config::load_with(Some(&raw));
 
         let data_dir = config::data_dir().join("data");
         let (cache_sz, warmup_n) = (config::get().tm_cache_size, config::get().tm_warmup_n);
@@ -126,8 +132,28 @@ pub extern "C" fn tt_init(config_json: *const c_char) -> *mut c_char {
 
         distill::init();
 
-        serde_json::json!({"ok": true, "version": VERSION}).to_string()
+        if ignored_keys.is_empty() {
+            serde_json::json!({"ok": true, "version": VERSION}).to_string()
+        } else {
+            serde_json::json!({
+                "ok": true,
+                "version": VERSION,
+                "ignored_config_keys": ignored_keys,
+            }).to_string()
+        }
     }));
+    to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))
+}
+
+/// The routing that is actually in effect, plus which files and environment variables
+/// produced it. Read-only, no arguments; safe to call after `tt_init`.
+///
+/// The settings UI needs this to answer "why is it still doing X after I changed the
+/// setting": with four layers involved, the honest answer is usually an environment
+/// variable or a deployment file, and both are named here.
+#[no_mangle]
+pub extern "C" fn tt_config_json() -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| config::effective_routing().to_string()));
     to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))
 }
 
@@ -202,10 +228,96 @@ pub extern "C" fn tt_tm_put(entry_json: *const c_char) -> *mut c_char {
         match serde_json::from_str::<serde_json::Value>(&raw) {
             Ok(v) => {
                 let entry = types::TmEntry::from_json(&v);
-                tm::put(&entry).map(|_| r#"{"ok":true}"#.to_string())
+                tm::put(&entry).map(|_| OK_JSON.to_string())
                     .unwrap_or_else(|e| e.to_json().to_string())
             }
             Err(e) => EngineError::InvalidInput(e.to_string()).to_json().to_string(),
+        }
+    }));
+    to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))
+}
+
+/// Mark one TM entry as bad (soft delete): it stops being returned by lookups and
+/// disappears from tt_tm_list, while the record stays on disk for later inspection.
+/// Returns {"ok":true}; the write is a no-op when the entry is unknown.
+#[no_mangle]
+pub extern "C" fn tt_tm_flag_bad(
+    text: *const c_char,
+    source_lang: *const c_char,
+    target_lang: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let t = unsafe { read_cstr(text) }.unwrap_or_default();
+        let s = unsafe { read_cstr(source_lang) }.unwrap_or_default();
+        let g = unsafe { read_cstr(target_lang) }.unwrap_or_default();
+        match tm::flag_bad(&t, &s, &g) {
+            Ok(())  => OK_JSON.to_string(),
+            Err(e)  => e.to_json().to_string(),
+        }
+    }));
+    to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))
+}
+
+/// List the active TM entries of one language pair (JSON array, most-hit first).
+/// Backs the UI TM manager; `limit` is clamped to a sane maximum.
+#[no_mangle]
+pub extern "C" fn tt_tm_list(
+    source_lang: *const c_char,
+    target_lang: *const c_char,
+    limit: u32,
+) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let s = unsafe { read_cstr(source_lang) }.unwrap_or_default();
+        let t = unsafe { read_cstr(target_lang) }.unwrap_or_default();
+        let n = (limit as usize).clamp(1, 1000);
+        match tm::list(&s, &t, n) {
+            Ok(entries) => {
+                let vals: Vec<serde_json::Value> = entries.iter().map(|e| e.to_json()).collect();
+                serde_json::to_string(&vals).unwrap_or_else(|_| "[]".into())
+            }
+            Err(e) => e.to_json().to_string(),
+        }
+    }));
+    to_c_string(&result.unwrap_or_else(|_| "[]".to_string()))
+}
+
+/// Insert or update one glossary term (user edit; the caller's confidence wins).
+/// entry_json shape: {"source_term":"...","source_lang":"zh","target_term":"...","target_lang":"en","confidence":1.0,"frequency":1,"domain":""}
+#[no_mangle]
+pub extern "C" fn tt_glossary_upsert(entry_json: *const c_char) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let raw = unsafe { read_cstr(entry_json) }.unwrap_or_default();
+        match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(v) => {
+                let mut entry = types::GlossaryEntry::from_json(&v);
+                // Provenance is decided here, not by the caller: anything arriving through
+                // this endpoint is a user edit and must be distinguishable from a
+                // machine-extracted term when the glossary is reviewed.
+                entry.source = "manual".into();
+                tm::glossary_upsert(&entry)
+                    .map(|_| OK_JSON.to_string())
+                    .unwrap_or_else(|e| e.to_json().to_string())
+            }
+            Err(e) => EngineError::InvalidInput(e.to_string()).to_json().to_string(),
+        }
+    }));
+    to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))
+}
+
+/// Delete one glossary term by its (source_term, source_lang, target_lang) key.
+#[no_mangle]
+pub extern "C" fn tt_glossary_delete(
+    source_term: *const c_char,
+    source_lang: *const c_char,
+    target_lang: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let term = unsafe { read_cstr(source_term) }.unwrap_or_default();
+        let s = unsafe { read_cstr(source_lang) }.unwrap_or_default();
+        let t = unsafe { read_cstr(target_lang) }.unwrap_or_default();
+        match tm::glossary_delete(&term, &s, &t) {
+            Ok(())  => OK_JSON.to_string(),
+            Err(e)  => e.to_json().to_string(),
         }
     }));
     to_c_string(&result.unwrap_or_else(|_| PANIC_JSON.to_string()))

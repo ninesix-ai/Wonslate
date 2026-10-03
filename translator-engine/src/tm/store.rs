@@ -195,6 +195,23 @@ impl TmStore {
         Ok(results.into_iter().take(limit).map(|r| r.entry.clone()).collect())
     }
 
+    /// List the active (not flagged) entries of one language pair, most-hit first.
+    /// Powers the UI TM manager; flagged entries stay hidden so a "marked bad"
+    /// pair cannot silently reappear in the list the user just corrected.
+    pub fn tm_list(
+        &self, source_lang: &str, target_lang: &str, limit: usize,
+    ) -> Result<Vec<TmEntry>, EngineError> {
+        let idx = self.tm_index.read()
+            .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
+        let mut v: Vec<&TmRecord> = idx.values()
+            .filter(|r| !r.flagged
+                && r.entry.source_lang == source_lang
+                && r.entry.target_lang == target_lang)
+            .collect();
+        v.sort_by_key(|r| std::cmp::Reverse(r.entry.hit_count));
+        Ok(v.into_iter().take(limit).map(|r| r.entry.clone()).collect())
+    }
+
     pub fn tm_total(&self) -> Result<u64, EngineError> {
         let idx = self.tm_index.read()
             .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;

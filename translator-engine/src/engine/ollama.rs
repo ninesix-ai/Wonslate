@@ -17,7 +17,21 @@
 
 use super::{http, Translator};
 use crate::glossary::GlossaryContext;
-use std::time::Duration;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+/// How long a reachability answer is trusted. Long enough that a 10k-request run does
+/// not open 10k probe connections, short enough that starting Ollama is noticed
+/// promptly without restarting the process.
+const PROBE_TTL: Duration = Duration::from_secs(5);
+/// Connect budget for the probe. Deliberately short: this call sits in front of every
+/// request that might escalate, so a black-holed host must not reintroduce the stall
+/// the probe exists to prevent.
+const PROBE_TIMEOUT: Duration = Duration::from_millis(200);
+
+/// (url, reachable, when) for the last probe. Reachability is a property of the machine,
+/// not of one request, so caching it process-wide is the point.
+static PROBE_CACHE: OnceLock<Mutex<Option<(String, bool, Instant)>>> = OnceLock::new();
 
 /// Default Ollama base URL.
 pub const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
@@ -145,6 +159,10 @@ impl Translator for OllamaTranslator {
     ) -> Option<String> {
         self.do_translate(text, source, target, glossary)
     }
+
+    fn is_reachable(&self) -> bool {
+        self.probe_reachable()
+    }
 }
 
 impl OllamaTranslator {
@@ -168,6 +186,28 @@ impl OllamaTranslator {
             return None;
         }
         Some(cleaned)
+    }
+
+    /// Cached TCP liveness probe against the configured base URL.
+    ///
+    /// A poisoned lock is treated as "no cache" rather than a failure: the probe is
+    /// advisory, and answering `false` because a lock broke would silently disable
+    /// escalation.
+    fn probe_reachable(&self) -> bool {
+        let cache = PROBE_CACHE.get_or_init(|| Mutex::new(None));
+        if let Ok(guard) = cache.lock() {
+            if let Some((url, ok, at)) = guard.as_ref() {
+                if *url == self.url && at.elapsed() < PROBE_TTL {
+                    return *ok;
+                }
+            }
+        }
+
+        let ok = http::probe(&self.url, PROBE_TIMEOUT);
+        if let Ok(mut guard) = cache.lock() {
+            *guard = Some((self.url.clone(), ok, Instant::now()));
+        }
+        ok
     }
 
     /// Build the system prompt with term injection (level 2: few-shot examples)

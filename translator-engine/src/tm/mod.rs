@@ -93,6 +93,17 @@ pub fn similar_entries(
         .tm_fuzzy_search(text, source_lang, target_lang, top_n)
 }
 
+/// List the active entries of one language pair (UI TM manager).
+pub fn list(
+    source_lang: &str,
+    target_lang: &str,
+    limit: usize,
+) -> Result<Vec<TmEntry>, EngineError> {
+    TmStore::instance()
+        .ok_or_else(|| EngineError::TmError("not initialized".into()))?
+        .tm_list(source_lang, target_lang, limit)
+}
+
 pub fn total_entries() -> Result<u64, EngineError> {
     TmStore::instance()
         .ok_or_else(|| EngineError::TmError("not initialized".into()))?

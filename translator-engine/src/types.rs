@@ -169,6 +169,10 @@ pub struct GlossaryEntry {
     pub confidence: f32,
     pub frequency: u32,
     pub domain: String,
+    /// Provenance of the term (N-08), so a low-trust machine-extracted term can be told
+    /// apart from a user-confirmed one: `distill` / `manual` / `tm`. Empty means the
+    /// record predates the field.
+    pub source: String,
 }
 
 impl GlossaryEntry {
@@ -181,6 +185,7 @@ impl GlossaryEntry {
             "confidence":  self.confidence,
             "frequency":   self.frequency,
             "domain":      self.domain,
+            "source":      self.source,
         })
     }
 
@@ -194,6 +199,7 @@ impl GlossaryEntry {
             confidence:  v.get("confidence").and_then(|x| x.as_f64()).unwrap_or(0.9) as f32,
             frequency:   v.get("frequency").and_then(|x| x.as_u64()).unwrap_or(1) as u32,
             domain:      s("domain"),
+            source:      s("source"),
         }
     }
 }
@@ -381,6 +387,7 @@ mod tests {
             confidence: 0.92,
             frequency: 15,
             domain: String::new(),
+            source: "manual".into(),
         };
         let v = original.to_json();
         let parsed = GlossaryEntry::from_json(&v);
@@ -388,6 +395,17 @@ mod tests {
         assert_eq!(parsed.target_term, original.target_term);
         assert!((parsed.confidence - 0.92).abs() < 1e-6);
         assert_eq!(parsed.frequency, 15);
+        assert_eq!(parsed.source, "manual");
+    }
+
+    #[test]
+    fn glossary_entry_without_source_reads_as_unknown() {
+        // Records written before N-08 have no provenance; they must load, not fail.
+        let e = GlossaryEntry::from_json(&serde_json::json!({
+            "source_term": "x", "source_lang": "zh",
+            "target_term": "y", "target_lang": "en",
+        }));
+        assert_eq!(e.source, "");
     }
 
     // ---- TranslationSource.as_str ----------------------------------

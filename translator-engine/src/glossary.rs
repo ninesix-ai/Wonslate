@@ -49,6 +49,7 @@ impl GlossaryContext {
                 confidence: e.quality,
                 frequency: e.hit_count,
                 domain: e.domain,
+                source: "tm".into(),
             });
         }
         self
@@ -87,6 +88,7 @@ mod tests {
             source_term: s.into(), source_lang: "zh".into(),
             target_term: t.into(), target_lang: "en".into(),
             confidence: conf, frequency: 1, domain: String::new(),
+            source: "distill".into(),
         }
     }
 
@@ -141,6 +143,7 @@ mod tests {
         assert_eq!(new.target_term, "Artificial Intelligence");
         assert_eq!(new.frequency, 42);       // hit_count → frequency
         assert!((new.confidence - 0.95).abs() < 1e-6);  // quality → confidence
+        assert_eq!(new.source, "tm");        // provenance: these came from the TM, not distillation
     }
 
     #[test]

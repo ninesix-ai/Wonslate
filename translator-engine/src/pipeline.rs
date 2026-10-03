@@ -6,9 +6,23 @@
 //! Every FFI / REST / CLI entry funnels into translate_full(); one shared logic.
 
 use std::time::Instant;
+use crate::config::UpgradePolicy;
 use crate::{confidence, config, distill, engine, glossary, router, tm};
 use crate::error::EngineError;
 use crate::types::*;
+
+/// Attach a refused-cache note to whatever message a path already carries.
+///
+/// Every exit path has to carry it: re-translating a sentence whose cache entry was
+/// refused is a deliberate quality decision, and a caller that cannot see it would not
+/// know why the same input suddenly cost a round trip.
+fn with_refusal(refused: &Option<String>, message: Option<String>) -> Option<String> {
+    match (refused, message) {
+        (None, m) => m,
+        (Some(r), Some(m)) => Some(format!("{}; {}", r, m)),
+        (Some(r), None) => Some(r.clone()),
+    }
+}
 
 /// Full-featured translation (TM + routing + distillation; recommended entry).
 pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, EngineError> {
@@ -19,27 +33,10 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         req.source_lang = detect_lang(&req.input);
     }
 
-    // ---- L-1: exact TM hit ------------------------------------------------
-    if req.use_tm && config::get().tm_enabled {
-        if let Ok(Some(entry)) = tm::lookup(&req.input, &req.source_lang, &req.target_lang) {
-            let _ = tm::increment_hit_count(&entry);
-            return Ok(TranslateResponse {
-                ok: true,
-                engine: "tm".into(),
-                source_lang: req.source_lang.clone(),
-                target_lang: req.target_lang.clone(),
-                input: req.input.clone(),
-                output: Some(entry.target_text),
-                source: TranslationSource::TmHit,
-                latency_ms: t0.elapsed().as_millis() as u64,
-                confidence: entry.quality,
-                error: None,
-                message: None,
-            });
-        }
-    }
-
     // ---- Routing decision --------------------------------------------------------
+    // Resolved before the TM lookup because the rule decides the threshold a cached
+    // entry has to clear to be served. Routing itself is pure and constructs no engines,
+    // so moving it up costs nothing.
     // An explicit engine_id acts as an agent passthrough lock: run that engine, never upgrade (respect the choice)
     let mut plan = if !req.engine_id.is_empty() {
         router::RoutePlan {
@@ -47,6 +44,8 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
             use_glossary: true,
             upgrade_engine_id: None,
             confidence_threshold: 0.0,
+            upgrade_policy: UpgradePolicy::LowConfidence,
+            tm_quality_floor: 0.0,
         }
     } else {
         router::resolve(&req)
@@ -66,6 +65,78 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         plan.local_engine_id = "demo".into();
         plan.upgrade_engine_id = None;
         plan.confidence_threshold = 0.0;
+    }
+
+    // ---- L-1: exact TM hit, subject to the rule's serving floor ----------------
+    //
+    // The floor is what makes a mode's quality claim hold on cached content too: a
+    // locally-written entry scores 0.88 while an AI-written one scores 0.95, so serving
+    // everything regardless of quality means the quality a caller gets depends on
+    // whether the AI engine happened to be up the first time that sentence was seen.
+    //
+    // The floor is only worth enforcing while something can clear it. Refusing an entry
+    // costs a full re-translation by the *same* local engine that wrote it, so with no
+    // upgrade engine configured - or the configured one down - the refusal returns the
+    // same text at that engine's whole latency instead of zero, and the memory stops
+    // paying for itself (measured offline in full mode: 0 of 3000 repeated requests were
+    // served from the cache, docs/17 D16). In that case the entry is served and the
+    // unkept promise is stated in `message` rather than degraded in silence.
+    //
+    // Note this relaxes only what a *cache hit* is allowed to return. The reported
+    // configuration is untouched: `effective_routing()` keeps showing the floor the user
+    // asked for, and this response says why it was not met.
+    let mut refused_cache: Option<String> = None;
+    if req.use_tm && config::get().tm_enabled {
+        if let Ok(Some(entry)) = tm::lookup(&req.input, &req.source_lang, &req.target_lang) {
+            let below_floor = entry.quality < plan.tm_quality_floor;
+            // Probed only where it can change the outcome, and only once a cached entry is
+            // in hand: the check opens a connection, and a miss, or an entry that already
+            // clears the floor, must not pay for it.
+            let upgrade_reachable = below_floor
+                && plan.upgrade_engine_id.as_ref().is_some_and(|id| engine::is_reachable(id));
+
+            let mut refuse = false;
+            let mut served_note: Option<String> = None;
+            if below_floor {
+                if upgrade_reachable {
+                    refuse = true;
+                    refused_cache = Some(format!(
+                        "cached result quality {:.2} is below this mode's {:.2} floor; re-translated",
+                        entry.quality, plan.tm_quality_floor
+                    ));
+                } else {
+                    // Nothing the engine is allowed to run can clear the floor, so refusing
+                    // would pay full price for an identical result.
+                    let why = match (plan.upgrade_engine_id.as_deref(), req.privacy) {
+                        (Some(id), _) => format!("AI upgrade engine '{}' is not reachable", id),
+                        (None, true) => "privacy mode forbids the AI upgrade".to_string(),
+                        (None, false) => "no AI upgrade engine is configured for this mode".to_string(),
+                    };
+                    served_note = Some(format!(
+                        "quality preference not honoured: {} to clear this mode's {:.2} quality floor; \
+                         served the cached result ({:.2})",
+                        why, plan.tm_quality_floor, entry.quality
+                    ));
+                }
+            }
+
+            if !refuse {
+                let _ = tm::increment_hit_count(&entry);
+                return Ok(TranslateResponse {
+                    ok: true,
+                    engine: "tm".into(),
+                    source_lang: req.source_lang.clone(),
+                    target_lang: req.target_lang.clone(),
+                    input: req.input.clone(),
+                    output: Some(entry.target_text),
+                    source: TranslationSource::TmHit,
+                    latency_ms: t0.elapsed().as_millis() as u64,
+                    confidence: entry.quality,
+                    error: None,
+                    message: served_note,
+                });
+            }
+        }
     }
 
     // ---- L2: local engine + glossary ----------------------------------------
@@ -88,13 +159,26 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         // Confidence is computed from the engine that ACTUALLY ran, not the one routing CLAIMED to use.
         // When the claimed local_engine_id is unregistered, get_engine silently falls back to demo;
         // scoring it as the claimed engine (e.g. argos 0.72) would lie, so use local_engine.name().
-        let conf = confidence::estimate(output, &req.input, local_engine.name(), coverage);
+        let conf = confidence::estimate(output, &req.input, local_engine.name(), coverage, &req.target_lang);
 
-        // Confidence passes the bar, or realtime never upgrades -> return directly
-        let should_upgrade = conf < plan.confidence_threshold
-            && plan.upgrade_engine_id.is_some()
-            && !req.privacy
-            && req.mode == TranslationMode::Full;
+        // Whether to escalate: the rule's policy decides, then the hard preconditions.
+        //
+        // The reachability check is what keeps "always" honest. Without it, a full-mode
+        // user with no AI engine running would pay the engine's whole request timeout on
+        // every miss and - because the failed-upgrade branch does not write the memory -
+        // would learn nothing from the traffic (measured: 0.00% TM hits, ~1 s wasted per
+        // request). A service that is down cannot serve, so it must not be attempted.
+        let policy_says_upgrade = match plan.upgrade_policy {
+            UpgradePolicy::Always => true,
+            UpgradePolicy::LowConfidence => conf < plan.confidence_threshold,
+        };
+        let upgrade_allowed = !req.privacy && req.mode == TranslationMode::Full;
+        let wanted_upgrade = policy_says_upgrade && upgrade_allowed;
+        // Probed only when the policy wants the upgrade: the check opens a connection,
+        // and the common case (a local result that clears the bar) must not pay for it.
+        let upgrade_blocked_by_reachability = wanted_upgrade
+            && !plan.upgrade_engine_id.as_ref().is_some_and(|id| engine::is_reachable(id));
+        let should_upgrade = wanted_upgrade && !upgrade_blocked_by_reachability;
 
         // When the claimed engine was never registered (get_engine fell back to demo silently), record why,
         // honoring "no silent degradation": the caller sees in message that X was asked but Y ran.
@@ -111,17 +195,29 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         });
 
         if !should_upgrade {
-            let privacy_note = if req.privacy && conf < 0.70 {
-                Some("privacy mode: low confidence, AI upgrade prevented".to_string())
-            } else {
-                None
-            };
-            let message = match (privacy_note, fallback_note.clone()) {
-                (Some(a), Some(b)) => Some(format!("{}; {}", a, b)),
-                (Some(a), None)    => Some(a),
-                (None, Some(b))    => Some(b),
-                (None, None)       => None,
-            };
+            let mut notes: Vec<String> = Vec::new();
+
+            if let Some(n) = refused_cache.clone() {
+                notes.push(n);
+            }
+            if req.privacy && conf < 0.70 {
+                notes.push("privacy mode: low confidence, AI upgrade prevented".to_string());
+            }
+            if let Some(n) = fallback_note.clone() {
+                notes.push(n);
+            }
+            // The user asked for the quality mode and did not get it. Saying nothing
+            // would present a local result as the intended outcome.
+            if upgrade_blocked_by_reachability {
+                if let Some(id) = plan.upgrade_engine_id.as_ref() {
+                    notes.push(format!(
+                        "AI upgrade engine '{}' is not reachable; served locally instead",
+                        id
+                    ));
+                }
+            }
+
+            let message = if notes.is_empty() { None } else { Some(notes.join("; ")) };
             let resp = TranslateResponse {
                 ok: true,
                 engine: local_engine.name().into(),
@@ -180,9 +276,9 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
                 output: Some(output.clone()),
                 source: TranslationSource::AiUpgraded,
                 latency_ms: t0.elapsed().as_millis() as u64,
-                confidence: 0.95,
+                confidence: confidence::AI_UPGRADE_CONFIDENCE,
                 error: None,
-                message: None,
+                message: with_refusal(&refused_cache, None),
             };
             // write to the TM
             if req.use_tm {
@@ -224,7 +320,7 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
             latency_ms: t0.elapsed().as_millis() as u64,
             confidence: 0.60,
             error: None,
-            message: Some("AI upgrade failed, returning local result".into()),
+            message: with_refusal(&refused_cache, Some("AI upgrade failed, returning local result".into())),
         })
     } else {
         // Final local fallback: when every engine returned nothing (e.g. sidecar absent), try demo explicitly
@@ -233,7 +329,7 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         if let Some(out) =
             demo.translate_with_context(&req.input, &req.source_lang, &req.target_lang, &glossary_ctx)
         {
-            let conf = confidence::estimate(&out, &req.input, "demo", 0.0);
+            let conf = confidence::estimate(&out, &req.input, "demo", 0.0, &req.target_lang);
             return Ok(TranslateResponse {
                 ok: true,
                 engine: "demo".into(),
@@ -245,10 +341,10 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
                 latency_ms: t0.elapsed().as_millis() as u64,
                 confidence: conf,
                 error: None,
-                message: Some(format!(
+                message: with_refusal(&refused_cache, Some(format!(
                     "engine '{}' produced no result, fell back to local demo",
                     plan.local_engine_id
-                )),
+                ))),
             });
         }
         Err(EngineError::NoResult {

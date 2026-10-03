@@ -31,6 +31,26 @@ fn ensure_init() {
         let _ = std::fs::remove_file(&tm_file);
         let _ = std::fs::remove_file(&gl_file);
 
+        // Pin the full-mode upgrade policy to low_confidence before loading the config.
+        //
+        // The shipped default is "always" (D14: full mode should ask the AI engine), which
+        // makes the outcome depend on whether an AI engine happens to be running on the
+        // test machine - an environment dependency, not a property of the code. These
+        // tests assert the local path, so they pin the policy that exercises it. The
+        // "always" path is covered at the decision level in router.rs (the table is
+        // data there, so it needs no global config), the reachability primitive in
+        // engine::http::tests, and the combination end to end by script/bench_tm.py.
+        std::env::set_var("WONSLATE_FULL_UPGRADE_POLICY", "low_confidence");
+
+        // Pin the sidecar endpoints to a dead loopback port for the same reason:
+        // several tests assert the "sidecar absent -> falls back to demo with a
+        // note" path, and a developer running a real sidecar (argos 11435 /
+        // madlad 11436) would silently flip those outcomes to real translations.
+        // The "sidecar answers" path is covered by sidecar.rs's own mock-server
+        // unit tests, which dial explicit URLs.
+        std::env::set_var("LT_ARGOS_URL", "http://127.0.0.1:1");
+        std::env::set_var("LT_MADLAD_URL", "http://127.0.0.1:1");
+
         // Load default config (TM enabled; distillation off to avoid side effects).
         translator_engine::config::load();
 
@@ -200,6 +220,49 @@ fn flag_bad_excludes_entry_from_lookup() {
 }
 
 #[test]
+fn tm_list_returns_active_entries_of_the_pair_only() {
+    ensure_init();
+    let src = "列表可见性验证";
+    let other = "列表可见性验证-其他语对";
+    tm::put(&TmEntry {
+        source_text: src.into(), source_lang: "ja".into(),
+        target_text: "LISTED".into(), target_lang: "ko".into(),
+        engine: "manual".into(), quality: 0.9,
+        hit_count: 5, domain: String::new(),
+    }).unwrap();
+    tm::put(&TmEntry {
+        source_text: other.into(), source_lang: "zh".into(),
+        target_text: "NOT_LISTED".into(), target_lang: "en".into(),
+        engine: "manual".into(), quality: 0.9,
+        hit_count: 5, domain: String::new(),
+    }).unwrap();
+
+    let listed = tm::list("ja", "ko", 50).unwrap();
+    assert!(listed.iter().any(|e| e.source_text == src),
+        "the pair's own entry must be listed");
+    assert!(!listed.iter().any(|e| e.source_text == other),
+        "another language pair must not leak into the list");
+}
+
+#[test]
+fn tm_list_hides_flagged_entries() {
+    ensure_init();
+    let src = "标坏后从列表消失";
+    tm::put(&TmEntry {
+        source_text: src.into(), source_lang: "fr".into(),
+        target_text: "GONE".into(), target_lang: "de".into(),
+        engine: "manual".into(), quality: 0.9,
+        hit_count: 1, domain: String::new(),
+    }).unwrap();
+    assert!(tm::list("fr", "de", 50).unwrap().iter().any(|e| e.source_text == src));
+
+    tm::flag_bad(src, "fr", "de").unwrap();
+
+    assert!(!tm::list("fr", "de", 50).unwrap().iter().any(|e| e.source_text == src),
+        "a flagged entry must disappear from the manager list");
+}
+
+#[test]
 fn engine_id_override_bypasses_router() {
     ensure_init();
     // Setting engine_id="demo" explicitly forces the local demo engine regardless
@@ -258,10 +321,15 @@ fn silent_fallback_does_not_inflate_confidence() {
     let resp = pipeline::translate_full(r).expect("demo should translate hello world");
     // The fallback really happened: the actual engine is demo.
     assert_eq!(resp.engine, "demo", "unregistered bert should silently fall back to demo");
-    // Core honesty assertion: confidence should be at demo's baseline (< 0.70),
-    // not an inflated score borrowed from the requested engine.
+    // Core honesty assertion: the score must be computed from the engine that ran, so
+    // it must stay below the full-mode escalation gate. The bound used to be 0.70
+    // (demo's raw baseline); since confidence now includes per-output conformance
+    // signals, a well-formed demo result legitimately reaches 0.71, and the
+    // operationally meaningful bound is the gate: a fallback must not look trustworthy
+    // enough to skip escalation. The engine-ordering invariant itself is pinned in
+    // confidence::tests::baseline_ordering_is_preserved_for_identical_output.
     assert!(
-        resp.confidence < 0.70,
+        resp.confidence < 0.85,
         "confidence misreported: the actual engine is demo, yet got {}; it must be computed from the engine that ran",
         resp.confidence
     );

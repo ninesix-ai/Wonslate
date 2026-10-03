@@ -31,6 +31,21 @@ pub trait Translator: Send + Sync {
     ) -> Option<String> {
         self.translate(text, source, target)
     }
+
+    /// Whether this engine looks reachable right now, cheaply.
+    ///
+    /// The default is `true`: engines that fail fast need no probe, and answering
+    /// `true` keeps the pre-probe behaviour. Engines that dial a service somebody has
+    /// to be running (ollama) override it, because attempting them when they are down
+    /// burns the whole request timeout for nothing.
+    fn is_reachable(&self) -> bool {
+        true
+    }
+}
+
+/// Reachability of an engine id, without holding an instance.
+pub fn is_reachable(id: &str) -> bool {
+    get_engine(id).is_reachable()
 }
 
 /// Get an engine instance by id; unknown ids fall back to demo, never a null pointer.
