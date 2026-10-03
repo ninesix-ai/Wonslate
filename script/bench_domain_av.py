@@ -42,7 +42,9 @@ Usage:
     python script/bench_domain_av.py --engine madlad --direction zh-en --n 20
 """
 import argparse
+import ctypes
 import datetime
+import json
 import os
 import pathlib
 import sys
@@ -156,6 +158,10 @@ def build_arg_parser():
                         help="translation direction (default: zh-en)")
     parser.add_argument("--av-root", default=None,
                         help="override the corpus root; highest priority")
+    parser.add_argument("--domain", default="",
+                        help="pack-level domain to send in the request body "
+                             "(empty = unscoped baseline; 'av' = the seed-pack "
+                             "scope added by S11)")
     parser.add_argument("--n", type=int, default=None,
                         help="limit to first N pairs (smoke)")
     parser.add_argument("--list", action="store_true",
@@ -178,15 +184,76 @@ def _print_pairs(root):
         print("  {} : {} pairs at {}".format(prefix, len(src), pair_dir))
 
 
-def _run_one(engine_id, direction, src, tgt):
+def _translate_via_ffi(engine_id, src_lang, tgt_lang, text, domain=""):
+    """Call tt_translate_full directly so the request can carry `domain`.
+
+    The bench_translation.Engine wrapper takes only (text, source, target)
+    today; rather than fork that shared client (which sits in the concurrent
+    session's WIP), the AV-domain harness builds its own request here. The
+    engine_id field locks the run to a specific engine, matching what the
+    UI does when the user picks one explicitly."""
+    lib = _load_engine_for_translate()
+    body = json.dumps({
+        "engine_id": engine_id,
+        "input": text,
+        "source_lang": src_lang,
+        "target_lang": tgt_lang,
+        "mode": "full",
+        "privacy": False,
+        "use_tm": True,
+        "domain": domain,
+    }, ensure_ascii=False).encode("utf-8")
+    ptr = lib.tt_translate_full(body)
+    raw = ctypes.c_char_p(ptr).value or b"{}"
+    lib.tt_free_string(ptr)
+    resp = json.loads(raw.decode("utf-8", errors="replace"))
+    return resp.get("output") or "", resp
+
+
+# Reuse the CDLL loader without duplicating the argtypes dance: the shared
+# library is opened once per process and cached here so a whole corpus run
+# does not repeatedly dlopen.
+_LIB_CACHE = {"lib": None}
+
+
+def _load_engine_for_translate():
+    lib = _LIB_CACHE["lib"]
+    if lib is not None:
+        return lib
+    from install_glossary_pack import _load_engine  # noqa: WPS433 (lazy)
+    # install_glossary_pack already knows how to locate and configure the
+    # CDLL; set the two extra argtypes tt_translate_full needs on top.
+    lib = _load_engine()
+    lib.tt_translate_full.argtypes = [ctypes.c_char_p]
+    lib.tt_translate_full.restype = ctypes.c_void_p
+    _LIB_CACHE["lib"] = lib
+    # tt_init must run before translate_full works (TM singleton etc.).
+    ack = lib.tt_init(b"{}")
+    if ack:
+        lib.tt_free_string(ack)
+    return lib
+
+
+def _run_one(engine_id, direction, src, tgt, domain=""):
     """Invoke one engine over the shared bench_translation client and
     return (hypotheses, metrics). Lazy-imported so the hermetic tests
-    do not need a running sidecar or Ollama."""
-    from bench_translation import build_engines, score  # noqa: WPS433 (lazy)
-    engines = build_engines([engine_id])
-    engine = engines[engine_id]
+    do not need a running sidecar or Ollama.
+
+    When `domain` is empty the run is unscoped and goes through the shared
+    Engine client (same path bench_flores uses). When `domain` is set the
+    request body needs the field, so the harness switches to a direct FFI
+    call -- the shared client's signature is unchanged and lives in a file
+    this task does not own."""
     src_lang, tgt_lang = direction.split("-")
-    hypotheses = [engine.translate(line, (src_lang, tgt_lang)) for line in src]
+    if not domain:
+        from bench_translation import build_engines, score  # noqa: WPS433 (lazy)
+        engines = build_engines([engine_id])
+        engine = engines[engine_id]
+        hypotheses = [engine.translate(line, src_lang, tgt_lang) for line in src]
+    else:
+        from bench_translation import score  # noqa: WPS433 (lazy)
+        hypotheses = [_translate_via_ffi(engine_id, src_lang, tgt_lang, line, domain)[0]
+                      for line in src]
     metrics = score(hypotheses, tgt, src_lang=src_lang, tgt_lang=tgt_lang)
     return hypotheses, metrics
 
@@ -238,7 +305,8 @@ def main(argv=None):
     src, tgt = load_pair(pair_dir, pair_prefix)
     if args.n is not None:
         src, tgt = src[:args.n], tgt[:args.n]
-    hypotheses, metrics = _run_one(args.engine, args.direction, src, tgt)
+    hypotheses, metrics = _run_one(args.engine, args.direction, src, tgt,
+                                    args.domain)
     out = _write_evidence(args.engine, args.direction, src, hypotheses, metrics,
                           args.n)
     print("wrote", out)

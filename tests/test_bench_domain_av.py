@@ -139,5 +139,34 @@ class LoaderTests(unittest.TestCase):
                 parser.parse_args(["--engine", "not-an-engine", "--direction", "zh-en"])
 
 
+class DomainArgumentTests(unittest.TestCase):
+    """⑧ ⑨: --domain plumbs the request body's `domain` field through so the
+    harness can compare baseline vs domain-scoped runs on the same sentence
+    set (S12 §T3). Default is the empty string, matching an unscoped request.
+    """
+
+    def test_domain_defaults_to_empty_string(self):
+        from bench_domain_av import build_arg_parser
+        ns = build_arg_parser().parse_args(["--engine", "argos", "--direction", "zh-en"])
+        self.assertEqual(ns.domain, "")
+
+    def test_domain_flag_accepted(self):
+        from bench_domain_av import build_arg_parser
+        ns = build_arg_parser().parse_args(
+            ["--engine", "argos", "--direction", "zh-en", "--domain", "av"])
+        self.assertEqual(ns.domain, "av")
+
+    def test_run_one_signature_accepts_domain_kwarg(self):
+        # _run_one must be callable with (engine_id, direction, src, tgt, domain="...").
+        # We do not run it (that would need a live sidecar / ollama); just verify
+        # the signature admits the keyword.
+        import inspect
+        from bench_domain_av import _run_one
+        params = inspect.signature(_run_one).parameters
+        self.assertIn("domain", params)
+        # Give it a default so pre-existing callers keep working.
+        self.assertEqual(params["domain"].default, "")
+
+
 if __name__ == "__main__":
     unittest.main()
