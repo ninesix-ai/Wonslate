@@ -21,7 +21,7 @@ Usage:
     python script/fetch_argos_models.py                  # en<->zh (default pair set)
     python script/fetch_argos_models.py --pairs en_zh,zh_en,en_ja
     python script/fetch_argos_models.py --list           # print the resolvable pairs
-    python script/fetch_argos_models.py --dest D:\\models # override the target root
+    python script/fetch_argos_models.py --dest <dir>   # override the target root
     python script/fetch_argos_models.py --force          # re-download existing archives
 
 Exit code: 0 = every requested pair is present and verified, 1 = something failed.

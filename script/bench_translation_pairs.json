@@ -1,0 +1,119 @@
+{
+  "_meta": {
+    "description": "Wonslate translation-quality benchmark set: 9 language pairs, both directions, 6 segments each (108 samples per engine).",
+    "authored": "2026-10-02",
+    "authoring": "English sources are original sentences; target-language references are expert-quality human-style translations written for this benchmark. Each 'a'/'b' segment pair is used in both directions: a->b scores against b, b->a scores against a.",
+    "scoring_hint": "corpus-level chrF++ (word_order=2) and BLEU; BLEU uses the char tokenizer for zh/ja/ko targets.",
+    "license": "Apache-2.0"
+  },
+  "pairs": [
+    {
+      "source": "en",
+      "target": "zh",
+      "segments": [
+        {"a": "The meeting starts at nine tomorrow morning, so please review the contract tonight.", "b": "明天的会议早上九点开始，请你今晚把合同看一遍。"},
+        {"a": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.", "b": "云计算让小公司可以租用强大的服务器，而不必自己购买硬件。"},
+        {"a": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.", "b": "长城每年吸引数百万游客，尤其是在秋假期间。"},
+        {"a": "Our customer support team replies to most emails within twenty-four hours.", "b": "我们的客服团队会在二十四小时内回复大部分邮件。"},
+        {"a": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.", "b": "我忘了带伞，突如其来的雨把我包里的文件淋湿了。"},
+        {"a": "Learning a second language changes the way you think about your own.", "b": "学习第二门语言会改变你看待母语的方式。"}
+      ]
+    },
+    {
+      "source": "en",
+      "target": "ja",
+      "segments": [
+        {"a": "The meeting starts at nine tomorrow morning, so please review the contract tonight.", "b": "明日の会議は朝9時に始まるので、今夜中に契約書に目を通しておいてください。"},
+        {"a": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.", "b": "クラウドコンピューティングのおかげで、小さな会社は自社でハードウェアを買わなくても強力なサーバーを借りられます。"},
+        {"a": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.", "b": "万里の長城は、特に秋の休暇の間、毎年何百万人もの観光客を魅了しています。"},
+        {"a": "Our customer support team replies to most emails within twenty-four hours.", "b": "弊社のカスタマーサポートチームは、ほとんどのメールに24時間以内に返信します。"},
+        {"a": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.", "b": "傘を忘れてしまい、突然の雨でカバンの中の書類が濡れてしまいました。"},
+        {"a": "Learning a second language changes the way you think about your own.", "b": "第二言語を学ぶと、母語の見方が変わります。"}
+      ]
+    },
+    {
+      "source": "en",
+      "target": "ko",
+      "segments": [
+        {"a": "The meeting starts at nine tomorrow morning, so please review the contract tonight.", "b": "내일 회의는 아침 9시에 시작되니, 오늘 밤 안에 계약서를 검토해 주세요."},
+        {"a": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.", "b": "클라우드 컴퓨팅 덕분에 작은 회사들도 하드웨어를 직접 사지 않고 강력한 서버를 빌릴 수 있습니다."},
+        {"a": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.", "b": "만리장성은 특히 가을 휴가 기간에 매년 수백만 명의 관광객을 끌어들입니다."},
+        {"a": "Our customer support team replies to most emails within twenty-four hours.", "b": "저희 고객 지원팀은 대부분의 이메일에 24시간 이내에 답장합니다."},
+        {"a": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.", "b": "우산을 가져오는 것을 잊어버려서 갑작스러운 비에 가방 속 서류가 젖었습니다."},
+        {"a": "Learning a second language changes the way you think about your own.", "b": "제2언어를 배우면 모국어를 바라보는 방식이 달라집니다."}
+      ]
+    },
+    {
+      "source": "en",
+      "target": "fr",
+      "segments": [
+        {"a": "The meeting starts at nine tomorrow morning, so please review the contract tonight.", "b": "La réunion commence demain matin à neuf heures, alors merci de relire le contrat ce soir."},
+        {"a": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.", "b": "L'informatique en nuage permet aux petites entreprises de louer des serveurs puissants au lieu d'acheter leur propre matériel."},
+        {"a": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.", "b": "La Grande Muraille attire des millions de visiteurs chaque année, surtout pendant les vacances d'automne."},
+        {"a": "Our customer support team replies to most emails within twenty-four hours.", "b": "Notre équipe d'assistance répond à la plupart des courriels en moins de vingt-quatre heures."},
+        {"a": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.", "b": "J'ai oublié mon parapluie et la pluie soudaine a trempé les documents dans mon sac."},
+        {"a": "Learning a second language changes the way you think about your own.", "b": "Apprendre une seconde langue change la façon dont on perçoit sa langue maternelle."}
+      ]
+    },
+    {
+      "source": "en",
+      "target": "de",
+      "segments": [
+        {"a": "The meeting starts at nine tomorrow morning, so please review the contract tonight.", "b": "Das Treffen beginnt morgen früh um neun Uhr, bitte gehe heute Abend den Vertrag durch."},
+        {"a": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.", "b": "Cloud Computing ermöglicht kleinen Unternehmen, leistungsstarke Server zu mieten, statt eigene Hardware zu kaufen."},
+        {"a": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.", "b": "Die Große Mauer zieht jedes Jahr Millionen von Besuchern an, besonders während der Herbstferien."},
+        {"a": "Our customer support team replies to most emails within twenty-four hours.", "b": "Unser Kundenservice beantwortet die meisten E-Mails innerhalb von vierundzwanzig Stunden."},
+        {"a": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.", "b": "Ich habe meinen Schirm vergessen, und der plötzliche Regen hat die Dokumente in meiner Tasche durchnässt."},
+        {"a": "Learning a second language changes the way you think about your own.", "b": "Eine zweite Sprache zu lernen verändert die Sicht auf die eigene Muttersprache."}
+      ]
+    },
+    {
+      "source": "en",
+      "target": "es",
+      "segments": [
+        {"a": "The meeting starts at nine tomorrow morning, so please review the contract tonight.", "b": "La reunión empieza mañana a las nueve de la mañana, así que revisa el contrato esta noche."},
+        {"a": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.", "b": "La computación en la nube permite a las pequeñas empresas alquilar servidores potentes en lugar de comprar su propio hardware."},
+        {"a": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.", "b": "La Gran Muralla atrae a millones de visitantes cada año, especialmente durante las vacaciones de otoño."},
+        {"a": "Our customer support team replies to most emails within twenty-four hours.", "b": "Nuestro equipo de atención al cliente responde a la mayoría de los correos en menos de veinticuatro horas."},
+        {"a": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.", "b": "Olvidé mi paraguas y la lluvia repentina empapó los documentos que llevaba en la bolsa."},
+        {"a": "Learning a second language changes the way you think about your own.", "b": "Aprender un segundo idioma cambia la manera en que ves el tuyo."}
+      ]
+    },
+    {
+      "source": "en",
+      "target": "ru",
+      "segments": [
+        {"a": "The meeting starts at nine tomorrow morning, so please review the contract tonight.", "b": "Совещание начнётся завтра в девять утра, поэтому, пожалуйста, просмотрите договор сегодня вечером."},
+        {"a": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.", "b": "Облачные вычисления позволяют небольшим компаниям арендовать мощные серверы вместо покупки собственного оборудования."},
+        {"a": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.", "b": "Великая Китайская стена ежегодно привлекает миллионы посетителей, особенно в осенние каникулы."},
+        {"a": "Our customer support team replies to most emails within twenty-four hours.", "b": "Наша служба поддержки отвечает на большинство писем в течение двадцати четырёх часов."},
+        {"a": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.", "b": "Я забыл зонт, и внезапный дождь промочил документы в моей сумке."},
+        {"a": "Learning a second language changes the way you think about your own.", "b": "Изучение второго языка меняет то, как ты смотришь на родной."}
+      ]
+    },
+    {
+      "source": "en",
+      "target": "ar",
+      "segments": [
+        {"a": "The meeting starts at nine tomorrow morning, so please review the contract tonight.", "b": "يبدأ الاجتماع في التاسعة من صباح الغد، لذا يُرجى مراجعة العقد الليلة."},
+        {"a": "Cloud computing lets small companies rent powerful servers instead of buying their own hardware.", "b": "تتيح الحوسبة السحابية للشركات الصغيرة استئجار خوادم قوية بدلاً من شراء أجهزتها الخاصة."},
+        {"a": "The Great Wall attracts millions of visitors every year, especially during the autumn holidays.", "b": "تجذب سور الصين العظيم ملايين الزوار كل عام، وخاصةً خلال عطلة الخريف."},
+        {"a": "Our customer support team replies to most emails within twenty-four hours.", "b": "يرد فريق دعم العملاء لدينا على معظم الرسائل خلال أربع وعشرين ساعة."},
+        {"a": "I forgot my umbrella, and the sudden rain soaked the documents in my bag.", "b": "نسيت مظلتي، فبللت الأمطار المفاجئة المستندات التي في حقيبتي."},
+        {"a": "Learning a second language changes the way you think about your own.", "b": "إن تعلّم لغة ثانية يُغيّر الطريقة التي تنظر بها إلى لغتك الأم."}
+      ]
+    },
+    {
+      "source": "zh",
+      "target": "ja",
+      "segments": [
+        {"a": "这家餐厅的招牌菜是麻辣火锅，周末经常要排队等位。", "b": "このレストランの看板メニューは麻辣火鍋で、週末はよく順番待ちの列ができます。"},
+        {"a": "高铁把北京和上海之间的行程缩短到了四个半小时。", "b": "高鉄は北京と上海の間の移動時間を4時間半まで短縮しました。"},
+        {"a": "春节期间，数以亿计的人返乡与家人团聚。", "b": "春節の時期には、何億人もの人々が故郷に帰って家族と団らんします。"},
+        {"a": "这款应用支持离线翻译，在没有网络的地方也能用。", "b": "このアプリはオフライン翻訳に対応しているので、ネットがない場所でも使えます。"},
+        {"a": "他把古典诗词翻译成现代语言，让年轻人更容易理解。", "b": "彼は古典詩詞を現代語に翻訳して、若者にも分かりやすくしています。"},
+        {"a": "茶文化在中国已有几千年的历史，如今传遍了世界。", "b": "茶文化は中国で数千年の歴史を持ち、今では世界中に広まっています。"}
+      ]
+    }
+  ]
+}

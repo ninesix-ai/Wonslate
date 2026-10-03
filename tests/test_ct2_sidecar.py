@@ -25,7 +25,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from sidecar.ct2_sidecar import (  # noqa: E402
-    CT2Backend, MockBackend, MissingDependency, default_model_dir, make_backend,
+    CT2Backend, MadladBackend, MockBackend, MissingDependency, default_model_dir, make_backend,
     serve_in_thread,
 )
 
@@ -72,6 +72,18 @@ class BackendFactoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as empty:
             with self.assertRaises(MissingDependency):
                 make_backend("ct2", model_dir=empty)
+
+    def test_madlad_backend_rejects_a_missing_model_dir(self):
+        # Same explicit-degradation contract as ct2: an absent or incomplete
+        # MADLAD directory is a MissingDependency with guidance, never a crash.
+        missing = os.path.join(tempfile.gettempdir(), "wonslate-no-such-madlad-dir")
+        with self.assertRaises(MissingDependency):
+            make_backend("madlad", model_dir=missing)
+
+    def test_madlad_backend_rejects_an_incomplete_dir(self):
+        with tempfile.TemporaryDirectory() as empty:
+            with self.assertRaises(MissingDependency):
+                make_backend("madlad", model_dir=empty)
 
 
 # ---- Real inference (needs the deps plus an unpacked Argos package) ---------
@@ -126,6 +138,49 @@ class RealInferenceTests(unittest.TestCase):
         finally:
             srv.shutdown()
             srv.server_close()
+
+
+# ---- Real MADLAD inference (needs the deps plus the CT2 checkpoint) ---------
+
+class RealMadladInferenceTests(unittest.TestCase):
+    """Exercises the MADLAD-400 checkpoint across several pairs end to end."""
+
+    @classmethod
+    def setUpClass(cls):
+        model_dir = default_model_dir().parent / "madlad"
+        if not model_dir.is_dir():
+            raise unittest.SkipTest(
+                "no MADLAD checkpoint under {}; run "
+                "script/fetch_madlad_model.py and install sidecar/requirements.txt"
+                .format(model_dir))
+        try:
+            cls.backend = MadladBackend(model_dir=str(model_dir))
+        except MissingDependency as exc:
+            raise unittest.SkipTest("madlad stack unavailable: {}".format(exc))
+
+    def test_english_to_chinese_returns_cjk(self):
+        out = self.backend.translate("Hello, world.", "en", "zh")
+        self.assertTrue(out)
+        self.assertNotIn("[zh]", out)
+        self.assertTrue(any("\u4e00" <= ch <= "\u9fff" for ch in out), out)
+
+    def test_english_to_japanese_returns_kana_or_kanji(self):
+        out = self.backend.translate("Good morning.", "en", "ja")
+        self.assertTrue(out)
+        self.assertTrue(any(
+            "\u3040" <= ch <= "\u30ff" or "\u4e00" <= ch <= "\u9fff" for ch in out), out)
+
+    def test_chinese_to_english_returns_latin(self):
+        out = self.backend.translate("你好，世界。", "zh", "en")
+        self.assertTrue(out)
+        self.assertTrue(any(ch.isascii() and ch.isalpha() for ch in out), out)
+
+    def test_unknown_target_language_is_explicit(self):
+        with self.assertRaises(MissingDependency):
+            self.backend.translate("hello", "en", "xx")
+
+    def test_empty_input_is_empty(self):
+        self.assertEqual(self.backend.translate("   ", "en", "zh"), "")
 
 
 # ---- HTTP contract (real server, random port, mock backend) -----------------

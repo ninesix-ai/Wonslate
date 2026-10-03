@@ -146,9 +146,12 @@ def trust_cert(thumb: str) -> None:
 
 
 def find_signtool() -> str | None:
-    for pattern in (r"C:\Program Files (x86)\Windows Kits\10\bin\**\signtool.exe",
-                    r"C:\Program Files\Windows Kits\10\bin\**\signtool.exe",
-                    r"C:\Program Files (x86)\Windows Kits\8*\bin\x64\signtool.exe"):
+    # These three roots are where the Windows SDK installer puts signtool on
+    # every machine, not where some developer's disk happens to be, so they are
+    # fixed by the OS rather than configurable.
+    for pattern in (r"C:\Program Files (x86)\Windows Kits\10\bin\**\signtool.exe",  # lint-allow: drive-path
+                    r"C:\Program Files\Windows Kits\10\bin\**\signtool.exe",  # lint-allow: drive-path
+                    r"C:\Program Files (x86)\Windows Kits\8*\bin\x64\signtool.exe"):  # lint-allow: drive-path
         hits = glob.glob(pattern, recursive=True)
         if hits:
             return sorted(hits)[-1]

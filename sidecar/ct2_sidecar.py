@@ -28,9 +28,11 @@ downloads or installs anything automatically):
     # unpack Argos packages under <data_dir>/models/argos -- that default is
     # reported by default_model_dir(); pass --model-dir to point elsewhere
     #   (en_zh / zh_en .argosmodel from https://argos-net.com/v1/)
-    # MADLAD-400 CT2 int8 (Apache-2.0, GB-scale) example (pick one; must include
-    # the tokenizer .model):
-    #   huggingface-cli download <madlad400-ct2-repo> --local-dir <model_dir>
+    # MADLAD-400 CT2 int8 (Apache-2.0, GB-scale): ONE checkpoint serves every
+    # supported pair; fetch it with script/fetch_madlad_model.py, then
+    python -m sidecar.ct2_sidecar --backend madlad --port 11436
+    #   (or pass --model-dir to point at a directory holding model.bin +
+    #   spiece.model, e.g. from huggingface-cli download <madlad400-ct2-repo>)
     python -m sidecar.ct2_sidecar --backend ct2 --model-dir <model_dir> --port 11435
 
 The module is importable by unit tests (serve only blocks under __main__).
@@ -75,13 +77,9 @@ _SPM_SPACE = "\u2581"
 _BEAM_SIZE = 4
 
 
-def default_model_dir():
-    """Conventional location for unpacked Argos packages.
-
-    Mirrors translator-engine/src/config.rs: the data dir is overridden by
-    LT_DATA_DIR / WONSLATE_DATA_DIR (legacy spelling wins) and otherwise follows
-    the per-OS user data location; packages live under <data_dir>/models/argos.
-    """
+def default_data_dir():
+    """Per-OS user data location, overridable by LT_DATA_DIR / WONSLATE_DATA_DIR
+    (legacy spelling wins). Mirrors translator-engine/src/config.rs."""
     override = None
     for key in ("LT_DATA_DIR", "WONSLATE_DATA_DIR"):
         value = os.environ.get(key)
@@ -90,18 +88,25 @@ def default_model_dir():
             break
 
     if override:
-        data_dir = pathlib.Path(override)
-    elif os.name == "nt":
+        return pathlib.Path(override)
+    if os.name == "nt":
         local = os.environ.get("LOCALAPPDATA")
-        data_dir = pathlib.Path(local) / "Wonslate" if local else pathlib.Path("./lt-data")
-    elif sys.platform == "darwin":
-        data_dir = pathlib.Path.home() / "Library" / "Application Support" / "Wonslate"
-    else:
-        xdg = os.environ.get("XDG_DATA_HOME")
-        base = pathlib.Path(xdg) if xdg else pathlib.Path.home() / ".local" / "share"
-        data_dir = base / "wonslate"
+        return pathlib.Path(local) / "Wonslate" if local else pathlib.Path("./lt-data")
+    if sys.platform == "darwin":
+        return pathlib.Path.home() / "Library" / "Application Support" / "Wonslate"
+    xdg = os.environ.get("XDG_DATA_HOME")
+    base = pathlib.Path(xdg) if xdg else pathlib.Path.home() / ".local" / "share"
+    return base / "wonslate"
 
-    return data_dir / "models" / "argos"
+
+def default_model_dir():
+    """Conventional location for unpacked Argos packages."""
+    return default_data_dir() / "models" / "argos"
+
+
+def default_madlad_model_dir():
+    """Conventional location for the MADLAD-400 CT2 checkpoint directory."""
+    return default_data_dir() / "models" / "madlad"
 
 
 class CT2Backend:
@@ -204,13 +209,118 @@ class CT2Backend:
         return processor.decode(hypothesis).replace(_SPM_SPACE, " ").strip()
 
 
+class MadladBackend:
+    """MADLAD-400 backend: ONE multilingual T5-style checkpoint serves every
+    supported pair.
+
+    Unlike Argos (one small Marian package per direction), MADLAD-400 is a
+    single model covering 400+ languages; the direction is chosen at inference
+    time by prefixing the source with the `<2xx>` target-language token. The
+    model directory therefore holds model.bin + spiece.model (+ optionally
+    shared_vocabulary.json / config.json) straight from a CT2 conversion, with
+    no per-pair layout.
+
+    Runs on CPU on purpose: the GPU slot belongs to the ollama upgrade engine,
+    and CT2's CUDA path would add a cuDNN requirement for little gain at 3B
+    int8 on a modern 8-core laptop. Glossary injection is not supported by
+    these checkpoints (same as Argos); the Rust pipeline owns glossary
+    handling for engines that accept a prompt.
+    """
+
+    name = "madlad"
+
+    # Shown in "unsupported pair" messages; the full MADLAD-400 list has 450+ codes.
+    _COMMON_CODES = ("en", "zh", "ja", "ko", "fr", "de", "es", "ru", "pt", "it", "ar")
+
+    def __init__(self, model_dir=None):
+        try:
+            import ctranslate2
+            import sentencepiece
+        except ImportError as e:
+            raise MissingDependency(
+                "madlad backend is missing dependencies: {}. Run"
+                " `python -m pip install -r sidecar/requirements.txt` first.".format(e))
+
+        if not model_dir:
+            model_dir = default_madlad_model_dir()
+        root = pathlib.Path(model_dir)
+        weights = root / "model.bin"
+        tokenizer = root / "spiece.model"
+        if not tokenizer.is_file():  # tolerate the alternate tokenizer name some repos use
+            tokenizer = root / "sentencepiece.model"
+        if not weights.is_file() or not tokenizer.is_file():
+            raise MissingDependency(
+                "madlad backend model dir {} is incomplete: need model.bin and"
+                " spiece.model (fetch with `python script/fetch_madlad_model.py`,"
+                " or point --model-dir at a MADLAD-400 CT2 conversion"
+                " directory).".format(root))
+
+        self._ct2 = ctranslate2
+        self._spm = sentencepiece
+        self._root = root
+        self._processor = self._spm.SentencePieceProcessor(model_file=str(tokenizer))
+        self._translator = None          # lazily: first request pays the load
+        self._known_targets = set()
+
+    def _known_target(self, target):
+        """Whether MADLAD-400 has a `<2xx>` token for this target code.
+
+        A known code encodes to exactly that one special piece (plus, if the
+        tokenizer adds it, the dummy word-boundary marker); an unknown one
+        falls back to per-character pieces. Data-driven, so the check follows
+        the checkpoint rather than a hardcoded language list.
+        """
+        if target not in self._known_targets:
+            token = "<2{}>".format(target)
+            pieces = [p for p in self._processor.encode(token, out_type=str) if p != _SPM_SPACE]
+            if pieces == [token]:
+                self._known_targets.add(target)
+            else:
+                return False
+        return True
+
+    def _engine(self):
+        if self._translator is None:
+            self._translator = self._ct2.Translator(str(self._root), device="cpu")
+        return self._translator
+
+    def translate(self, text, source, target, glossary=None):
+        text = (text or "").strip()
+        if not text:
+            return ""
+        if not target or not self._known_target(target):
+            raise MissingDependency(
+                "madlad backend has no target language {!r}. Supported codes"
+                " follow the MADLAD-400 vocabulary (450+ languages; common"
+                " ones: {}).".format(target, " ".join(self._COMMON_CODES)))
+        pieces = self._processor.encode("<2{}> {}".format(target, text), out_type=str)
+        if not pieces:
+            return ""
+        eos = self._processor.eos_id()
+        if eos is not None and eos >= 0:
+            pieces.append(self._processor.id_to_piece(eos))
+        result = self._engine().translate_batch(
+            [pieces], beam_size=_BEAM_SIZE, max_decoding_length=300)
+        return self._detokenize(result[0].hypotheses[0])
+
+    def _detokenize(self, hypothesis):
+        """Decode a hypothesis, dropping the special pieces a T5 decoder can emit."""
+        pieces = [p for p in hypothesis
+                  if p not in ("<pad>", "</s>", "<unk>") and not (p.startswith("<2") and p.endswith(">"))]
+        if not pieces:
+            return ""
+        return self._processor.decode(pieces).replace(_SPM_SPACE, " ").strip()
+
+
 def make_backend(kind, model_dir=None):
     kind = (kind or "mock").lower()
     if kind == "mock":
         return MockBackend()
     if kind == "ct2":
         return CT2Backend(model_dir)
-    raise ValueError("unknown backend: {!r} (available: mock / ct2)".format(kind))
+    if kind == "madlad":
+        return MadladBackend(model_dir)
+    raise ValueError("unknown backend: {!r} (available: mock / ct2 / madlad)".format(kind))
 
 
 # ---- HTTP service ----------------------------------------------------------
@@ -275,12 +385,15 @@ def serve_in_thread(backend, host="127.0.0.1", port=0):
 
 def main():
     ap = argparse.ArgumentParser(description="Wonslate sidecar translation server")
-    ap.add_argument("--backend", default="mock", choices=["mock", "ct2"])
+    ap.add_argument("--backend", default="mock", choices=["mock", "ct2", "madlad"])
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=DEFAULT_ARGOS_PORT)
+    ap.add_argument("--port", type=int, default=None,
+                    help="default: 11435 for mock/ct2 (argos slot), 11436 for madlad")
     ap.add_argument("--model-dir", default=None)
     args = ap.parse_args()
 
+    if args.port is None:
+        args.port = DEFAULT_MADLAD_PORT if args.backend == "madlad" else DEFAULT_ARGOS_PORT
     backend = make_backend(args.backend, args.model_dir)
     srv = build_server(backend, args.host, args.port)
     print("sidecar[{}] listening on http://{}:{}/translate".format(backend.name, args.host, args.port))

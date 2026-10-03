@@ -1,20 +1,34 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 ninesix-ai studio
-"""Source-comment hygiene lint: comment prose must stay English.
+"""Source hygiene lint: English comment prose, and no developer-machine paths.
 
 Why: Wonslate is an open-source project with international contributors; the
 project convention is English comments everywhere in source. CJK test DATA
 (string literals like "你好") is legitimate product behavior and is NOT flagged
 -- only comment prose is checked.
 
-Checked files (tracked source, by extension):
-    .rs .cs .py .toml .yml .bat .xaml
-Exclusions:
-    - generated/vendored dirs (bin, obj, target, __pycache__, TestResults)
-    - README.zh-CN.md and docs/ (Chinese by design; not source)
-    - quoted string literals on the same line (stripped before scanning)
-    - MainWindow.xaml outside comments: UI strings are product content, only
-      its <!-- comments --> are scanned
+Two checks run over the tree:
+
+  1. CJK comment prose (English-only rule), scanned for:
+     .rs .cs .py .toml .yml .bat .xaml
+     Exclusions:
+       - generated/vendored dirs (bin, obj, target, __pycache__, TestResults)
+       - README.zh-CN.md and docs/ (Chinese by design; not source)
+       - quoted string literals on the same line (stripped before scanning)
+       - MainWindow.xaml outside comments: UI strings are product content, only
+         its <!-- comments --> are scanned
+
+  2. Drive-absolute paths (``D:\\something`` / ``C:/something``) in the places a
+     stranger actually copies from: shipped script defaults and docs/*.md.
+     Why: a harness default naming one developer's disk is not reproducible
+     anywhere else, and publishing it leaks the author's machine layout. Data
+     locations must come from the shared resolution rule (see
+     script/bench_flores.py and sidecar/ct2_sidecar.py::default_data_dir).
+     Deliberately out of scope: unit-test fixtures, which fabricate paths on
+     purpose (C:\\, D:\\, E:\\ appear in dozens of assertions that never run on
+     those disks). Everything inside scope that genuinely needs a drive letter
+     (the Windows SDK roots probed in script/misc/sign_wonslate.py) carries an
+     explicit `lint-allow: drive-path` marker on the line.
 
 Usage:
     python tests/test_source_lint.py            # scan the whole tree
@@ -179,6 +193,64 @@ def iter_source_files(base=None, file_list=None):
     return found
 
 
+# ---- Check 2: no developer-machine paths in shipped source or docs ----------
+
+# A drive letter on its own. The lookbehind keeps URLs honest: the 's' of
+# https:// is preceded by a word character, so it never reads as a drive.
+DRIVE_PATH = re.compile(r'(?<!\w)[A-Za-z]:[\\/](?![/])')
+DRIVE_ALLOW = "lint-allow: drive-path"
+
+# Repro commands live in prose as much as in code, so docs are covered; that is
+# why this check has its own extension list instead of reusing EXTS (which
+# skips .md), and its own directory list (which keeps docs in, where the CJK
+# rule sends nothing because docs are Chinese by design).
+PATH_EXTS = EXTS + (".md", ".sh", ".xaml")
+PATH_SKIP_DIRS = SKIP_DIRS - {"docs"} | {".mimosa"}
+PATH_SCAN_DIRS = ("script", "sidecar", "ci", ".github", "docs")
+# Test fixtures are out of scope entirely -- see the module docstring.
+PATH_FIXTURE_DIRS = ("tests", "translator-engine", "Wonslate.UI", "Wonslate.UI.Tests")
+
+
+def iter_path_files(base=None, file_list=None):
+    if file_list is not None:
+        return [p for p in file_list
+                if os.path.splitext(p)[1].lower() in PATH_EXTS
+                and not _under_a(p, base or ROOT, PATH_FIXTURE_DIRS)]
+    found = []
+    for top in PATH_SCAN_DIRS:
+        for dirpath, dirnames, filenames in os.walk(os.path.join(base or ROOT, top)):
+            dirnames[:] = [d for d in dirnames if d not in PATH_SKIP_DIRS]
+            for f in filenames:
+                if os.path.splitext(f)[1].lower() in PATH_EXTS:
+                    found.append(os.path.join(dirpath, f))
+    return found
+
+
+def _under_a(path, base, tops):
+    rel = os.path.relpath(os.path.abspath(path), os.path.abspath(base))
+    parts = rel.split(os.sep)
+    return bool(parts) and parts[0] in tops
+
+
+def scan_paths(path):
+    """Return [(lineno, snippet)] holding a drive-absolute path."""
+    if os.path.basename(path) == os.path.basename(__file__):
+        # Self-exemption, same spirit as the unicode-tables one above: this
+        # linter has to spell out the shapes it forbids.
+        return []
+    try:
+        text = io.open(path, encoding="utf-8").read()
+    except (UnicodeDecodeError, OSError):
+        return []
+    hits = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if DRIVE_ALLOW in line:
+            continue
+        if DRIVE_PATH.search(line):
+            hits.append((n, line.strip()[:120]))
+    return hits
+
+
 def main(argv):
     files = None
     if len(argv) > 1:
@@ -189,10 +261,17 @@ def main(argv):
         for n, snippet in scan_file(path):
             print(f"[FAIL] CJK comment prose (English-only rule): {rel}:{n}: {snippet}")
             total += 1
+    for path in iter_path_files(file_list=files):
+        rel = os.path.relpath(path, ROOT)
+        for n, snippet in scan_paths(path):
+            print(f"[FAIL] drive-absolute path (use the data-dir rule, or mark "
+                  f"{DRIVE_ALLOW}): {rel}:{n}: {snippet}")
+            total += 1
     if total:
-        print(f"source lint: {total} violation(s) -- comments must be English")
+        print(f"source lint: {total} violation(s) -- comments must be English, "
+              "shipped files must not name one machine's disk")
         return 1
-    print("source lint: PASS (comments are English-only)")
+    print("source lint: PASS (comments are English-only, no machine paths)")
     return 0
 
 
