@@ -8,9 +8,14 @@ integrity / application control policy, and an unsigned app also trips the
 download warning. This script puts a self-signed code-signing certificate on the
 build output so local launch smoke is deterministic.
 
-Scope: only our own artifacts -- Wonslate.exe, Wonslate.dll and the Rust engine
-translator_engine.dll. Third-party native libraries shipped by NuGet packages
-are left untouched on purpose; re-signing someone else's binary is not ours to do.
+Scope: only our own artifacts -- Wonslate.exe, Wonslate.dll, the Rust engine
+translator_engine.dll and the MCP stdio server wonslate-mcp.exe. Third-party
+native libraries shipped by NuGet packages are left untouched on purpose;
+re-signing someone else's binary is not ours to do.
+
+The MCP binary lives where cargo leaves it (translator-engine/target/release),
+not in the GUI output directory, so it is collected from that second root; a
+user pointing an MCP client at mcp/run-mcp.bat still gets a signed server.
 
 Honest limits, printed by the script as well:
   * A self-signed certificate is trusted only on machines where it sits in the
@@ -51,6 +56,12 @@ DEFAULT_OUT = Path("Wonslate.UI") / "bin" / "Release" / "net10.0-windows"
 OUR_ARTIFACTS = ("Wonslate.exe", "Wonslate.dll", "translator_engine.dll")
 CERT_SUBJECT = "CN=Wonslate"
 KEY_FILES = "Wonslate*.dll"          # our own managed satellites, if any
+# The MCP server is a cargo auto-target and never gets copied next to the WPF
+# output, so listing it in OUR_ARTIFACTS would silently match nothing. Release
+# only on purpose: build_check.py already records that debug artifacts are the
+# ones an application control policy tends to reject.
+MCP_ARTIFACT = "wonslate-mcp.exe"
+MCP_DIR = Path("translator-engine") / "target" / "release"
 
 
 def say(tag: str, msg: str = "") -> None:
@@ -167,6 +178,9 @@ def collect_targets(out_dir: Path) -> list[Path]:
     for p in sorted(out_dir.glob(KEY_FILES)):
         if p.is_file() and p not in targets:
             targets.append(p)
+    mcp = ROOT / MCP_DIR / MCP_ARTIFACT
+    if mcp.is_file() and mcp not in targets:
+        targets.append(mcp)
     return targets
 
 

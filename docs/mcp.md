@@ -14,10 +14,40 @@ python script/build.py        # 或单独构建：cd translator-engine && cargo 
 
 产物在 `translator-engine/target/release/wonslate-mcp.exe`（Linux/macOS 为 `wonslate-mcp`），
 与引擎动态库同目录。它是独立的 stdio 程序，不加载 DLL，也不占用 GUI。
+日常使用建议直接注册 `mcp/run-mcp.bat` / `mcp/run-mcp.sh`（见下），不必手填这个路径。
+`script/misc/sign_wonslate.py` 已把本产物列入自签范围（它从 cargo 的输出目录收集，
+不靠被复制到 GUI 目录才会被签），以避开本机应用控制策略对新构建二进制的拦截。
 
 ## 注册到 MCP 客户端
 
-通用 stdio 形态（Claude Desktop 的 `claude_desktop_config.json`、多数客户端同型）：
+**推荐：指向一键入口脚本**，由它解析构建产物——配置里不必出现任何绝对路径，也不必区分 `.exe` 有无：
+
+```json
+{
+  "mcpServers": {
+    "wonslate": {
+      "command": "<仓库检出路径>/mcp/run-mcp.bat"
+    }
+  }
+}
+```
+
+Linux / macOS 用同目录的 `run-mcp.sh`。注意：**本仓所有 `.sh` 在 Git 里都以 `100644`（无执行位）入库**（Windows 侧 `core.filemode=false`，不保留 `+x`），所以客户端配置建议用 `bash` 包装，而不是直接把脚本当命令：
+
+```json
+{
+  "mcpServers": {
+    "wonslate": {
+      "command": "bash",
+      "args": ["<仓库检出路径>/mcp/run-mcp.sh"]
+    }
+  }
+}
+```
+
+或者先 `chmod +x mcp/run-mcp.sh`，再把 `command` 直接指向脚本。两个脚本只负责定位并启动服务器：若尚未构建，会打印可行动提示并以 exit 2 结束，不会静默失败。
+
+也可以直接指向裸二进制（不推荐：需自行维护构建路径与平台后缀差异）：
 
 ```json
 {
