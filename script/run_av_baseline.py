@@ -198,6 +198,27 @@ def run_bench(engine: str, direction: str, domain: str, n: int | None,
     return expected
 
 
+def run_bench_with_retry(engine, direction, domain, n, av_root, procs):
+    """Run bench_domain_av; if the sidecar crashed mid-bench, restart it and retry.
+
+    madlad's 3B CT2 model can OOM on a 6 GB laptop GPU, especially when
+    COMET loads its own model concurrently. By restarting the sidecar
+    once on failure, the runner is robust to that transient condition
+    without silently losing a whole engine's results.
+    """
+    try:
+        return run_bench(engine, direction, domain, n, av_root)
+    except subprocess.CalledProcessError:
+        port = SIDECAR_PORTS.get(engine)
+        if port and not _sidecar_running(port):
+            print(f"  [retry] {engine} sidecar died (port {port} gone); "
+                  f"restarting and retrying bench...", flush=True)
+            procs.append(_start_sidecar(engine, port))
+            return run_bench(engine, direction, domain, n, av_root)
+        # sidecar is up but bench still failed -- re-raise
+        raise
+
+
 def detect_av_root() -> pathlib.Path | None:
     """Return an --av-root override, or None to let bench_domain_av resolve
     normally. The runner uses the in-repo starter corpus when the default
@@ -584,23 +605,23 @@ def main(argv=None) -> int:
         if av_root:
             print(f"  [corpus] default OS root had no pair files; "
                   f"using in-repo starter at {av_root}")
+        # Phase 1: run ALL benches while sidecars are alive.
+        # COMET was previously scored inline after each engine (so that
+        # the GPU work overlapped bench progress), but that evicts the
+        # madlad CT2 model from VRAM mid-run (RTX 4050 Laptop, 6 GB).
+        # Separating the phases lets the GPU stay dedicated to whichever
+        # consumer is active.
+        evidence_files = []
         for engine in args.engines:
             for direction in DIRECTIONS:
-                base = run_bench(engine, direction, domain="", n=n, av_root=av_root)
+                base = run_bench_with_retry(
+                    engine, direction, "", n, av_root, procs)
+                evidence_files.append(base)
                 if not args.only_baseline:
-                    scoped = run_bench(engine, direction, domain="av", n=n,
-                                       av_root=av_root)
-                else:
-                    scoped = None
-                if not (args.skip_comet or args.quick):
-                    score_comet(base)
-                    if scoped:
-                        score_comet(scoped)
-        summary = generate_report(args)
-    except subprocess.CalledProcessError as exc:
-        print(f"subprocess failed: {exc.cmd} (exit {exc.returncode})", file=sys.stderr)
-        return 2
-    finally:
+                    scoped = run_bench_with_retry(
+                        engine, direction, "av", n, av_root, procs)
+                    evidence_files.append(scoped)
+        # Phase 2: kill sidecars to free GPU before COMET loads.
         for proc in procs:
             proc.terminate()
         for proc in procs:
@@ -608,6 +629,31 @@ def main(argv=None) -> int:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 proc.kill()
+        procs.clear()
+        # Phase 3: COMET scoring (needs GPU, now free).
+        if not (args.skip_comet or args.quick):
+            for ev in evidence_files:
+                score_comet(ev)
+        # Phase 4: report.
+        summary = generate_report(args)
+    except subprocess.CalledProcessError as exc:
+        print(f"subprocess failed: {exc.cmd} (exit {exc.returncode})", file=sys.stderr)
+        return 2
+    finally:
+        # Safety net: if the phased approach above already terminated
+        # procs normally, this second pass is a no-op. If an exception
+        # hit during bench or COMET, this cleans up orphans.
+        for proc in procs:
+            if proc.poll() is None:
+                proc.terminate()
+        for proc in procs:
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+    if not summary:
+        return 0
 
     _hr("Summary")
     for s in summary:
