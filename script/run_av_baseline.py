@@ -177,7 +177,8 @@ def install_pack() -> None:
     subprocess.check_call([sys.executable, str(INSTALL_PY), "--domain", "av"])
 
 
-def run_bench(engine: str, direction: str, domain: str, n: int | None) -> pathlib.Path:
+def run_bench(engine: str, direction: str, domain: str, n: int | None,
+              av_root: pathlib.Path | None = None) -> pathlib.Path:
     """Invoke bench_domain_av once; return the evidence path it wrote."""
     cmd = [sys.executable, str(BENCH_PY), "--engine", engine,
            "--direction", direction]
@@ -185,6 +186,8 @@ def run_bench(engine: str, direction: str, domain: str, n: int | None) -> pathli
         cmd += ["--domain", domain]
     if n:
         cmd += ["--n", str(n)]
+    if av_root:
+        cmd += ["--av-root", str(av_root)]
     tag = f"-{domain}" if domain else ""
     expected = EVIDENCE_DIR / f"av-domain-{engine}{tag}.json"
     _hr(f"Bench: engine={engine} dir={direction} domain={domain or '(unscoped)'}"
@@ -193,6 +196,28 @@ def run_bench(engine: str, direction: str, domain: str, n: int | None) -> pathli
     if not expected.exists():
         raise SystemExit(f"expected evidence file {expected} not written")
     return expected
+
+
+def detect_av_root() -> pathlib.Path | None:
+    """Return an --av-root override, or None to let bench_domain_av resolve
+    normally. The runner uses the in-repo starter corpus when the default
+    OS data-root has no pair files, so a first-time user gets numbers
+    without a manual copy step. Users who already set WONSLATE_AV_DIR or
+    --av-root themselves are respected (no override emitted)."""
+    if os.environ.get("WONSLATE_AV_DIR", "").strip():
+        return None
+    try:
+        from sidecar.ct2_sidecar import default_data_dir  # noqa: WPS433
+    except ImportError:
+        return None
+    default_root = default_data_dir() / "benchmarks" / "av-domain"
+    for prefix in ("av-zh-en", "av-en-zh"):
+        for candidate in (default_root / prefix / (prefix + ".src"),
+                          default_root / (prefix + ".src")):
+            if candidate.is_file():
+                return None
+    starter = REPO / "script" / "eval-data"
+    return starter if starter.is_dir() else None
 
 
 def score_comet(path: pathlib.Path) -> None:
@@ -208,22 +233,86 @@ def _load_ranges() -> list[dict]:
     return data["ranges"]
 
 
-def _per_domain_means(samples: list[dict], ranges: list[dict], key: str) -> list[float]:
-    """Return per-range mean of `key` (chrF/BLEU/COMET) over samples falling
-    in that range. Missing key -> skip that sample silently."""
+def _per_domain_means(run: dict | None, ranges: list[dict], key: str) -> list[float]:
+    """Return per-range value of `key` (chrF / BLEU / comet).
+
+    For `comet` we mean the parallel `comet_scores_per_sample` array that
+    score_comet.py attaches to a run. For `chrF` / `BLEU` we call
+    bench_translation.score on the range's slice so we get a real
+    corpus-level number over ~25 sentences rather than an average of
+    per-sample scores (which sacrebleu does not natively expose).
+
+    Missing evidence or a slice too short for BLEU returns NaN, which the
+    renderer shows as `_无数据_`."""
+    if not run:
+        return [float("nan")] * len(ranges)
+    samples = run.get("samples") or []
+    tgt_lang = (run.get("direction") or "-").split("-")[-1] or "en"
+    if key == "comet":
+        scores = run.get("comet_scores_per_sample")
+        if not scores:
+            return [float("nan")] * len(ranges)
+        out = []
+        for rng in ranges:
+            vals = [scores[s["id"]] for s in samples
+                    if rng["start"] <= s.get("id", -1) + 1 <= rng["end"]
+                    and s.get("id", -1) < len(scores)]
+            out.append(statistics.fmean(vals) if vals else float("nan"))
+        return out
+    try:
+        from bench_translation import score  # noqa: WPS433 (lazy)
+    except ImportError:
+        return [float("nan")] * len(ranges)
     out = []
     for rng in ranges:
-        vals = [s[key] for s in samples
-                if rng["start"] <= s.get("id", -1) + 1 <= rng["end"]
-                and isinstance(s.get(key), (int, float))]
-        out.append(statistics.fmean(vals) if vals else float("nan"))
+        subset = [s for s in samples
+                  if rng["start"] <= s.get("id", -1) + 1 <= rng["end"]]
+        if not subset:
+            out.append(float("nan"))
+            continue
+        hyps = [s["hypothesis"] for s in subset]
+        refs = [s["reference"] for s in subset]
+        try:
+            chrf, bleu = score(hyps, refs, tgt_lang)
+        except Exception:  # noqa: BLE001 (any sacrebleu error -> NaN cell)
+            out.append(float("nan"))
+            continue
+        out.append(chrf if key == "chrF" else bleu)
     return out
 
 
 def _aggregate(path: pathlib.Path | None) -> dict | None:
+    """Load one evidence JSON. Returns the sole `runs[0]` element so callers
+    see a flat dict of engine/direction/domain/metrics/samples. Adds
+    `comet_scores_per_sample` transparently once score_comet.py has run."""
     if path is None or not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    record = json.loads(path.read_text(encoding="utf-8"))
+    runs = record.get("runs") or []
+    if not runs:
+        # Legacy shape (pre-`runs` refactor) or the file was truncated.
+        # Synthesise a run so downstream code is uniform.
+        return {
+            "engine": record.get("engine", "?"),
+            "direction": record.get("direction", "?"),
+            "domain": record.get("domain", ""),
+            "metrics": record.get("metrics", {}),
+            "samples": record.get("samples", []),
+        }
+    return runs[0]
+
+
+def _metric(run, key):
+    if not run:
+        return None
+    m = run.get("metrics") or {}
+    if key in m:
+        return m[key]
+    # COMET lives at run["comet"] (score_comet.py) rather than inside
+    # run["metrics"]; normalise so _metric(run, "comet") works too.
+    if key == "comet" and "comet" in run:
+        return run["comet"]
+    return None
 
 
 def generate_report(args):
@@ -250,12 +339,6 @@ def generate_report(args):
                   "with an empty table.")
             return []
 
-    def _metric(payload, key):
-        if not payload:
-            return None
-        m = payload.get("metrics") or {}
-        return m.get(key)
-
     summary = []
     for e in engines:
         base, scope = baselines[e], scoped[e]
@@ -269,6 +352,7 @@ def generate_report(args):
             "base_chrF": b_chrf, "scope_chrF": s_chrf,
             "delta_comet": delta,
         })
+    args._evidence_note = _compute_evidence_note(baselines, scoped)
     _write_report(ranges, baselines, scoped, summary, args)
     return summary
 
@@ -287,15 +371,10 @@ def _fmt_pct(v):
 
 def _subdomain_rows(base: dict | None, scope: dict | None, ranges: list[dict]) -> list:
     """Return (name, count, base_chrF, scope_chrF, base_comet, scope_comet) per range."""
-    if base is None or scope is None:
-        # partial data; still emit rows using whichever side exists
-        pass
-    samples_b = (base or {}).get("samples", [])
-    samples_s = (scope or {}).get("samples", [])
-    b_ch = _per_domain_means(samples_b, ranges, "chrF") if samples_b else [float("nan")] * len(ranges)
-    s_ch = _per_domain_means(samples_s, ranges, "chrF") if samples_s else [float("nan")] * len(ranges)
-    b_co = _per_domain_means(samples_b, ranges, "comet") if samples_b else [float("nan")] * len(ranges)
-    s_co = _per_domain_means(samples_s, ranges, "comet") if samples_s else [float("nan")] * len(ranges)
+    b_ch = _per_domain_means(base, ranges, "chrF")
+    s_ch = _per_domain_means(scope, ranges, "chrF")
+    b_co = _per_domain_means(base, ranges, "comet")
+    s_co = _per_domain_means(scope, ranges, "comet")
     rows = []
     for i, rng in enumerate(ranges):
         count = rng["end"] - rng["start"] + 1
@@ -348,11 +427,25 @@ def _write_report(ranges, baselines, scoped, summary, args) -> None:
 
 
 def _hr_line_note(args) -> str:
-    if args.quick:
-        return "quick 模式，n=" + str(args.n or 20)
-    if args.only_baseline:
-        return "只跑基线，未做 domain=av 对照"
-    return "全量 300 句"
+    # Prefer an accurate label derived from the evidence we actually
+    # loaded over a nominal mode flag: --report-only can regenerate the
+    # report from --quick evidence, and it would otherwise lie and say
+    # "全量 300 句".
+    return getattr(args, "_evidence_note", "") or "全量 300 句"
+
+
+def _compute_evidence_note(baselines, scoped) -> str:
+    counts = []
+    for side in (baselines, scoped):
+        for run in side.values():
+            if run:
+                counts.append(run.get("evaluated") or 0)
+    if not counts:
+        return "无证据"
+    lo, hi = min(counts), max(counts)
+    if lo == hi:
+        return f"每引擎 {lo} 句" + ("（--quick 冒烟）" if lo <= 30 else "（全量）" if lo >= 300 else "")
+    return f"每引擎 {lo}-{hi} 句"
 
 
 def _hypothesis_block(summary, baselines, scoped, ranges) -> list:
@@ -487,11 +580,16 @@ def main(argv=None) -> int:
 
         install_pack()
         n = args.n or (20 if args.quick else None)
+        av_root = detect_av_root()
+        if av_root:
+            print(f"  [corpus] default OS root had no pair files; "
+                  f"using in-repo starter at {av_root}")
         for engine in args.engines:
             for direction in DIRECTIONS:
-                base = run_bench(engine, direction, domain="", n=n)
+                base = run_bench(engine, direction, domain="", n=n, av_root=av_root)
                 if not args.only_baseline:
-                    scoped = run_bench(engine, direction, domain="av", n=n)
+                    scoped = run_bench(engine, direction, domain="av", n=n,
+                                       av_root=av_root)
                 else:
                     scoped = None
                 if not (args.skip_comet or args.quick):

@@ -104,34 +104,17 @@ def resolve_av_root(explicit_root=None):
     stray `set WONSLATE_AV_DIR=` cannot resolve the current directory
     instead -- matches resolve_flores_root in bench_flores.py (S10 T1).
 
-    A fourth fallback resolves the in-repo starter at ``script/eval-data``
-    whenever the default user-data root has no pair files. That lets a
-    fresh clone run the harness end to end without any manual copy step;
-    users who have already populated the per-OS root (e.g. after
-    expanding the corpus) keep that as the winner because it is checked
-    before the fallback fires.
-    """
+    This function is strict: it never silently points elsewhere just
+    because the resolved default is empty. run_av_baseline.py owns the
+    "fall back to the in-repo starter corpus" decision so this harness
+    stays honest when a user has set WONSLATE_DATA_DIR / a custom root
+    that they expect to be reported back verbatim."""
     if explicit_root:
         return pathlib.Path(explicit_root)
     from_env = os.environ.get(AV_DIR_ENV, "").strip()
     if from_env:
         return pathlib.Path(from_env)
-    default_root = _default_data_dir() / DEFAULT_AV_SUBDIR
-    # Look for a pair file at either layout under default_root
-    # (nested <root>/<prefix>/<prefix>.src or bare <root>/<prefix>.src).
-    def _has_pair(root):
-        for prefix in PAIRS:
-            for candidate in (root / prefix / (prefix + ".src"),
-                              root / (prefix + ".src")):
-                if candidate.is_file():
-                    return True
-        return False
-    if _has_pair(default_root):
-        return default_root
-    starter = ROOT / "script" / "eval-data"
-    if starter.is_dir() and _has_pair(starter):
-        return starter
-    return default_root
+    return _default_data_dir() / DEFAULT_AV_SUBDIR
 
 
 def _pair_dir_candidates(root, prefix):
@@ -238,7 +221,16 @@ def _translate_via_ffi(engine_id, src_lang, tgt_lang, text, domain=""):
         "target_lang": tgt_lang,
         "mode": "full",
         "privacy": False,
-        "use_tm": True,
+        # use_tm must be False in a bench run. The pipeline's L-1 is a
+        # TM lookup keyed by (text, src, tgt, domain) and it *does* match
+        # generic TM entries (domain="") against a scoped query, so if a
+        # prior bench stored argos output under the generic key, every
+        # later scoped pass (madlad / ollama) would hit that same cache
+        # and return argos's hypothesis verbatim. That is exactly what
+        # happened on the first 300-sentence run: madlad-av and
+        # ollama-qwen-av produced 300/300 identical hypotheses to argos.
+        # For S12 we measure engine + terminology, not TM.
+        "use_tm": False,
         "domain": domain,
     }, ensure_ascii=False).encode("utf-8")
     ptr = lib.tt_translate_full(body)
@@ -316,19 +308,26 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
     tag = "-{}".format(domain) if domain else ""
     out = EVIDENCE_DIR / "av-domain-{}{}.json".format(engine_id, tag)
     import json
-    payload = {
+    run = {
         "engine": engine_id,
         "direction": direction,
         "domain": domain,
-        "corpus": "av-domain",
         "requested": n if n is not None else len(src),
         "evaluated": len(src),
-        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "metrics": metrics,
         "samples": [
             {"id": i, "source": s, "reference": r, "hypothesis": h}
             for i, (s, r, h) in enumerate(zip(src, tgt, hypotheses))
         ],
+    }
+    # The evidence is wrapped in a top-level `runs` array so score_comet.py
+    # (which iterates record.get("runs", []) and adds run["comet"] plus
+    # run["comet_scores_per_sample"]) can score it. Same shape as
+    # docs/evidence/flores-benchmark-*.json.
+    payload = {
+        "corpus": "av-domain",
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "runs": [run],
     }
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
