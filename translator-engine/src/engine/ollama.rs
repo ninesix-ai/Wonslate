@@ -163,6 +163,13 @@ impl Translator for OllamaTranslator {
     fn is_reachable(&self) -> bool {
         self.probe_reachable()
     }
+
+    /// The terms are composed into the system prompt (build_system_prompt), so a
+    /// requested domain genuinely shapes the output here. This is the one engine
+    /// tier that can carry S11's scoped glossary.
+    fn accepts_term_context(&self) -> bool {
+        true
+    }
 }
 
 impl OllamaTranslator {

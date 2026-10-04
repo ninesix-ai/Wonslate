@@ -164,17 +164,26 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         glossary::GlossaryContext::empty()
     };
 
-    // S11: a caller that asked for a specific domain but got only generic rows
-    // must see that in the message (REQ-B2). The generic ∪ specific union rule can
-    // legitimately return zero specific entries on a fresh install -- that is not
-    // a failure, but it is not what the caller asked for either.
+    // S11 (REQ-B2): a caller that asked for a specific domain must be able to tell,
+    // from the response alone, whether that domain actually shaped the output. Two
+    // honest outcomes stay distinct (D17): a domain with no rows of its own is a data
+    // gap - legitimate on a fresh install - while an engine that cannot act on term
+    // context is a capability gap. The capability check comes first because it stays
+    // true even after rows are loaded.
     let domain_note: Option<String> = if !req.domain.is_empty()
         && plan.use_glossary && config::get().glossary_enabled
-        && !glossary_ctx.entries.iter().any(|e| e.domain == req.domain)
     {
-        Some(format!(
-            "domain '{}' has no specific terms loaded; served generic only",
-            req.domain))
+        if !local_engine.accepts_term_context() {
+            Some(format!(
+                "engine '{}' does not accept term context; domain '{}' could not be applied",
+                local_engine.name(), req.domain))
+        } else if !glossary_ctx.entries.iter().any(|e| e.domain == req.domain) {
+            Some(format!(
+                "domain '{}' has no specific terms loaded; served generic only",
+                req.domain))
+        } else {
+            None
+        }
     } else {
         None
     };

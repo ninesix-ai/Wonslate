@@ -32,6 +32,17 @@ pub trait Translator: Send + Sync {
         self.translate(text, source, target)
     }
 
+    /// Whether this engine can act on glossary term context at all.
+    ///
+    /// Default is `false`, which matches `translate_with_context`'s default body -
+    /// it drops the context and calls the plain translate. Engines that weave the
+    /// terms into a prompt override this to `true`. Engines that cannot honour them
+    /// must not, because claiming `true` lets a request carrying a domain look
+    /// scoped when nothing applied it (D17, same spirit as REQ-B2).
+    fn accepts_term_context(&self) -> bool {
+        false
+    }
+
     /// Whether this engine looks reachable right now, cheaply.
     ///
     /// The default is `true`: engines that fail fast need no probe, and answering
@@ -46,6 +57,11 @@ pub trait Translator: Send + Sync {
 /// Reachability of an engine id, without holding an instance.
 pub fn is_reachable(id: &str) -> bool {
     get_engine(id).is_reachable()
+}
+
+/// Whether an engine id can act on term context; unknown ids fail closed.
+pub fn accepts_term_context(id: &str) -> bool {
+    get_engine(id).accepts_term_context()
 }
 
 /// Get an engine instance by id; unknown ids fall back to demo, never a null pointer.
@@ -156,5 +172,19 @@ mod tests {
     fn unknown_engines_are_not_local() {
         // Fail-closed: an id we do not know must default to "not local".
         assert!(!is_local_engine("no-such-engine"));
+    }
+
+    #[test]
+    fn term_context_capability_matches_the_backends() {
+        // D17. ollama composes the terms into the prompt; the dictionary engine and
+        // the CT2 / MADLAD sidecars cannot act on them (the sidecar backends say so
+        // in their own docstrings), so claiming `true` for those would let a scoped
+        // request look honoured when nothing applied it.
+        assert!(get_engine("ollama").accepts_term_context());
+        assert!(!get_engine("demo").accepts_term_context());
+        assert!(!get_engine("argos").accepts_term_context());
+        assert!(!get_engine("madlad").accepts_term_context());
+        // Fail-closed on ids we do not know, same as is_local_engine.
+        assert!(!accepts_term_context("no-such-engine"));
     }
 }

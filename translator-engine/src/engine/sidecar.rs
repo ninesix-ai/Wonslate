@@ -104,6 +104,13 @@ impl Translator for SidecarTranslator {
         }
         self.request(text, source, target, glossary)
     }
+
+    // Deliberately NOT overriding accepts_term_context: the terms travel in the
+    // request payload, but the CT2 and MADLAD backends read them and do nothing -
+    // their own docstrings state "Glossary injection is not supported by these
+    // checkpoints". Reporting `true` here would describe the wire format rather than
+    // the behaviour, and would let a scoped request look applied when it was ignored
+    // (D17). The trait default (false) is the honest answer.
 }
 
 

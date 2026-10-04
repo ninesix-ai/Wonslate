@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 
-//! S11 RED-PHASE integration tests: domain-scoped glossary and TM routing.
+//! S11 integration tests: domain-scoped glossary and TM routing.
 //!
-//! These tests author the *desired* contract for `domain` (see
-//! `docs/tasks/S11-*.md` in the outer task ledger). Every assertion here fails on the
-//! current tree because `router.rs::resolve` never reads `req.domain`,
-//! `glossary::build_context(_domain)` drops the field, `tm::glossary_list` has no
-//! domain argument, `gl_key` does not include domain, and the FFI has no
-//! `tt_glossary_import_pack`. That is the correct RED signal: the tests fail for
-//! "feature missing", not for a typo.
+//! These tests author the contract for `domain` (see `docs/tasks/S11-*.md` in the
+//! outer task ledger). They were first committed as RED-phase tests, when
+//! `router.rs::resolve` never read `req.domain`, `glossary::build_context(_domain)`
+//! dropped the field, `tm::glossary_list` had no domain argument, `gl_key` excluded
+//! domain and the FFI had no `tt_glossary_import_pack` - so every assertion failed
+//! for "feature missing", which was the intended RED signal. S11 landed in `95bff44`
+//! and the suite now runs 8/8 GREEN against the real implementation; the assertions
+//! themselves are unchanged.
 //!
-//! Do NOT ship the production code until these tests are seen failing first.
 //! Run: `cargo test --test domain_routing` (Release profile is the project default).
 
 use std::sync::OnceLock;
@@ -196,8 +196,37 @@ fn empty_specific_domain_surfaces_a_note() {
     );
 }
 
-/// ⑦ After importing the AV seed pack via the (to-be-added) FFI
-/// `tt_glossary_import_pack`, the entries become immediately visible to
+/// ⑧ D17: a scoped request the engine cannot honour must say so. The existing note
+/// only covers "this domain has no specific rows"; when the glossary *is* populated
+/// but the engine cannot act on term context at all, the response used to look
+/// exactly like a successfully domain-scoped translation (REQ-B2).
+#[test]
+fn scoped_request_on_a_term_blind_engine_says_it_was_not_applied() {
+    ensure_init();
+    // av rows exist, so the "no specific terms" branch cannot explain this run:
+    // the dictionary engine is the one that ignores the context.
+    tm::glossary_upsert(&entry("语段", "speech segment", "av")).unwrap();
+
+    let req = TranslateRequest {
+        engine_id: "demo".into(),
+        input: "hello".into(),
+        source_lang: "en".into(),
+        target_lang: "zh".into(),
+        mode: TranslationMode::Full,
+        privacy: true,
+        domain: "av".into(),
+        use_tm: false,
+    };
+    let resp = pipeline::translate_full(req).expect("demo must still answer");
+    let msg = resp.message.clone().unwrap_or_default();
+    assert!(msg.contains("does not accept term context"),
+        "a term-blind engine must state that the requested domain could not be applied; got {:?}",
+        resp.message);
+    assert!(msg.contains("av"), "the note must name the domain involved");
+}
+
+/// ⑦ After importing the AV seed pack via the FFI `tt_glossary_import_pack`
+/// (landed with S11 GREEN), the entries become immediately visible to
 /// `glossary_list(domain="av")`. This test drives the Rust-side helper.
 #[test]
 fn import_pack_materialises_domain_entries() {
