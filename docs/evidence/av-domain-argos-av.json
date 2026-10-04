@@ -1,0 +1,2123 @@
+{
+  "corpus": "av-domain",
+  "generated_at": "2026-10-04T01:18:49.291844+00:00",
+  "runs": [
+    {
+      "engine": "argos",
+      "direction": "zh-en",
+      "domain": "av",
+      "requested": 300,
+      "evaluated": 300,
+      "metrics": {
+        "chrF": 41.27605132640165,
+        "BLEU": 10.329998928138933
+      },
+      "samples": [
+        {
+          "id": 0,
+          "source": "启用流式合成之后，首段可播延迟降到 800 毫秒以内。",
+          "reference": "With streaming synthesis enabled, the time to first playable audio drops below 800 milliseconds.",
+          "hypothesis": "After the current synthesis is enabled, the start of the broadcast is delayed to within 800 ms."
+        },
+        {
+          "id": 1,
+          "source": "VAD 模型把这段录音切成了三个语音段，静音部分被丢弃。",
+          "reference": "The VAD model split this recording into three speech segments and dropped the silent parts.",
+          "hypothesis": "The VAD model cut the recording into three segments and the silent portion was discarded."
+        },
+        {
+          "id": 2,
+          "source": "Kokoro v1.1 用 int8 量化后模型体积约 320 MB，中文自然度接近可用。",
+          "reference": "After int8 quantization, Kokoro v1.1 ships at roughly 320 MB and Mandarin naturalness is close to usable.",
+          "hypothesis": "Kokoro v1.1 uses int8 to quantify the size of the model about 320 MB, and the naturality of Chinese is close to being available."
+        },
+        {
+          "id": 3,
+          "source": "SenseVoice 的自动语言检测在粤夹普的语料上表现不太稳定。",
+          "reference": "SenseVoice's automatic language detection is not very stable on Cantonese-Mandarin code-switched speech.",
+          "hypothesis": "The SenseVoice auto-linguistic testing has not been stable in the language materials of the kibbutzip."
+        },
+        {
+          "id": 4,
+          "source": "实时档走 argos，端到端延迟约 200 毫秒，够做面对面场景。",
+          "reference": "The realtime mode runs through argos with end-to-end latency around 200 ms, fast enough for face-to-face scenarios.",
+          "hypothesis": "Real-time goargos, end-to-end delay about 200 milliseconds, enough to make face-to-face scenes."
+        },
+        {
+          "id": 5,
+          "source": "精译档走 madlad 加 ollama，质量优先，不承诺延迟预算。",
+          "reference": "The quality mode chains madlad and ollama and prioritizes accuracy over a latency budget.",
+          "hypothesis": "Madlad plus ollama, quality priority, no commitment to delay budget."
+        },
+        {
+          "id": 6,
+          "source": "隐私模式是硬不变量，任何配置都无法把云端引擎纳入路由。",
+          "reference": "Privacy mode is a hard invariant: no configuration can route cloud engines into the pipeline.",
+          "hypothesis": "The privacy mode is a hard variable, and no configuration can include cloud engines in the route."
+        },
+        {
+          "id": 7,
+          "source": "翻译记忆命中率超过三成时，成本几乎只剩模型侧的一次性开销。",
+          "reference": "Once the translation memory hit rate passes thirty percent, cost is essentially a one-time model expense.",
+          "hypothesis": "When translation memory hits more than 30%, the cost is almost the one-time cost on the side of the model."
+        },
+        {
+          "id": 8,
+          "source": "缓冲区太小会造成卡顿；太大会推高端到端延迟。",
+          "reference": "A buffer that is too small causes stuttering; one that is too large inflates end-to-end latency.",
+          "hypothesis": "Too small a buffer zone would cause Cardon; too high-to-end delays."
+        },
+        {
+          "id": 9,
+          "source": "音频的采样率与位深决定了原始波形的数据量。",
+          "reference": "The sample rate and bit depth of audio determine the volume of raw waveform data.",
+          "hypothesis": "The sound sampling rate and bit depth determine the amount of data in the original wave form."
+        },
+        {
+          "id": 10,
+          "source": "单声道 16 千赫兹 16 位是语音识别最常见的输入格式。",
+          "reference": "Mono 16 kHz 16-bit is the most common input format for automatic speech recognition.",
+          "hypothesis": "Single channel 16 kHz 16 bits is the most common input format for voice recognition."
+        },
+        {
+          "id": 11,
+          "source": "双声道立体声在配音场景里通常会被下混回单声道再送入 ASR。",
+          "reference": "Stereo dual-channel audio is usually down-mixed to mono before being fed to the ASR model in a dubbing workflow.",
+          "hypothesis": "Two-way stereos are usually mixed back into a single channel and sent to the ASR."
+        },
+        {
+          "id": 12,
+          "source": "帧长 25 毫秒、帧移 10 毫秒是声学特征提取的常规配置。",
+          "reference": "A frame size of 25 ms and a frame shift of 10 ms is the standard setup for acoustic feature extraction.",
+          "hypothesis": "The frame is 25 milliseconds long, the frame is 10 milliseconds of normal configuration for acoustic characterization extraction."
+        },
+        {
+          "id": 13,
+          "source": "梅尔频谱图是把波形转换成模型可读输入的关键中间表示。",
+          "reference": "The mel spectrogram is the key intermediate representation that turns a waveform into something the model can read.",
+          "hypothesis": "The Mel spectrum map is a key intermediate representation for converting waveforms into model-readable inputs."
+        },
+        {
+          "id": 14,
+          "source": "强制对齐可以把参考文本与识别输出逐字对齐，用于时间戳生成。",
+          "reference": "Forced alignment lines up the reference text and the recognition output word by word, used to generate timestamps.",
+          "hypothesis": "Force alignment aligns the reference text verbatim with the identification output for the time stamp generation."
+        },
+        {
+          "id": 15,
+          "source": "逆文本规整把 \"二零二六年\" 转成 \"2026 年\"，让下游解析更简单。",
+          "reference": "Inverse text normalization converts \"two thousand twenty-six\" into \"2026\" so downstream parsing is simpler.",
+          "hypothesis": "The countertext has changed from \"2026\" to \"2026\", making it easier to analyze downstream."
+        },
+        {
+          "id": 16,
+          "source": "中英混排句子里，专用术语最好走术语表而不是让模型自由发挥。",
+          "reference": "In code-switched sentences, domain terminology should be pulled from the glossary rather than left to the model's imagination.",
+          "hypothesis": "In the Chinese-British mix, it would be better to follow a glossary of terms rather than to allow models to operate freely."
+        },
+        {
+          "id": 17,
+          "source": "Ollama 的提示注入要显式禁用思考模式，不然首字延迟会翻倍。",
+          "reference": "Prompt injection into Ollama must explicitly disable thinking mode, otherwise the time to first token doubles.",
+          "hypothesis": "Ollama's hint is inserted to significantly disable the thought mode, otherwise the initial delay will double."
+        },
+        {
+          "id": 18,
+          "source": "CUDA 提供程序在这块 RTX 4050 上给 TTS 带来的加速约 3 倍。",
+          "reference": "The CUDA provider gives TTS roughly a three-times speedup on this RTX 4050.",
+          "hypothesis": "CUDA provides that the program on this RTX 4050 accelerates TTS about three times."
+        },
+        {
+          "id": 19,
+          "source": "CPU 上跑 3B int8 模型的现实是每句 2 到 4 秒，不适合实时场景。",
+          "reference": "Running a 3B int8 model on CPU is realistically 2 to 4 seconds per sentence, not fit for realtime scenarios.",
+          "hypothesis": "The reality of the CPU running up the 3B int8 model is that each sentence is 2-4 seconds and is not suitable for a real-time scenario."
+        },
+        {
+          "id": 20,
+          "source": "字幕轨导出成 SRT 之后可以直接被播放器读取，不需要重新编码视频。",
+          "reference": "The subtitle track exported as SRT can be read directly by players without re-encoding the video.",
+          "hypothesis": "Subtitle tracks are exported to SRT, which can be read directly by the player, without recoding the video."
+        },
+        {
+          "id": 21,
+          "source": "双语字幕要求时序对齐：中文行与英文行必须落在同一时间窗口内。",
+          "reference": "Bilingual subtitles require timing alignment: the Chinese and English lines must share the same time window.",
+          "hypothesis": "Bilingual subtitles require alignment of time lines: the Chinese line must be in the same window as the English line."
+        },
+        {
+          "id": 22,
+          "source": "硬字幕是烧进画面的，之后想改只能重编码；软字幕可以随时替换。",
+          "reference": "Burned-in subtitles are part of the picture, so editing them later requires re-encoding; soft subtitles can be swapped at any time.",
+          "hypothesis": "Hard subtitles are burned into the picture and can only be recoded; soft subtitles can be replaced at any time."
+        },
+        {
+          "id": 23,
+          "source": "配音与对口型是两回事：前者关注语音替换，后者关注画面同步。",
+          "reference": "Dubbing and lip sync are separate concerns: the first replaces the audio, the second keeps the picture in sync.",
+          "hypothesis": "The accent is different from the mouth type: the former focuses on voice replacement and the latter on the synchronization of images."
+        },
+        {
+          "id": 24,
+          "source": "声画同步误差控制在 40 毫秒以内，人眼才不会觉得违和。",
+          "reference": "Audio-video sync error within 40 milliseconds is imperceptible to human viewers.",
+          "hypothesis": "The sound-sync error is controlled within 40 milliseconds, so the eye doesn't feel at odds."
+        },
+        {
+          "id": 25,
+          "source": "量化参数越高压缩率越高但画质损失越明显，需要在两者之间取舍。",
+          "reference": "A higher quantization parameter means a smaller bitrate but worse quality; the trade-off has to be tuned.",
+          "hypothesis": "The higher the compression rate of the quantitative parameters, and the more obvious the loss of paint, the trade-off between the two is required."
+        },
+        {
+          "id": 26,
+          "source": "GOP 越长比特率越低但快进快退越迟钝，直播场景一般不超过 2 秒。",
+          "reference": "A longer GOP lowers bitrate but makes seek response sluggish; live streaming usually caps it at two seconds.",
+          "hypothesis": "The longer the GoP, the lower the bit rate, the slower it gets, the slower it gets, the less it usually lasts two seconds."
+        },
+        {
+          "id": 27,
+          "source": "词错误率与字符错误率不能相互替代，中文更常用字符错误率。",
+          "reference": "Word error rate and character error rate are not interchangeable; Chinese benchmarks typically report character error rate.",
+          "hypothesis": "Word error rate and character error rate cannot be substituted, and the character error rate is more commonly used in Chinese."
+        },
+        {
+          "id": 28,
+          "source": "FLORES-101 是通用域，与产品主打的涉密文档与批量本地化场景仍有分布差。",
+          "reference": "FLORES-101 is general domain, still a distributional mismatch with the confidential-document and batch-localization scenarios this product targets.",
+          "hypothesis": "FLORES-101 is a common domain, with a difference in the distribution of the decryption-related documents and bulk localization scenes with the main producer."
+        },
+        {
+          "id": 29,
+          "source": "术语表按语言对检索，同名条目在通用与领域之间会冲突，需要 domain 段来分组。",
+          "reference": "The glossary is looked up by language pair; entries with the same source term collide between generic and domain rows, so the primary key needs a domain segment.",
+          "hypothesis": "The glossary is searchable by language and the entries of the same name are conflicting between the general and the field, and a domain paragraph is required to group them."
+        },
+        {
+          "id": 30,
+          "source": "语音活动检测的阈值调低会把呼吸声也切成语音段，调高则会吞掉句末弱读。",
+          "reference": "Lowering the voice activity detection threshold cuts breathing into speech segments as well; raising it swallows weak syllables at sentence ends.",
+          "hypothesis": "Lower thresholds for speech activity detection would cut the breathing into the voice segment, and higher levels would swallow the end of the sentence."
+        },
+        {
+          "id": 31,
+          "source": "自动语音识别的后处理通常包含标点恢复与数字规整两个独立步骤。",
+          "reference": "Post-processing for automatic speech recognition usually involves two independent steps: punctuation restoration and number normalization.",
+          "hypothesis": "The reprocessing of automatic voice recognition usually involves two separate steps, point restoration and numerical regulation."
+        },
+        {
+          "id": 32,
+          "source": "神经机器翻译的编码器把源句压成上下文向量，解码器再自回归生成目标句。",
+          "reference": "In neural machine translation the encoder squeezes the source sentence into a context vector and the decoder autoregressively generates the target sentence.",
+          "hypothesis": "The encoder of the neuromechanical translation presses the source sentence into the context vector, and the decoding device returns to the target sentence."
+        },
+        {
+          "id": 33,
+          "source": "文本转语音的前端要做分词、字音转换和韵律预测三级流水，任一级掉链子都会破坏自然度。",
+          "reference": "The text-to-speech frontend runs three stages -- tokenization, grapheme-to-phoneme conversion and prosody prediction -- and a failure in any of them hurts naturalness.",
+          "hypothesis": "The front end of the text transliteration is to predict the flow of the three levels of water, and any chain drop would destroy the naturality."
+        },
+        {
+          "id": 34,
+          "source": "流式识别与离线识别的差别不只是延迟，还包括前缀假设与最终结果的一致性。",
+          "reference": "Streaming recognition differs from offline recognition not only in latency but also in the consistency between prefix hypotheses and the final result.",
+          "hypothesis": "The difference between fluid and offline recognition is not only a delay, but also the consistency of prefix assumptions with the end result."
+        },
+        {
+          "id": 35,
+          "source": "同声传译产品化时最常见的取舍是 \"延迟换准确率\"，滑窗大小直接决定这两者。",
+          "reference": "The most common trade-off when productizing real-time interpretation is \"buying accuracy with latency\", and the sliding-window size directly determines both.",
+          "hypothesis": "The most common trade-off in the productization of simultaneous interpretation is the \"delayed change of accuracy factor\" which is directly determined by the size of the slide window."
+        },
+        {
+          "id": 36,
+          "source": "批量本地化管线要能在 1000 句的规模下保持每小时不崩，因此断点续传与幂等重跑是硬要求。",
+          "reference": "A batch localization pipeline must survive a thousand-sentence run for hours without crashing, which makes checkpoint-resume and idempotent retries hard requirements.",
+          "hypothesis": "The bulk of the local catheter line must be able to stay on an hour-by-hour basis at a scale of 1,000 sentences, so stop-and-go reruns and so on are hard requirements."
+        },
+        {
+          "id": 37,
+          "source": "语音翻译与文本翻译共用同一套路由：TM 命中、隐私钳制、语言对分档、置信度门控、AI 升级。",
+          "reference": "Speech translation and text translation share the same routing: TM hit, privacy clamp, per-language-pair tiering, confidence gating and AI upgrade.",
+          "hypothesis": "Voice-translators share the same route as text-translators: TM hits, privacy restraints, language-to-slotting, confidence-building doors, AI upgrades."
+        },
+        {
+          "id": 38,
+          "source": "端点检测比 VAD 更严格，它需要区分 \"句子说完\" 与 \"句中停顿\"。",
+          "reference": "Endpoint detection is stricter than VAD -- it has to distinguish \"sentence finished\" from \"pause inside a sentence\".",
+          "hypothesis": "Endpoint tests are more stringent than VAD, and it needs to distinguish between \"speak the sentence\" and \"stop the sentence.\""
+        },
+        {
+          "id": 39,
+          "source": "说话人分离在会议录音上表现好，在重叠说话的播客里就明显退化。",
+          "reference": "Speaker diarization works well on meeting recordings but degrades visibly on podcasts with overlapping speech.",
+          "hypothesis": "The separation of speakers in the sound recording of meetings is a clear degradation in the overlapping podcasts."
+        },
+        {
+          "id": 40,
+          "source": "情感语音合成需要额外一路韵律条件，不能只靠文本前端。",
+          "reference": "Expressive speech synthesis needs an extra prosody conditioning channel and cannot rely on the text frontend alone.",
+          "hypothesis": "Emotional speech synthesis requires additional hymn conditions and cannot rely solely on the front end of the text."
+        },
+        {
+          "id": 41,
+          "source": "零样本音色克隆只要 5 秒参考音频就能起步，但对采样率与信噪比敏感。",
+          "reference": "Zero-shot speaker cloning can start from just five seconds of reference audio but is sensitive to sample rate and signal-to-noise ratio.",
+          "hypothesis": "A zero sample of acoustic cloning can start with a reference audio for only 5 seconds, but is sensitive to sampling rates compared to cell noise."
+        },
+        {
+          "id": 42,
+          "source": "语音识别的置信度分数不能直接搬到翻译置信度上，两者校准曲线完全不同。",
+          "reference": "A speech recognition confidence score cannot be lifted directly into a translation confidence score; their calibration curves are entirely different.",
+          "hypothesis": "The confidence score for speech recognition cannot be moved directly to the translation confidence, and the calibration curves are completely different."
+        },
+        {
+          "id": 43,
+          "source": "Kokoro 的中文男声 sid 45-52 中，52 混排表现最好，48 更贴近播音腔。",
+          "reference": "Among Kokoro's Mandarin voices at sid 45-52, 52 handles CJK/Latin code-switching best while 48 sits closer to a broadcast tone.",
+          "hypothesis": "Of Kokoro's Chinese man-sid 45-52, 52 shows the best mix, 48 is closer to the sound cavity."
+        },
+        {
+          "id": 44,
+          "source": "Whisper 类模型在长语音上会漂移，切片策略一般按 VAD 边界而不是固定 30 秒。",
+          "reference": "Whisper-style models drift on long audio, so the standard slicing policy follows VAD boundaries rather than a fixed 30 seconds.",
+          "hypothesis": "The Whisper type model floats on long voice, and the slice policy usually follows the VAD border rather than fixes it for 30 seconds."
+        },
+        {
+          "id": 45,
+          "source": "流式 ASR 的因果性约束意味着当前的识别不能引用未来帧，与离线模型有本质差别。",
+          "reference": "The causality constraint in streaming ASR means the current hypothesis cannot look ahead to future frames -- a fundamental difference from offline models.",
+          "hypothesis": "The causal constraints of the current ASR mean that the current identification does not refer to the future frame and is fundamentally different from the offline model."
+        },
+        {
+          "id": 46,
+          "source": "实时字幕的常见做法是稳定前缀 + 浮动后缀，让阅读体验不至于一句话改三遍。",
+          "reference": "Real-time subtitles usually stabilize the prefix and let the suffix float, so a single sentence is not rewritten three times for the reader.",
+          "hypothesis": "The common practice of real-time subtitles is to stabilize prefixes + float suffixes, so that reading experiences do not change the word three times."
+        },
+        {
+          "id": 47,
+          "source": "批量本地化任务往往跨夜跑，日志聚合与断言式失败必须能事后重放。",
+          "reference": "Batch localization jobs often run overnight, so log aggregation and assertion-style failures must be replayable after the fact.",
+          "hypothesis": "Mass localization missions often run over the night, and log aggregation and acclaim failure must be able to be repeated afterwards."
+        },
+        {
+          "id": 48,
+          "source": "端到端语音翻译把 ASR、MT、TTS 融成一个模型，牺牲可解释性换更低延迟。",
+          "reference": "End-to-end speech translation collapses ASR, MT and TTS into a single model, trading interpretability for lower latency.",
+          "hypothesis": "End-to-end voice-translator integrates ASR, MT, TTS into a model at the expense of interpretability for lower delay."
+        },
+        {
+          "id": 49,
+          "source": "语音采样率与位深决定了奈奎斯特频率上限，16 千赫兹的语音只能表达 8 千赫兹以下的成分。",
+          "reference": "The audio sample rate and bit depth set the Nyquist ceiling; 16 kHz speech can only carry content below 8 kHz.",
+          "hypothesis": "Voice sampling rates and position depths determine the maximum frequency of Nequester, with 16 kHz voice only expressing up to 8 kHz."
+        },
+        {
+          "id": 50,
+          "source": "声码器负责把频谱反演回波形，Griffin-Lim 慢而糊，神经网络声码器快且清晰。",
+          "reference": "A vocoder inverts the spectrum back into a waveform -- Griffin-Lim is slow and muddy, while neural vocoders are fast and clean.",
+          "hypothesis": "The sound coder is responsible for reversing the spectrum back to wave shape, Griffin-Lim is slow, and the neural network sound code is fast and clear."
+        },
+        {
+          "id": 51,
+          "source": "基频 F0 的估计常用自相关或 YIN 算法，浊音段准，清音段本身就是噪声。",
+          "reference": "Fundamental-frequency estimation usually uses autocorrelation or YIN; both are accurate on voiced segments, but unvoiced segments are noise by definition.",
+          "hypothesis": "The base frequency F0 estimates are commonly associated with or YIN algorithms, which are sound-corrected, and clean-up segments are themselves noise."
+        },
+        {
+          "id": 52,
+          "source": "倒谱系数取前 40 维已经足够覆盖大部分人耳可辨的频谱特征。",
+          "reference": "The first 40 cepstral coefficients already cover most of the spectral detail the human ear can distinguish.",
+          "hypothesis": "40 D is sufficient to cover most people ' s ear-deficient spectrum features."
+        },
+        {
+          "id": 53,
+          "source": "立体声到单声道 down-mix 需要按能量归一而不是简单平均，不然左右声道的相位差会引入染色。",
+          "reference": "Down-mixing stereo to mono should normalize by energy rather than average samples, otherwise the phase difference between channels colors the output.",
+          "hypothesis": "Stereo-down-mix requires energy integration rather than simple averages, otherwise the phase differential of the left- and right-channel channel will lead to dye."
+        },
+        {
+          "id": 54,
+          "source": "静音压缩通过保留 VAD 判定的语音段来实现，会议录音可以省下 30% 到 50% 时长。",
+          "reference": "Silence compression keeps only the segments VAD flags as speech, saving 30 to 50 percent of the length on typical meeting recordings.",
+          "hypothesis": "Mute compression is achieved by retaining the voice slot determined by VAD, which saves 30% to 50% of the meeting time."
+        },
+        {
+          "id": 55,
+          "source": "重采样从 48 千赫兹降到 16 千赫兹要先做抗混叠低通滤波，不然高频会折叠进语音带。",
+          "reference": "Resampling from 48 kHz to 16 kHz must apply an anti-aliasing low-pass filter first, otherwise high frequencies fold into the speech band.",
+          "hypothesis": "The re-sampling from 48 kHz to 16 kHz is first made against a folding low-through filter, otherwise the high frequency folds into the voice belt."
+        },
+        {
+          "id": 56,
+          "source": "信噪比低于 10 分贝的现场录音通常要先做降噪再送 ASR。",
+          "reference": "Field recordings with a signal-to-noise ratio below 10 dB usually need denoising before being sent to ASR.",
+          "hypothesis": "The live recording of a noise ratio below 10 dB is usually done before sending ASR."
+        },
+        {
+          "id": 57,
+          "source": "预加重滤波把高频抬起来，能让后续特征提取对小擦音更敏感。",
+          "reference": "Pre-emphasis filtering lifts high frequencies so that later feature extraction is more sensitive to weak fricatives.",
+          "hypothesis": "The pre-enhancement filter lifts the HF up, making subsequent feature extraction more sensitive to minor wiping."
+        },
+        {
+          "id": 58,
+          "source": "分帧时常用的汉明窗能显著削弱矩形窗带来的吉布斯振铃。",
+          "reference": "A Hamming window is standard during framing and noticeably reduces the Gibbs ringing a rectangular window would introduce.",
+          "hypothesis": "The Han Ming window, which is often used in the split frame, significantly weakens the Gibbs ringing from the rectangular window."
+        },
+        {
+          "id": 59,
+          "source": "帧率 25 fps 是影视的常规，50 fps 会让观众觉得 \"太像新闻\"。",
+          "reference": "A 25 fps frame rate is normal for film; 50 fps makes viewers feel it \"looks too much like news footage\".",
+          "hypothesis": "The frame rate of 25 fps is the standard for video, and 50 fps will make the audience feel like \"too much news.\""
+        },
+        {
+          "id": 60,
+          "source": "位深度从 16 升到 24 位不会让响度更大，但动态范围与量化噪声显著改善。",
+          "reference": "Raising bit depth from 16 to 24 does not increase loudness but improves dynamic range and quantization noise noticeably.",
+          "hypothesis": "The depth rises from 16 to 24 bits will not cause a greater noise, but the dynamic range and quantitative noise have improved significantly."
+        },
+        {
+          "id": 61,
+          "source": "音画同步在编码链路上要留一个音视频缓冲差，视频通常比音频晚 20 毫秒。",
+          "reference": "Audio-video sync has to leave a small buffer skew in the encoding chain -- video is typically about 20 ms behind audio.",
+          "hypothesis": "Synchronization of a sound and video buffer on the encoding chain, usually 20 milliseconds later than the audio."
+        },
+        {
+          "id": 62,
+          "source": "声道布局从 5.1 下混到立体声要用 Dolby Pro Logic 而不是简单相加。",
+          "reference": "Down-mixing from 5.1 to stereo should use Dolby Pro Logic rather than a straight sum.",
+          "hypothesis": "The sound layout from 5.1 down to stereo is added by Dolby Pro Logic instead of simply adding."
+        },
+        {
+          "id": 63,
+          "source": "频谱质心、零过率、能量这三个特征就能把音乐与语音分开。",
+          "reference": "Spectral centroid, zero-crossing rate and energy are enough to separate music from speech.",
+          "hypothesis": "The three characteristics of spectrum mass heart, zero pass rate and energy separate the music from the voice."
+        },
+        {
+          "id": 64,
+          "source": "梅尔刻度是仿人耳感知非线性；线性刻度做 FFT 直接分箱不符合听觉心理。",
+          "reference": "The mel scale mirrors the non-linear frequency perception of human hearing; a linear FFT binning does not match psychoacoustics.",
+          "hypothesis": "Mel is not linear in human ear perception; linear in the FFT direct box does not fit the hearing mind."
+        },
+        {
+          "id": 65,
+          "source": "基音周期与共振峰是语音产生物理模型里最基础的两个概念。",
+          "reference": "Pitch period and formants are the two most basic concepts in the physical model of speech production.",
+          "hypothesis": "The two most fundamental concepts in the speech-producing physics model are the sonic cycles and resonance peaks."
+        },
+        {
+          "id": 66,
+          "source": "声纹识别与说话人分离是两回事：前者固定身份集合做识别，后者只做聚类不分身份。",
+          "reference": "Voiceprint recognition and speaker diarization are not the same: the first identifies a fixed set of speakers, the second only clusters without identities.",
+          "hypothesis": "Acoustic recognition is a different matter from the separation of the person who speaks: the former is identified by a fixed group of identities, while the latter is separated by grouping."
+        },
+        {
+          "id": 67,
+          "source": "音频缓冲不足会引发 dropout，视频缓冲不足会引发跳帧，两者表现不同但根因都是背压。",
+          "reference": "Insufficient audio buffering causes dropouts, insufficient video buffering causes frame skips -- different symptoms but the same root cause is backpressure.",
+          "hypothesis": "Weak audio buffers can trigger dropout, short video buffers can trigger jump frames, and both show different but root causes of back pressure."
+        },
+        {
+          "id": 68,
+          "source": "流式协议里 chunk 与 packet 常被混用，但对时延统计而言是两个概念。",
+          "reference": "In streaming protocols chunk and packet are often used interchangeably, but for latency accounting they are two different concepts.",
+          "hypothesis": "The chunk and packet are often mixed in the flow protocol, but are two concepts for time lag statistics."
+        },
+        {
+          "id": 69,
+          "source": "抖动缓冲动态调整目标延迟，网络好时压到 20 毫秒，网络差时拉到 200 毫秒。",
+          "reference": "A jitter buffer dynamically retargets delay -- pushing it down to 20 ms when the network is good and stretching it to 200 ms when the network is bad.",
+          "hypothesis": "Dithered buffer dynamically adjusted target is delayed, the network presses to 20 milliseconds when good and the network is 200 milliseconds when bad."
+        },
+        {
+          "id": 70,
+          "source": "流水线里任何一级的吞吐瓶颈都会把上游顶爆，反压信号必须能一路传回输入端。",
+          "reference": "Any throughput bottleneck in a pipeline will back up everything upstream, so the backpressure signal has to propagate all the way to the input.",
+          "hypothesis": "Any level of bottlenecks in the current line will blow up upstream, and counter-pressure signals must be sent back to the input end."
+        },
+        {
+          "id": 71,
+          "source": "TCP 的重传会破坏实时性，音视频低延迟场景普遍走 UDP 加前向纠错。",
+          "reference": "TCP retransmission ruins real-time behaviour; low-latency audio and video usually ride on UDP with forward error correction.",
+          "hypothesis": "TCP re-routing can undermine real-time, and UDP-plus error correction is widespread."
+        },
+        {
+          "id": 72,
+          "source": "关键帧间隔太长会让 seek 卡顿，太短会让相同画质下比特率翻倍。",
+          "reference": "Keyframes spaced too far apart make seeking stutter; too close and the bitrate doubles for the same quality.",
+          "hypothesis": "It's too long for the key frames to seek Cardon, too short to double the bit rate for the same painting."
+        },
+        {
+          "id": 73,
+          "source": "分块处理时相邻块要有 50% 重叠，不然边界处的能量估计会跳变。",
+          "reference": "Chunked processing needs 50 percent overlap between adjacent chunks, otherwise the energy estimate jumps at the boundaries.",
+          "hypothesis": "The section handles the adjacent blocks with 50% overlap, otherwise the energy at the border is expected to jump."
+        },
+        {
+          "id": 74,
+          "source": "冲刷操作的语义是 \"把当前缓冲里的内容全部吐出去并结束本段\"。",
+          "reference": "Flush means \"emit everything currently in the buffer and terminate this segment\".",
+          "hypothesis": "The semantic of the brushing operation is \"to spit out the contents of the current buffer and end this paragraph.\""
+        },
+        {
+          "id": 75,
+          "source": "端到端流水线里背压没设计好时，最下游的消费者慢就整条链堵死。",
+          "reference": "If backpressure is not designed in an end-to-end pipeline, a slow consumer at the tail stalls the entire chain.",
+          "hypothesis": "When the end-to-end back pressure is not designed, the bottom-down consumers block the whole chain."
+        },
+        {
+          "id": 76,
+          "source": "缓冲预取一般按帧数而不是按时长，因为帧才是模型的原子单位。",
+          "reference": "Buffer prefetch usually counts in frames, not in seconds, because a frame is the atomic unit of the model.",
+          "hypothesis": "Buffer pre-emption is usually based on frame numbers rather than on timing, since frame is the atomic unit of the model."
+        },
+        {
+          "id": 77,
+          "source": "流式合成的边界要落在词或短语之后，切在助词或连词中间会明显刺耳。",
+          "reference": "Streaming synthesis boundaries should land after a word or phrase; cutting at a particle or conjunction is audibly jarring.",
+          "hypothesis": "Flow-synthesis boundaries fall after words or phrases, and cut into the middle of the collateral or hyphenation will clearly strangulate."
+        },
+        {
+          "id": 78,
+          "source": "数据报传输协议丢一两个包时解码器要能优雅丢帧而不是崩。",
+          "reference": "When the datagram transport protocol drops one or two packets, the decoder should gracefully conceal rather than crash.",
+          "hypothesis": "The data report transfer protocol needs to be able to drop the frame with grace rather than collapse when one or two packages are dropped."
+        },
+        {
+          "id": 79,
+          "source": "恒定比特率适合广播，可变比特率适合存储；两者的缓冲模型完全不同。",
+          "reference": "Constant bitrate suits broadcast, variable bitrate suits storage -- their buffering models are completely different.",
+          "hypothesis": "The constant bitrate is suitable for broadcasting and the variable bitrate is suitable for storage; the buffer model of the two is completely different."
+        },
+        {
+          "id": 80,
+          "source": "容器只负责封装与同步，编解码器负责压缩；把 mkv 转成 mp4 不需要重编码。",
+          "reference": "The container only handles packaging and synchronisation; the codec handles compression. Turning an mkv into an mp4 needs no re-encoding.",
+          "hypothesis": "Packagings are only for sealing and synchronization, and decoding machines are for compression; recoding is not required to convert mkv to mp4."
+        },
+        {
+          "id": 81,
+          "source": "比特流的网络抽象层携带时序与合成信息，缺失会让解码器无法正确解码。",
+          "reference": "The network abstraction layer of the bitstream carries timing and composition information; missing it leaves the decoder unable to render correctly.",
+          "hypothesis": "The network abstract layer of the Bitstream carries time sequences and composite information, and the absence of the decoding device makes it impossible to decode correctly."
+        },
+        {
+          "id": 82,
+          "source": "编码器要显式声明 profile 与 level，播放器据此判断能不能吃下这条流。",
+          "reference": "The encoder must declare its profile and level explicitly so the player can decide whether it can accept this stream.",
+          "hypothesis": "The encoder uses a visible statement of profile and level, according to which the player determines whether or not to eat the stream."
+        },
+        {
+          "id": 83,
+          "source": "解复用就是把一个容器拆开成若干条音视频字幕轨，不做任何解码。",
+          "reference": "Demultiplexing means splitting a container into its video, audio and subtitle tracks without decoding anything.",
+          "hypothesis": "Reuse is to untangle a container into several audio-visual subtitle tracks without any decoding."
+        },
+        {
+          "id": 84,
+          "source": "无损压缩对波形做熵编码，可以逐比特还原；有损压缩引入量化误差。",
+          "reference": "Lossless compression entropy-codes the waveform and can restore it bit-for-bit; lossy compression introduces quantization error.",
+          "hypothesis": "No loss compression entropy coded for wave shapes, which can be reduced by bit; impairment compression introduces quantitative error."
+        },
+        {
+          "id": 85,
+          "source": "转码时如果源和目标编解码器不同，一定要经过帧缓冲重排。",
+          "reference": "Transcoding between different source and target codecs must go through a frame buffer for reorder.",
+          "hypothesis": "If the source and target codec is different at the time of the transcoder, it must be reset by frame buffer."
+        },
+        {
+          "id": 86,
+          "source": "帧内预测只依赖当前帧，帧间预测要引用参考帧，二者的错误传播特性不同。",
+          "reference": "Intra-frame prediction depends only on the current frame; inter-frame prediction references other frames, and the two propagate errors differently.",
+          "hypothesis": "The frame-based predictions are based only on the current frame and the inter-frame predictions refer to the frame of reference, which differ from the error-dissemination characteristics."
+        },
+        {
+          "id": 87,
+          "source": "运动估计的搜索半径越大越精确但也越慢，默认 16 像素是常见折中。",
+          "reference": "A larger motion-estimation search radius is more accurate but slower; 16 pixels is the common default.",
+          "hypothesis": "The larger the search radius, the more accurate, the slower it is, the default 16 pixels is a common compromise."
+        },
+        {
+          "id": 88,
+          "source": "熵编码用霍夫曼或算术编码；算术编码效率略高但专利与复杂度都是负担。",
+          "reference": "Entropy coding uses Huffman or arithmetic coding -- the latter is slightly more efficient but carries patent and complexity overhead.",
+          "hypothesis": "Entropy is coded with Hoffmann or arithmetical coding; arithmetical coding is slightly more efficient, but both patent and complexity are burdened."
+        },
+        {
+          "id": 89,
+          "source": "码率控制要感知内容，静态场景压低码率，运动场景放开码率。",
+          "reference": "Rate control should be content-aware: lower bitrate for static scenes, higher bitrate for motion-heavy scenes.",
+          "hypothesis": "Code rate control requires a sense of content, static scene pressure low code rate, sports scene release rate."
+        },
+        {
+          "id": 90,
+          "source": "AVC、HEVC、VVC 每一代同画质下比特率大致降一半，复杂度大约翻倍。",
+          "reference": "Each generation from AVC to HEVC to VVC roughly halves the bitrate for the same quality but doubles the complexity.",
+          "hypothesis": "AVC, HEVC, VVC each generation drops the bit rate by about half, and the complexity is about double."
+        },
+        {
+          "id": 91,
+          "source": "Opus 在 6 到 512 千比特率之间自适应，是互联网语音的默认选择。",
+          "reference": "Opus adapts between 6 and 512 kbps and is the default choice for voice on the internet.",
+          "hypothesis": "Opus adapts to the 6-512 kbit rate, which is the default choice for Internet voice."
+        },
+        {
+          "id": 92,
+          "source": "FLAC 无损压缩率大约 5:1，适合母带归档；MP3 是有损，别用来做二压。",
+          "reference": "FLAC compresses losslessly around 5:1 and is suited to archiving masters; MP3 is lossy and should never be secondarily compressed.",
+          "hypothesis": "The FLAC no-lose compression rate is approximately 5:1, suitable for the mother belt archive; MP3 is impaired and is not used as a double pressure."
+        },
+        {
+          "id": 93,
+          "source": "视频字幕要处理换行宽度、字符编码与字体缺字三个独立问题。",
+          "reference": "Video subtitles have to handle three independent problems: line-width wrapping, character encoding and missing glyphs.",
+          "hypothesis": "Video subtitles deal with three separate issues of line width, character encoding and font deficiency."
+        },
+        {
+          "id": 94,
+          "source": "SubRip 只有时间轴与文本两栏，样式能力弱；ASS 有事件与样式两栏，能表达卡拉OK。",
+          "reference": "SubRip only has timing and text fields, weak styling; ASS adds event and style sections and can express karaoke effects.",
+          "hypothesis": "SubRip only has two columns on the time axis and text, and styles are weak; ASS has two columns on events and styles that express Karaoke."
+        },
+        {
+          "id": 95,
+          "source": "WebVTT 是 W3C 定义的网页字幕格式，天然与 HTML5 播放器对接。",
+          "reference": "WebVTT is the W3C-defined subtitle format for the web and slots straight into HTML5 players.",
+          "hypothesis": "WebVTT is a W3C-defined web subtitle format that naturally docks to an HTML5 player."
+        },
+        {
+          "id": 96,
+          "source": "逐字时间戳需要强制对齐输出，纯 ASR 只有段级时间戳。",
+          "reference": "Word-level timestamps require forced-alignment output; ASR alone only provides segment-level timing.",
+          "hypothesis": "Word-to-word timetamps require mandatory alignment, and the pure ASR only has a paragraph timetamp."
+        },
+        {
+          "id": 97,
+          "source": "字幕断行要按语义而不是按字符数：把 \"声画同步\" 拆到两行会破坏阅读。",
+          "reference": "Subtitle line breaks should follow meaning rather than character count; splitting \"audio-video sync\" across two lines wrecks readability.",
+          "hypothesis": "Subtitle break lines are semantics rather than character numbers: tearing \"sync\" down to two lines would ruin reading."
+        },
+        {
+          "id": 98,
+          "source": "硬字幕化流程 = 抽帧、烧字、重编码；每一步都可能引入代际损失。",
+          "reference": "Burning in subtitles means extracting frames, drawing captions and re-encoding -- each step can add a generation of loss.",
+          "hypothesis": "Hard subtitling = frame, burn, recoding; each step may introduce intergenerational loss."
+        },
+        {
+          "id": 99,
+          "source": "对口型算法在真人上主要看嘴部关键点，在动画上要看帧与语音能量包络。",
+          "reference": "Lip-sync algorithms track mouth keypoints on real people and match frame-by-frame energy envelopes on animation.",
+          "hypothesis": "The mouth-to-mouth algorithm looks primarily at mouth key points on the human body and on animations at frames and voice energy envelopes."
+        },
+        {
+          "id": 100,
+          "source": "配音时原声要压低 12 分贝做 ducking，不然观众听不清配音。",
+          "reference": "When dubbing, duck the original audio by 12 dB or viewers will miss the new voice.",
+          "hypothesis": "The original sound should be down by 12 cents, or the audience can't hear the sound."
+        },
+        {
+          "id": 101,
+          "source": "解说场景往往需要保留少量背景音，纯静音配音会让人出戏。",
+          "reference": "Voiceover scenes usually keep a little background ambience; pure silence makes the viewer drop out of the scene.",
+          "hypothesis": "It is often necessary to keep a small number of background sounds, and a pure silence would make a scene."
+        },
+        {
+          "id": 102,
+          "source": "多角色配音要按说话人分离结果分别合成，再按时间戳混流。",
+          "reference": "Multi-role dubbing must synthesise each speaker separately by diarization result, then remux by timestamp.",
+          "hypothesis": "Multi-role placards are to be synthesized on the basis of the separation of the speaker, followed by a time-stamping stream."
+        },
+        {
+          "id": 103,
+          "source": "双语字幕对齐时如果两边段落数不同，宁可拆段也不要错开。",
+          "reference": "When bilingual subtitles have mismatched segment counts, split segments rather than let them drift out of phase.",
+          "hypothesis": "Bilingual subtitling, if the number of paragraphs varies from one side to the other, prefers not to stagger."
+        },
+        {
+          "id": 104,
+          "source": "时间轴漂移在长视频里会累积，每 10 分钟要人工核对一次锚点。",
+          "reference": "Timeline drift accumulates on long videos; check the anchors by hand every ten minutes.",
+          "hypothesis": "The time axis floats in a long video and accumulates with a manual check of anchor points every 10 minutes."
+        },
+        {
+          "id": 105,
+          "source": "音轨抽取常用 ffmpeg 的 -vn 参数，代价是重封装而不是重编码。",
+          "reference": "Extracting an audio track usually uses ffmpeg's -vn flag; the cost is remuxing, not re-encoding.",
+          "hypothesis": "Tracks draw the commonly used ffmpeg -vn parameters at the cost of reencapturing rather than reencoding."
+        },
+        {
+          "id": 106,
+          "source": "字幕嵌入视频流会让不支持字幕的播放器也能显示，代价是不可关闭。",
+          "reference": "Embedding subtitles into the video stream lets even non-subtitle players display them, at the cost of losing the on/off toggle.",
+          "hypothesis": "Subtitles are embedded in the video stream so that players who do not support subtitles can also show that the price is not shut down."
+        },
+        {
+          "id": 107,
+          "source": "视频重封装时如果编码格式没变，可以逐包拷贝，秒级完成。",
+          "reference": "Remuxing a video where the codec has not changed can copy packet-by-packet and finish in seconds.",
+          "hypothesis": "When the video is reassembled, you can copy it individually, in seconds, if the code format remains unchanged."
+        },
+        {
+          "id": 108,
+          "source": "帧精确的字幕对齐要求毫秒级时间戳，段级精度在快语速时不够用。",
+          "reference": "Frame-accurate subtitle alignment requires millisecond timestamps; segment-level accuracy is not enough for fast speech.",
+          "hypothesis": "The frame alignment requires a time stamp in milliseconds, which is not sufficient at fast speeds."
+        },
+        {
+          "id": 109,
+          "source": "时间码 SMPTE 12 小时制在 30 帧率下有掉帧与非掉帧两种，跨系统同步时要显式声明。",
+          "reference": "SMPTE 12-hour timecode has drop-frame and non-drop-frame variants at 30 fps; state which one when synchronising across systems.",
+          "hypothesis": "Time code SMPTE 12 hours at 30 frames, with drop frames and non-facing frames, with visible statements when you sync across the system."
+        },
+        {
+          "id": 110,
+          "source": "配音脚本的时长要与原视频对齐，写译文时要按 \"口型开放度\" 估算音节上限。",
+          "reference": "Dubbing scripts must match the duration of the original video; when writing translations, estimate the syllable budget from visible mouth openness.",
+          "hypothesis": "The length of the sound script is to be aligned with the original video, and the translation is to be based on the \"Portal Openness\" estimate of the sound node ceiling."
+        },
+        {
+          "id": 111,
+          "source": "模型检查点最好同时保存权重、优化器状态与 tokenizer，方便续训与推理。",
+          "reference": "A model checkpoint should store weights, optimiser state and the tokenizer together, so resuming training and inference are both easy.",
+          "hypothesis": "Model inspection points should preferably be accompanied by the preservation of weights, optimizer state and tokenizer to facilitate renewal and reasoning."
+        },
+        {
+          "id": 112,
+          "source": "子词切分把未登录词拆成可组合的部件，词表大小与切分粒度直接相关。",
+          "reference": "Subword tokenization breaks unknown words into combinable pieces; vocabulary size and merge granularity are directly related.",
+          "hypothesis": "The sub-several splits the unlogged word into a combustible widget, the size of which is directly related to the size of the slice particle."
+        },
+        {
+          "id": 113,
+          "source": "字节对编码从字符级开始反复合并高频对，构造出面向该语料的最优词表。",
+          "reference": "Byte-pair encoding starts from characters and repeatedly merges the most frequent pairs, producing a vocabulary optimised for that corpus.",
+          "hypothesis": "The byte-to-coding begins to merge HF pairs repeatedly from the character level and constructs the best vocabulary for the language."
+        },
+        {
+          "id": 114,
+          "source": "词嵌入把符号映射到连续空间，语义相近的词在向量空间里距离更近。",
+          "reference": "Word embeddings map symbols into continuous space so that semantically similar words lie close together in the vector space.",
+          "hypothesis": "Words are embedded to map the symbol into a continuous space, and words with similar synonyms are closer in vector space."
+        },
+        {
+          "id": 115,
+          "source": "注意力机制允许解码器在每一步软选择性地查看源句的所有位置。",
+          "reference": "Attention allows the decoder at every step to softly inspect every position in the source sentence.",
+          "hypothesis": "The attention mechanism allows the decodors to view all points of the source sentence in a soft and selective manner at each step."
+        },
+        {
+          "id": 116,
+          "source": "Transformer 用自注意力替代循环结构，训练时并行度高但推理时 KV 缓存吃内存。",
+          "reference": "The Transformer replaces recurrence with self-attention -- high parallelism during training, but KV-cache cost at inference time.",
+          "hypothesis": "Transformer replaces the cycle structure with a self-direction, training with high parallels but with KV caches to eat memory."
+        },
+        {
+          "id": 117,
+          "source": "量化到 int8 后模型体积大约压到三分之一，速度提升视硬件与算子而定。",
+          "reference": "Quantising to int8 shrinks the model to about a third of its size; the speed gain depends on hardware and operators.",
+          "hypothesis": "The size of the model after quantification to int8 is about one third, and the rate of increase depends on hardware and algorithms."
+        },
+        {
+          "id": 118,
+          "source": "半精度 fp16 保留浮点动态范围，训练时用得多；int8 推理时用得多。",
+          "reference": "Half-precision fp16 keeps the dynamic range of floats and is used heavily in training; int8 is used heavily in inference.",
+          "hypothesis": "Semi-precision fp16 preserves the floating point dynamic range, which is much more useful for training; int8 reasoning is much more useful."
+        },
+        {
+          "id": 119,
+          "source": "知识蒸馏把大模型的软标签灌给小模型，让后者逼近前者的准确率。",
+          "reference": "Knowledge distillation feeds the soft labels of a large model into a small model so the latter approaches the former's accuracy.",
+          "hypothesis": "The distillation of knowledge fills small models with soft labels of large models, bringing the latter closer to the accuracy of the former."
+        },
+        {
+          "id": 120,
+          "source": "教师模型可以是 30B 参数，学生模型压到 1B，蒸馏后小模型在窄任务上不掉太多。",
+          "reference": "The teacher might have 30B parameters and the student only 1B; a distilled student loses surprisingly little on a narrow task.",
+          "hypothesis": "The teacher model can be a 30B parameter, the student model presses 1B, and the distilled small model does not fall too much on a narrow mission."
+        },
+        {
+          "id": 121,
+          "source": "微调在特定领域语料上继续训练，学习率要显著低于预训练阶段。",
+          "reference": "Fine-tuning continues training on a domain-specific corpus at a much lower learning rate than pretraining.",
+          "hypothesis": "Continue training with fine-tuning of language materials in specific areas, with a significantly lower rate of learning than at the pre-training stage."
+        },
+        {
+          "id": 122,
+          "source": "LoRA 只训练两个低秩矩阵，参数量与原模型相比不到百分之一。",
+          "reference": "LoRA only trains two low-rank matrices, less than one percent of the base model's parameter count.",
+          "hypothesis": "LoRA trained only two low-strength arrays with less than 1 per cent of the amount of parameters compared to the original model."
+        },
+        {
+          "id": 123,
+          "source": "推理时 batch size 越大吞吐越高但延迟也越长，实时场景往往锁死 batch=1。",
+          "reference": "At inference time, larger batch size raises throughput but also latency; realtime pipelines usually lock batch=1.",
+          "hypothesis": "When deduced, the larger the bat size, the higher the load, the longer the delay, the real-time scene tends to lock to death the bat = 1."
+        },
+        {
+          "id": 124,
+          "source": "线程数不是越多越好；ONNX 的 inter-op 与 intra-op 要分开调。",
+          "reference": "More threads are not always better; ONNX's inter-op and intra-op thread counts have to be tuned separately.",
+          "hypothesis": "The number of threads is not as good as the number; the inter-op of ONNX and intra-op are to be adjusted separately."
+        },
+        {
+          "id": 125,
+          "source": "算子融合把多个小算子合并成一个大算子，减少内存往返与调度开销。",
+          "reference": "Operator fusion collapses several small operators into one, reducing memory round-trips and scheduling overhead.",
+          "hypothesis": "Calculator integration combines multiple small algorithms into a large one and reduces memory travel and movement costs."
+        },
+        {
+          "id": 126,
+          "source": "计算图优化是推理框架的核心工作，图切分决定哪些算子留在 CPU 哪些上 GPU。",
+          "reference": "Computation-graph optimisation is the core work of an inference framework; graph partitioning decides which operators stay on CPU and which move to GPU.",
+          "hypothesis": "Optimization of the calculations is at the core of the reasoning framework, and the tectonics determine which algorithms are left on the CPU and which on the GPU."
+        },
+        {
+          "id": 127,
+          "source": "运行时提供程序的选择影响极大，同一模型在 CUDA 与 CPU 上可能差 5 到 10 倍。",
+          "reference": "Choosing the runtime provider matters a lot -- the same model can be 5 to 10 times faster on CUDA than on CPU.",
+          "hypothesis": "The choice of the program to provide at the time of running is highly influenced, and the same model may be 5-10 times different from CUDA and CPU."
+        },
+        {
+          "id": 128,
+          "source": "显存不足时 Ollama 会自动把部分层卸载到内存，速度骤降但不会崩。",
+          "reference": "When VRAM is insufficient Ollama offloads some layers to main memory; throughput collapses but the process survives.",
+          "hypothesis": "Ollama automatically unloads part of the layer to the memory when it is visible that it is insufficient, and the speed drops, but it does not collapse."
+        },
+        {
+          "id": 129,
+          "source": "批大小与序列长度的乘积决定 KV 缓存的显存开销。",
+          "reference": "The product of batch size and sequence length determines the VRAM cost of the KV cache.",
+          "hypothesis": "The product of batch size and sequence length determines the visible cost of KV caches."
+        },
+        {
+          "id": 130,
+          "source": "多语言模型用一份参数覆盖 100 多种语言，冷门语向的质量通常明显低于热门语向。",
+          "reference": "A multilingual model covers more than a hundred languages with one set of weights, and quality on cold pairs is usually much lower than on hot pairs.",
+          "hypothesis": "The multilingual model covers 100 languages using one parameter, and the quality of the cold-language orientation is generally significantly lower than that of the hot-language orientation."
+        },
+        {
+          "id": 131,
+          "source": "分词器与模型的词表必须严格匹配，错配会导致输出乱码但不报错。",
+          "reference": "The tokenizer and the model's vocabulary must match exactly; a mismatch produces garbled output without raising an error.",
+          "hypothesis": "The syllable and the model's vocabulary must be strictly matched, and a misalignment can lead to a miscalculation of the output but not to an error."
+        },
+        {
+          "id": 132,
+          "source": "温度采样把概率分布拉平，让模型输出更多样，但翻译场景通常希望更低温度。",
+          "reference": "Temperature sampling flattens the probability distribution and yields more varied output, but translation typically wants lower temperature.",
+          "hypothesis": "Temperature sampling flattens the probability distribution, allowing the model to produce more samples, but translation scenes usually want lower temperatures."
+        },
+        {
+          "id": 133,
+          "source": "上下文窗口是 LLM 的硬约束，长文档翻译要么截断要么分段喂。",
+          "reference": "The context window is a hard constraint on the LLM; long documents must be truncated or fed one sentence at a time.",
+          "hypothesis": "The context window is a hard constraint for LLM, and long document translations are either cut off or segmented to feed."
+        },
+        {
+          "id": 134,
+          "source": "系统提示里显式列出术语表可以显著降低专业词错译，但会占用输入 token。",
+          "reference": "Listing the glossary explicitly inside the system prompt significantly reduces terminology errors but consumes input tokens.",
+          "hypothesis": "The explicit listing of terms in the system alert will significantly reduce professional translation errors, but will take over the input token."
+        },
+        {
+          "id": 135,
+          "source": "少样本示例把 \"用户希望的译法\" 直接摆到模型眼前，比抽象指令更有效。",
+          "reference": "Few-shot examples put the user's preferred rendering directly in front of the model, which beats any abstract instruction.",
+          "hypothesis": "A few sample examples put \"the translation that users want\" directly in front of the model, more effective than abstract commands."
+        },
+        {
+          "id": 136,
+          "source": "术语表要按当前请求的语言对与领域过滤，把不相关条目喂给模型只会稀释注意力。",
+          "reference": "Glossaries must be filtered by the current request's language pair and domain; feeding irrelevant rows only dilutes attention.",
+          "hypothesis": "The glossary should be filtered to fields in the language currently requested, and feeding irrelevant entries to the model would only dilute attention."
+        },
+        {
+          "id": 137,
+          "source": "翻译记忆是精确匹配，命中即零成本；模糊匹配是另一码事，会引入排序噪声。",
+          "reference": "Translation memory matches exactly -- a hit is zero-cost; fuzzy matching is a different problem and brings ranking noise.",
+          "hypothesis": "Translation memories are accurately matched, with a hit or zero cost; fuzzy matching is another matter that introduces sorted noise."
+        },
+        {
+          "id": 138,
+          "source": "置信度门控是本地结果与 AI 升级之间的开关，阈值定太松会白白多花一次 API。",
+          "reference": "Confidence gating is the switch between local output and AI upgrade; too permissive a threshold wastes API calls.",
+          "hypothesis": "The confidence door control is the switch between the local result and the AI upgrade, and the threshold is too loose to spend more than one API."
+        },
+        {
+          "id": 139,
+          "source": "质量分记录每条 TM 的历史可信度，AI 写入通常是 0.95，本地是估算，手动是 1.0。",
+          "reference": "The quality score records each TM entry's historical reliability -- AI writes at 0.95, local estimates its own, manual writes 1.0.",
+          "hypothesis": "Quality sub-records the historical credibility of each TM, and AI writing is usually 0.95, local is estimation and manual is 1.0."
+        },
+        {
+          "id": 140,
+          "source": "兜底降级必须携带原因说明，让调用方知道 \"翻不出\" 和 \"翻错了但降级返回\" 是两回事。",
+          "reference": "Fallback degradation must carry a reason so the caller can tell \"could not translate\" apart from \"translated wrong but degraded anyway\".",
+          "hypothesis": "The bottom down has to be accompanied by a reason to let the caller know that \"failure\" and \"wrong turn back\" are different things."
+        },
+        {
+          "id": 141,
+          "source": "不静默降级是本产品的硬约束：任何路径回落都要写进 message 字段。",
+          "reference": "No silent degradation is this product's hard constraint: every fallback must be written into the message field.",
+          "hypothesis": "Unquietly downgrading is a hard constraint on this product: any path down is written in the message field."
+        },
+        {
+          "id": 142,
+          "source": "蒸馏从 AI 精译结果中抽术语回灌本地引擎，形成 \"越用越省\" 的性价比飞轮。",
+          "reference": "Distillation extracts terms from AI quality translations and feeds them back into local engines, forming a \"cheaper the more you use it\" flywheel.",
+          "hypothesis": "The distillation extracts terminological refilling of local engines from the AI translation results and creates a \"over and over-the-counter\" commercial value compared to a flying wheel."
+        },
+        {
+          "id": 143,
+          "source": "命中率与质量分是彼此冲突的：低质量记忆对反复命中会污染输出。",
+          "reference": "Hit rate and quality score fight each other -- repeatedly hitting a low-quality memory pair poisons the output.",
+          "hypothesis": "The hit rate and the mass score are conflicting: low-quality memories pollute the output of repeated hits."
+        },
+        {
+          "id": 144,
+          "source": "LRU 缓存要预留一定命中率作为预热指标，冷启动阶段不能过早淘汰。",
+          "reference": "The LRU cache should reserve a hit-rate threshold as the warm-up signal; the cold-start phase must not evict too aggressively.",
+          "hypothesis": "LRU caches are subject to a pre-heat rate and cannot be phased out prematurely during the cold start-up phase."
+        },
+        {
+          "id": 145,
+          "source": "端到端评估的样本要覆盖三种场景：完全命中、缓存质量不足重译、无缓存纯翻译。",
+          "reference": "End-to-end evaluation samples must cover three scenarios: perfect hit, cache-quality-refused re-translation, and cold translation without cache.",
+          "hypothesis": "The end-to-end assessment sample covers three scenarios: full hit, poor quality of caches, and no caches for pure translation."
+        },
+        {
+          "id": 146,
+          "source": "神经机器翻译对训练域极其敏感；把 Wiki 语料训出来的模型直接搬到会议记录，质量掉得很明显。",
+          "reference": "Neural machine translation is extremely sensitive to the training domain -- a model trained on Wikipedia drops heavily when used on meeting transcripts.",
+          "hypothesis": "Neural machine translation is extremely sensitive to the training field; the model produced by the Wiki language is moved directly to the meeting records and the quality is clearly lost."
+        },
+        {
+          "id": 147,
+          "source": "大语言模型在冷启动阶段能靠世界知识翻译专有名词，但没有术语注入时同名词在长文档里译法会漂。",
+          "reference": "A large language model can translate proper nouns in a cold start using world knowledge, but without term injection the same term can drift across a long document.",
+          "hypothesis": "Large-language models can translate world-knowledge-specific terms during the cold start-up phase, but the same term can drift in long files when no term is injected."
+        },
+        {
+          "id": 148,
+          "source": "统计机器翻译依赖短语表与对齐语料，工程上比神经翻译更难维护但延迟可控。",
+          "reference": "Statistical machine translation relies on phrase tables and aligned corpora; harder to maintain in production but latency is predictable.",
+          "hypothesis": "Statistical machine translation relies on phrase sheets and matching materials, which are more difficult to maintain than neurotranslation but are controlled by delays."
+        },
+        {
+          "id": 149,
+          "source": "实时因子 RTF 是模型耗时代价除以音频时长，小于 1 才可能做实时。",
+          "reference": "The real-time factor RTF is the model's compute cost divided by the audio length; only RTF below 1 makes realtime feasible.",
+          "hypothesis": "Real-time factor RTF is the time-consuming cost of the model divided by the length of the audio, less than 1 to make it possible in real time."
+        },
+        {
+          "id": 150,
+          "source": "首字延迟决定用户对 \"快不快\" 的第一印象；总时长决定 \"等得起等不起\"。",
+          "reference": "Time-to-first-token decides the user's gut feeling of \"fast\"; total time decides whether they can \"wait\".",
+          "hypothesis": "The initials delay the user's first impression of \"fast or bad\"; the total length of time decides \"unable to wait.\""
+        },
+        {
+          "id": 151,
+          "source": "挂钟时间是端到端测出来的，包含排队与网络往返，与 CPU 时间不是一回事。",
+          "reference": "Wall-clock time is measured end-to-end and includes queuing and network round-trips; it is not the same as CPU time.",
+          "hypothesis": "The clock time is measured from the end to the end, and it includes queuing to and from the network, which is not the same as CPU time."
+        },
+        {
+          "id": 152,
+          "source": "冷启动阶段第一次推理会加载权重、构建计算图，比稳态慢一个数量级。",
+          "reference": "The first inference during a cold start loads weights and builds the computation graph, taking an order of magnitude longer than steady state.",
+          "hypothesis": "The first reasoning in the cold start-up phase will load weights, construct calculations, one order of magnitude slower than a steady state."
+        },
+        {
+          "id": 153,
+          "source": "预热一般用几条虚拟请求把权重从磁盘拉到内存并触发惰性优化。",
+          "reference": "Warmup usually fires a few synthetic requests to bring weights from disk into memory and to trigger lazy graph optimisation.",
+          "hypothesis": "Preheaters typically use several virtual requests to pull weights from disk to memory and trigger inert optimization."
+        },
+        {
+          "id": 154,
+          "source": "内存占用对桌面产品是硬约束，用户能接受 CPU 慢但不能接受 OOM。",
+          "reference": "Memory footprint is a hard constraint for desktop products -- users will accept CPU slowness but not OOM.",
+          "hypothesis": "Memory occupancy is a hard constraint on desktop products and users can accept CPUs slowly but not OOMs."
+        },
+        {
+          "id": 155,
+          "source": "每秒查询数是服务端指标，对单机桌面产品意义不大。",
+          "reference": "Queries per second is a server metric and says little about a single-machine desktop product.",
+          "hypothesis": "Queries per second are service-end indicators that are of little interest to single desktop products."
+        },
+        {
+          "id": 156,
+          "source": "性能剖析要区分推理耗时、编解码耗时与 IO 耗时，不然优化容易打偏。",
+          "reference": "Profiling must separate inference time, codec time and I/O time, otherwise optimisation ends up targeting the wrong thing.",
+          "hypothesis": "Performance profiling distinguishes between time-consuming reasoning, time-consuming decoding, time-consuming IO, otherwise optimization is easy to miss."
+        },
+        {
+          "id": 157,
+          "source": "端到端吞吐受限于最慢的一段，优化前先找出瓶颈段。",
+          "reference": "End-to-end throughput is capped by the slowest stage; find the bottleneck before optimising.",
+          "hypothesis": "End-to-end vomiting is limited to the slowest segment and bottlenecks are identified before optimization."
+        },
+        {
+          "id": 158,
+          "source": "基准测试要固定 seed、固定采样策略，两次跑同一模型输出应可复现。",
+          "reference": "Benchmarks must pin the seed and the sampling policy, otherwise two runs on the same model are not comparable.",
+          "hypothesis": "The baseline test is fixed to seed, fixed sampling policy, and the same model output should be repeated twice."
+        },
+        {
+          "id": 159,
+          "source": "延迟测试期间不能有并发下载或杀毒扫描，否则会污染数字。",
+          "reference": "Latency measurements are ruined by concurrent downloads or antivirus scans; run them on an idle machine.",
+          "hypothesis": "No simultaneous downloads or poison scans can be sent during the delay in testing, which would otherwise contaminate the numbers."
+        },
+        {
+          "id": 160,
+          "source": "缓冲区在 AV 域是 audio buffer；在化学语境下是 buffer solution。",
+          "reference": "In AV context a buffer is an audio buffer; in chemistry it is a buffer solution.",
+          "hypothesis": "The buffer zone in the AV domain is audio buffer; in the chemical language it is buffer solution."
+        },
+        {
+          "id": 161,
+          "source": "stream 在流式合成里是 \"流\"；在统计语境是 \"数据流\"，在地理语境是 \"溪流\"。",
+          "reference": "A stream in streaming synthesis is a data stream; in statistics it is a data stream too, but in geography it is a brook.",
+          "hypothesis": "Stream is \"flow\" in flow synthesis; in statistical terms it's \"data flow\" and in geographical terms it's \"brook.\""
+        },
+        {
+          "id": 162,
+          "source": "channel 在音频里是 \"声道\"；在消息队列里是 \"通道\"；在营销里是 \"渠道\"。",
+          "reference": "A channel in audio is a channel; in a message queue it is a channel; in marketing it is also a channel -- different meanings.",
+          "hypothesis": "Channel in the audio is the channel; in the news line is the channel; in marketing it is the channel."
+        },
+        {
+          "id": 163,
+          "source": "segment 在 VAD 里是 \"语音段\"；在商业语境是 \"市场份额\"；在几何是 \"线段\"。",
+          "reference": "A segment in VAD is a speech segment; in business it is a market segment; in geometry it is a line segment.",
+          "hypothesis": "\"Segment\" in VAD; \"market share\" in commercial terms; and \"line segment\" in geometry."
+        },
+        {
+          "id": 164,
+          "source": "voice 在 TTS 里更常见的是 \"音色 / 说话人声线\"，不是物理意义的 \"声音\"。",
+          "reference": "In TTS, voice most often means the speaker's timbre, not the physical sense of sound.",
+          "hypothesis": "More often in TTS, the voice of the voice is not the sound of the physical meaning."
+        },
+        {
+          "id": 165,
+          "source": "speech 强调 \"口语演讲\" 与 \"语音信号\"；voice 更偏 \"嗓音\" 与 \"说话主体\"。",
+          "reference": "Speech emphasises spoken language and the acoustic signal; voice leans toward the voice quality and the speaking subject.",
+          "hypothesis": "Speech stressed \"spoken speech\" with \"voice signal\" and \"voice voice\" more than \"speaker\" with \"mouth subject\"."
+        },
+        {
+          "id": 166,
+          "source": "frame 在编码域是 \"帧\"，在窗口/画框域也是 \"frame\"，靠上下文区分。",
+          "reference": "Frame means frame in the codec context and also frame in the picture/window context -- only surrounding text disambiguates.",
+          "hypothesis": "rame is \"frame\" in the coding domain and \"frame\" in the window/drawing field, differentiated by context."
+        },
+        {
+          "id": 167,
+          "source": "sample 在音频域是 \"样本 / 采样点\"，在统计域是 \"样本 / 抽样单位\"。",
+          "reference": "Sample in audio is a discrete sample; in statistics it is a sampled unit -- the English word is the same.",
+          "hypothesis": "Sample is \"sample / sample point\" in the audio field and \"sample / sample unit\" in the statistical field."
+        },
+        {
+          "id": 168,
+          "source": "model 在 ML 域是 \"模型\"，在时尚/模型汽车域也是 \"model\"。",
+          "reference": "Model in machine learning is a trained predictor; in fashion or scale cars it is also a model.",
+          "hypothesis": "Model is \"model\" in the ML domain and \"model\" in the fashion/model vehicle domain."
+        },
+        {
+          "id": 169,
+          "source": "pitch 在语音域是 \"音高\"，在棒球域是 \"投球\"，在商务域是 \"提案\"。",
+          "reference": "Pitch in speech is fundamental frequency; in baseball it is a throw; in business it is a proposal.",
+          "hypothesis": "Pitch in the voice field is \"sonic high\", in baseball it's \"ball ball\" and in business it's \"proposal.\""
+        },
+        {
+          "id": 170,
+          "source": "prosody 只在语音学域用，其他语境几乎不出现，可作纯领域锚点。",
+          "reference": "Prosody appears only in phonetics -- a pure domain anchor.",
+          "hypothesis": "Prosody is only used in speech fields and other languages are virtually non-existent and can be used as a pure domain anchor."
+        },
+        {
+          "id": 171,
+          "source": "vocoder 是语音工程独有的 \"声码器\"，普通用户不认识，UI 中要加解释。",
+          "reference": "Vocoder is unique to speech engineering (\"声码器\"); most users will not recognise it, so the UI has to explain.",
+          "hypothesis": "Vocoder is a voice engineering uniquely known \"acoustic coder\" that is unknown to ordinary users and is explained in UI."
+        },
+        {
+          "id": 172,
+          "source": "diarization 是 \"说话人分离\"，与 recognition 组合成 \"谁在什么时候说了什么\"。",
+          "reference": "Diarization means speaker separation; combined with recognition it answers \"who said what when\".",
+          "hypothesis": "Diarization is \"separate speech,\" combined with recognition, \"who said what at what time.\""
+        },
+        {
+          "id": 173,
+          "source": "alignment 在字幕域是 \"对齐\"，在 NLP 域是 \"对齐（跨语言）\"，在几何域是 \"排列\"。",
+          "reference": "Alignment in subtitle context is temporal alignment; in NLP it is cross-lingual alignment; in geometry it is arrangement.",
+          "hypothesis": "In the subtitle field, alignment, in the NLP domain, alignment, and geometrically, alignment."
+        },
+        {
+          "id": 174,
+          "source": "decoder 在编解码域是 \"解码器\"，在神经机器翻译域也是解码器，两侧含义相关但实现不同。",
+          "reference": "Decoder is a hardware or software component in the codec sense, and also the second half of an NMT model -- related meaning, different implementation.",
+          "hypothesis": "Decoder is a \"coder\" in the coded domain, and a \"coder\" in the translation domain of the nerve machine, meanings that are relevant but different."
+        },
+        {
+          "id": 175,
+          "source": "encoder 与 decoder 对称；神经网络里两侧都用同名，工程里可能一个是软件一个是硬件。",
+          "reference": "Encoder and decoder are symmetric; in neural networks both share the name, but in engineering one may be software and the other hardware.",
+          "hypothesis": "encoder symmetry with decoder; both sides of the neural network have the same name, and one of the works may be software and one hardware."
+        },
+        {
+          "id": 176,
+          "source": "codec 是 encoder + decoder 的合体，通常只在压缩域使用。",
+          "reference": "A codec is encoder plus decoder fused; the word is usually restricted to the compression domain.",
+          "hypothesis": "Codec is a combination of encoder + decoder, which is usually used only in compressed domains."
+        },
+        {
+          "id": 177,
+          "source": "container 在视频工程是 \"容器格式\"（mkv/mp4），在软件部署是 \"容器\"（Docker）。",
+          "reference": "In video engineering a container is a container format (mkv/mp4); in software deployment a container is a Docker container.",
+          "hypothesis": "Container in video engineering is \"container format\" (mkv/mp4) and in software deployment is \"container\" (Docker)."
+        },
+        {
+          "id": 178,
+          "source": "latency 在实时音视频是网络与解码延迟总和；在计算体系结构里是流水线延迟。",
+          "reference": "In real-time audio and video, latency is the sum of network and decoding delays; in computer architecture it is pipeline latency.",
+          "hypothesis": "In real-time audio and video is the sum of the delay between the network and the decoding; in the structure of the computing system, the delay is the delay in the flow of water."
+        },
+        {
+          "id": 179,
+          "source": "jitter 在网络语境是 \"抖动\"，在时钟语境也是 \"抖动\"，两者机制不同要区分。",
+          "reference": "Jitter means network jitter in one context and clock jitter in another -- the mechanisms differ and translation must separate them.",
+          "hypothesis": "Jitter in the online context is \"diversity\" and \"diversity\" in the clock context. The two mechanisms are different."
+        },
+        {
+          "id": 180,
+          "source": "throughput 与 bandwidth 常被混用；前者是实际吞吐，后者是理论上限。",
+          "reference": "Throughput and bandwidth are often conflated; the first is achieved work, the second is the theoretical ceiling.",
+          "hypothesis": "Throughput is often mixed with handwidth; the former is actually swallowed up, the latter is the theoretical upper limit."
+        },
+        {
+          "id": 181,
+          "source": "chunk 与 packet 与 frame 在流媒体里是三个不同粒度，翻译不能一律译成 \"块\"。",
+          "reference": "Chunk, packet and frame are three different granularities in streaming media and cannot all be translated as \"块\".",
+          "hypothesis": "chunk and packet are three different particles in stream media, and translation cannot always be translated into \"blocks\"."
+        },
+        {
+          "id": 182,
+          "source": "prompt 在 LLM 域是 \"提示词\"，在 OS 终端域是 \"命令提示符\"，两者完全不同。",
+          "reference": "In the LLM domain a prompt is an instruction to the model; in the OS shell it is a command prompt -- entirely different meanings.",
+          "hypothesis": "Prompt in the LLM domain is the word, in the OS terminal is the command hint, which is completely different."
+        },
+        {
+          "id": 183,
+          "source": "token 在 NLP 域是 \"词元\"，在身份认证域是 \"令牌\"。",
+          "reference": "A token in NLP is a subword unit; in authentication it is an access token.",
+          "hypothesis": "Token in the NLP domain is the word, and in the ID domain is the token."
+        },
+        {
+          "id": 184,
+          "source": "transcode 是重新编码；remux 是只重封装不重编码，两者的画质损失完全不同。",
+          "reference": "Transcode re-encodes; remux only rewraps. Their quality loss profiles differ fundamentally.",
+          "hypothesis": "Transcode is recoding; remux is only re-encapturing non-heavy coding, and the two are completely different in quality loss."
+        },
+        {
+          "id": 185,
+          "source": "burn-in 是硬字幕化，overlay 是叠加显示，两者在渲染管线上不同。",
+          "reference": "Burn-in hard-codes subtitles into the pixels; overlay draws them at render time. They sit at different stages of the pipeline.",
+          "hypothesis": "Burn-in is hard subtitle, overlay is superscripted, and the two are different on the rendering line."
+        },
+        {
+          "id": 186,
+          "source": "录音时先检查麦克风增益再检查系统音量，避免底噪被算法当语音。",
+          "reference": "When recording, check microphone gain before system volume -- clipping at the input cannot be undone by any algorithm.",
+          "hypothesis": "The recording will be done by checking the benefits of the microphone before checking the volume of the system ' s sound, so as to avoid the use of bottom noise as voice."
+        },
+        {
+          "id": 187,
+          "source": "扬声器切换在 Windows 上需要重启音频图，多数应用会掉一帧。",
+          "reference": "Switching the output speaker on Windows rebuilds the audio graph, and many applications drop a frame during the change.",
+          "hypothesis": "The speaker switch on Windows needs to restart the audio map, and most applications fall off a frame."
+        },
+        {
+          "id": 188,
+          "source": "播放条拖动要显式触发关键帧 seek，不然会看到花屏过渡。",
+          "reference": "Dragging the playhead should explicitly seek to a keyframe; otherwise viewers see a block of corrupted frames during the transition.",
+          "hypothesis": "Drags the playing bar to trigger the key frame in a visible way. Otherwise, you will see the screen transition."
+        },
+        {
+          "id": 189,
+          "source": "预览窗口默认按软字幕渲染，导出时可以选择烧进画面。",
+          "reference": "The preview pane renders soft subtitles by default; hard-burn is an explicit export option.",
+          "hypothesis": "The preview window will be rendered by default by soft subtitles, and you can choose to burn into the image when exported."
+        },
+        {
+          "id": 190,
+          "source": "时间轴面板支持逐帧微调，用左右方向键可以一帧一帧移动。",
+          "reference": "The timeline panel supports frame-level nudge -- left and right arrows step exactly one frame.",
+          "hypothesis": "The time axis panel supports frame-by-frame fine-tuning, with the right and left arrow keys moving within one frame."
+        },
+        {
+          "id": 191,
+          "source": "剪辑导出前要先做静音剪裁，不然成片里会有无意义空白。",
+          "reference": "Cut silence before exporting an edit, otherwise the final piece has meaningless gaps.",
+          "hypothesis": "Before editing is exported, you have to do silent editing, or there's no point in making a film."
+        },
+        {
+          "id": 192,
+          "source": "导入 AV 素材时最好显式选择帧率解释策略，跨制式素材容易掉帧。",
+          "reference": "When importing AV footage, explicitly pick the frame-rate interpretation policy -- mixed-source clips drop frames otherwise.",
+          "hypothesis": "When importing the AV material, it is best to select the frame rate interpretation strategy in a visible way, and cross-formulate material can easily fall off the frame."
+        },
+        {
+          "id": 193,
+          "source": "音频波形视图可以让用户手工微调 VAD 段边界，识别错切时特别有用。",
+          "reference": "The waveform view lets the user hand-tune VAD boundaries, which is invaluable when the auto-segmentation mis-cuts.",
+          "hypothesis": "Audio waveform views allow users to fine-tune VAD segment boundaries manually and are particularly useful when identifying faults."
+        },
+        {
+          "id": 194,
+          "source": "导出双语字幕时两个轨要用独立时间戳，不要共用一个。",
+          "reference": "When exporting bilingual subtitles, keep independent timestamps for each track -- sharing one drifts fast.",
+          "hypothesis": "When exporting bilingual subtitles, the two tracks need to be independently stamped and not share one."
+        },
+        {
+          "id": 195,
+          "source": "预览延迟过高的机器可以把 VAD 阈值调松，让用户先看到大致分段。",
+          "reference": "On machines with high preview latency, loosen the VAD threshold so users see the rough segmentation before refining.",
+          "hypothesis": "The preview of an overdelayed machine can ease the VAD threshold so that the user can see the approximate segment first."
+        },
+        {
+          "id": 196,
+          "source": "导入音频时检测采样率与位深，不匹配时给出重采样建议而不是静默转换。",
+          "reference": "Detect sample rate and bit depth on import; if they mismatch, offer a resampling choice instead of silently converting.",
+          "hypothesis": "Tests the sampling rate and bit depth when importing audio, and gives recommendations for re-sampling when not matching, rather than for silent conversion."
+        },
+        {
+          "id": 197,
+          "source": "本地引擎矩阵覆盖 argos、madlad、ollama 三个真实引擎，加一个内置 demo 兜底。",
+          "reference": "The local engine matrix covers three real engines -- argos, madlad and ollama -- plus a built-in demo as the last fallback.",
+          "hypothesis": "The local engine matrix covers the three real engines of Argos, Madlad, and ollama, plus a built-in demo."
+        },
+        {
+          "id": 198,
+          "source": "sidecar 只监听 127.0.0.1 保证隐私不变量：任何外部进程都不能访问这台机器上的翻译流。",
+          "reference": "The sidecar binds only to 127.0.0.1 to enforce the privacy invariant: no external process can touch this machine's translation stream.",
+          "hypothesis": "127.0.0.1 Ensure privacy is not variable: no external process can access the translation stream on this machine."
+        },
+        {
+          "id": 199,
+          "source": "语言对是本地模型分档的核心维度，同一模型在不同语言对上质量差 15 分以上。",
+          "reference": "Language-pair tiering decides which engine runs; some cold pairs have no local engine at all.",
+          "hypothesis": "Language-to-language is the core dimension of the local model slotting, and the same model is less than 15 minutes of quality in different languages."
+        },
+        {
+          "id": 200,
+          "source": "交付离线整合包时要把模型权重、词表、配置文件一起打包，避免用户首启动还要联网下载。",
+          "reference": "When delivering the offline bundle, ship weights, vocabularies and configuration together -- the user's first launch should not need network access.",
+          "hypothesis": "The offline integration package is delivered by packing the model weights, vocabulary, configuration files together, avoiding user-starting and network downloading."
+        },
+        {
+          "id": 201,
+          "source": "精译档与实时档不是 \"快慢\" 之别，而是 \"预算\" 之别：一个允许升级 AI，一个不允许。",
+          "reference": "Quality mode and realtime mode differ not in speed but in budget: one permits AI upgrade, the other does not.",
+          "hypothesis": "The translation and the real-time file are not the difference between \"fast and slow,\" but the difference between \"budget\": one allows promotion AI, one does not allow."
+        },
+        {
+          "id": 202,
+          "source": "质量偏好开关影响精译档的升级策略，可以在 \"质量优先\" 与 \"省成本优先\" 之间二选一。",
+          "reference": "The quality-preference toggle steers the upgrade policy of quality mode, choosing between \"quality first\" and \"cost first\".",
+          "hypothesis": "Quality preferences affect the upgrading strategy of the translation file, with a choice between \"quality priority\" and \"cost savings priority\"."
+        },
+        {
+          "id": 203,
+          "source": "兜底降级会明确说明 \"该语言对未装本地模型\"，让用户去下载而不是误以为产品坏了。",
+          "reference": "Fallback states explicitly that \"the local model for this pair is missing\", prompting the user to download rather than assume the product is broken.",
+          "hypothesis": "The bottom down would make it clear that \"the language does not contain a local model\" and allow users to download instead of misperceived that the product is broken."
+        },
+        {
+          "id": 204,
+          "source": "翻译流水线的每一层判定都可观测：TM 命中、隐私钳制、语言对分档、本地引擎、AI 升级、置信度门控。",
+          "reference": "Every layer of the translation pipeline is observable: TM hit, privacy clamp, language-pair tiering, local engine, AI upgrade and confidence gating.",
+          "hypothesis": "Each level of determination of the translation flow line can be observed: TM hit, privacy clamps, language-to-segregation, local engine, AI upgrade, confidence door control."
+        },
+        {
+          "id": 205,
+          "source": "模型许可矩阵是产品对外承诺的一部分，Silero MIT、SenseVoice MIT、Kokoro Apache-2.0、Argos MIT 全绿。",
+          "reference": "The model-licence matrix is part of the outward commitment -- Silero MIT, SenseVoice MIT, Kokoro Apache-2.0 and Argos MIT all clear.",
+          "hypothesis": "The model licensing matrix is part of the external commitment to the product, Silero MIT, SenseVoice MIT, Kokoro Apache-2.0, Argos MIT, all green."
+        },
+        {
+          "id": 206,
+          "source": "执行提供程序按操作系统分层：Windows 首选 CUDA 或 DirectML，macOS 首选 CoreML，Linux 首选 CUDA。",
+          "reference": "Execution providers are tiered by operating system: Windows prefers CUDA or DirectML, macOS prefers CoreML, Linux prefers CUDA.",
+          "hypothesis": "Executing the supply program by operating system layer: Windows preferred CUDA or DirectML, MacOS preferred CoreML, Linux preferred CUDA."
+        },
+        {
+          "id": 207,
+          "source": "神经机器翻译的训练目标是最小化交叉熵，与人类直觉的 \"信达雅\" 不完全重合。",
+          "reference": "The training target of neural machine translation is to minimise cross-entropy, which only partially aligns with the human intuition of \"faithfulness, expressiveness, elegance\".",
+          "hypothesis": "Neural machine translation is designed to minimize the crossbow, which does not fully coincide with the human instincts of Sindaya."
+        },
+        {
+          "id": 208,
+          "source": "翻译记忆与术语表解决的是不同问题：前者复用整句历史，后者约束单词译法。",
+          "reference": "Translation memory and glossary solve different problems: the first reuses whole-sentence history, the second constrains word-level rendering.",
+          "hypothesis": "The translation memory and the glossary address different issues: the former reproduces the entire history, while the latter binds the translation of words."
+        },
+        {
+          "id": 209,
+          "source": "置信度分数应该跟译文本身绑定，而不是跟引擎绑定；同一模型不同批次的输出置信度会漂移。",
+          "reference": "Confidence should be bound to the translation itself, not to the engine -- the same model can drift across batches.",
+          "hypothesis": "The confidence score should be tied to the translation itself, not to the engine; the output confidence of different batches of the same model will drift."
+        },
+        {
+          "id": 210,
+          "source": "兜底降级路径要保留请求上下文，让下一层能知道上一层为什么没走通。",
+          "reference": "A fallback path must preserve request context so the next layer can see why the previous one did not run.",
+          "hypothesis": "The bottom down path is to retain the context of the request, so that the next layer can know why the next layer is missing."
+        },
+        {
+          "id": 211,
+          "source": "不静默降级要求响应 message 字段携带完整原因链，调用方据此决定重试还是提示用户。",
+          "reference": "No-silent-degradation requires the response message to carry the full causal chain so the caller can decide to retry or prompt the user.",
+          "hypothesis": "Unquietly downgrading requires the response message field to carry the full cause chain, on which the caller decides whether to try again or to alert the user."
+        },
+        {
+          "id": 212,
+          "source": "上下文窗口是 LLM 硬约束，长文档翻译要么截断要么按句喂，不能整段塞进去。",
+          "reference": "The context window is a hard constraint on the LLM; long documents must be truncated or fed one sentence at a time, never stuffed whole.",
+          "hypothesis": "The context window is a LLM hard constraint, and long document translations are either cut off or fed by sentence, and cannot be plugged into the whole section."
+        },
+        {
+          "id": 213,
+          "source": "少样本示例条数不是越多越好，5 条高质量示例往往优于 20 条低质量示例。",
+          "reference": "More few-shot examples are not always better -- five high-quality examples often beat twenty low-quality ones.",
+          "hypothesis": "The number of few sample examples is not as good as the number,5 and the high quality examples tend to be better than the 20 low quality examples."
+        },
+        {
+          "id": 214,
+          "source": "蒸馏的入库阈值决定了术语表的信噪比，太松会让错误术语污染后续所有请求。",
+          "reference": "The distillation store threshold determines glossary signal-to-noise; too permissive lets wrong terms pollute every subsequent request.",
+          "hypothesis": "Distillation thresholds determine the noise ratio of the glossary, and too loose would allow the wrong term to contaminate all subsequent requests."
+        },
+        {
+          "id": 215,
+          "source": "术语注入到提示词中要显式约束格式，不然模型会把中文术语当成解释性文本。",
+          "reference": "Term injection into the prompt must specify format explicitly, otherwise the model reads the Chinese terms as explanatory prose.",
+          "hypothesis": "The term is inserted into the hint in a clearly binding format, or the model will use the Chinese term as an explanatory text."
+        },
+        {
+          "id": 216,
+          "source": "多语言模型对冷门语言对的表现受限于训练语料规模，不是模型容量。",
+          "reference": "A multilingual model's performance on cold pairs is bound by training corpus size, not model capacity.",
+          "hypothesis": "The performance of the multilingual model vis-à-vis cold languages is limited to the size of the training language and is not a model capacity."
+        },
+        {
+          "id": 217,
+          "source": "神经机器翻译的分词器与训练语料绑定，跨语料使用时词表命中率会骤降。",
+          "reference": "Neural machine translation's tokenizer is bound to its training corpus; using it on a different corpus makes the vocabulary hit rate collapse.",
+          "hypothesis": "The semantic transliterator of a nerve machine is bound to the training language, and the verb count drops sharply when cross-linguistics are used."
+        },
+        {
+          "id": 218,
+          "source": "大语言模型可以做机器翻译，但对提示工程敏感，同一个源句换个提示可能质量差一档。",
+          "reference": "A large language model can do machine translation but is sensitive to prompt engineering -- the same source sentence can differ by a tier depending on the prompt.",
+          "hypothesis": "Large-language models can be machine-translators, but they are sensitive to prompting projects, and changing the same source sentence may be of a different quality."
+        },
+        {
+          "id": 219,
+          "source": "自动评测不能替代人工评测；chrF/BLEU 与 COMET 与人工评分之间相关系数在窄域上会明显下降。",
+          "reference": "Automatic evaluation cannot replace human evaluation; on narrow domains the correlation between chrF/BLEU/COMET and human judgement drops noticeably.",
+          "hypothesis": "Automatic evaluation is not a substitute for manual evaluation; the correlation coefficient between chrF/BLEU and COMET and manual rating is significantly lower in the narrow field."
+        },
+        {
+          "id": 220,
+          "source": "统计机器翻译的短语表在语序差异大的语对之间退化严重，比如中文到芬兰语。",
+          "reference": "Phrase tables in statistical machine translation degrade badly for pairs with large word-order gaps, e.g. Chinese to Finnish.",
+          "hypothesis": "The list of phrases to be translated by the statistical machine is seriously degraded between languages with large symmetry, such as Chinese to Finnish."
+        },
+        {
+          "id": 221,
+          "source": "翻译记忆的模糊匹配按编辑距离或语义距离排序，返回的 top-k 数量要克制。",
+          "reference": "Fuzzy match over translation memory sorts by edit distance or semantic distance; the returned top-k must stay small to avoid noise.",
+          "hypothesis": "Fuzzy matching of translation memories is sorted by editing distance or semantic distance, and the number of top-k returns is restrained."
+        },
+        {
+          "id": 222,
+          "source": "置信度门控在实时档要更严，因为实时档不接受升级；在精译档可以稍松，因为 AI 兜底。",
+          "reference": "Confidence gating has to be stricter in realtime mode because realtime does not allow upgrade, and looser in quality mode because AI provides a floor.",
+          "hypothesis": "The confidence door is tighter in real-time because the real-time file does not accept upgrades; the file can be relaxed slightly because of AI."
+        },
+        {
+          "id": 223,
+          "source": "术语注入到本地引擎与注入到 LLM 的效果不一样：本地引擎把它当硬约束，LLM 会理解上下文再决定。",
+          "reference": "Term injection behaves differently on local engines versus LLMs: local treats it as a hard constraint, LLMs integrate it into context before deciding.",
+          "hypothesis": "The term is not the same as the term \"local engine\" when it is injected into the LLM: the local engine uses it as a hard-barrel, and the LLM understands the context."
+        },
+        {
+          "id": 224,
+          "source": "蒸馏产出要区分 \"用户已确认\" 与 \"机器自抽\"，前者可以覆盖后者，反之不行。",
+          "reference": "Distillation output must distinguish \"user confirmed\" from \"machine extracted\"; the first can overwrite the second, not the other way round.",
+          "hypothesis": "The distillation output needs to distinguish between \"user confirmed\" and \"machine self-pumping\", which can cover the latter, and \"no.\""
+        },
+        {
+          "id": 225,
+          "source": "命中率与延迟之间通常正相关；命中率越高说明重复内容越多，缓存路径也越快。",
+          "reference": "Hit rate and latency are usually positively correlated -- a higher hit rate means more repeated content and faster cached paths.",
+          "hypothesis": "The correlation between the hit rate and the delay is usually positive; the higher the hit rate, the faster the repetition of content, the faster the cache path."
+        },
+        {
+          "id": 226,
+          "source": "端到端语音翻译里 ASR 的错误会传染给 MT，再传染给 TTS，因此段级评估要独立跑。",
+          "reference": "In end-to-end speech translation, ASR errors propagate into MT and then into TTS, so segment-level evaluation has to run independently.",
+          "hypothesis": "ASR errors in end-to-end voice translation are transmitted to MT and then to TTS, so sector assessments run independently."
+        },
+        {
+          "id": 227,
+          "source": "神经机器翻译的注意力可视化能揭示模型 \"看到\" 了源句的哪一部分，但不等于可解释性。",
+          "reference": "Attention visualisation reveals which part of the source the model \"looked at\" but is not the same as interpretability.",
+          "hypothesis": "The attention-visualization of neuro-magic translation reveals what part of the source sentence \"see\" is, but it's not the same as interpretability."
+        },
+        {
+          "id": 228,
+          "source": "翻译记忆的更新策略是 last-write-wins 还是 best-quality-wins，产品语义完全不同。",
+          "reference": "Whether translation memory uses last-write-wins or best-quality-wins yields entirely different product semantics.",
+          "hypothesis": "The strategy for updating translation memories is last-write-wins or best-equality-wins, with completely different synonyms."
+        },
+        {
+          "id": 229,
+          "source": "大语言模型的 prompt injection 是隐私风险的来源之一，术语表内容不能包含可执行指令。",
+          "reference": "Prompt injection is one source of privacy risk for LLMs; glossary content must never include executable instructions.",
+          "hypothesis": "The large-language model prompt injection is one of the sources of privacy risks, and the glossary cannot contain enforceable instructions."
+        },
+        {
+          "id": 230,
+          "source": "翻译引擎的兜底不是简单的 \"翻不出来返回原文\"，而是要明确 \"为什么没翻出来\"。",
+          "reference": "A translation engine's fallback is not a simple \"return original on failure\" -- it must state why the translation did not happen.",
+          "hypothesis": "The bottom of the translation engine is not simply \"I can't turn it back,\" but rather to make it clear, \"Why didn't I turn it back.\""
+        },
+        {
+          "id": 231,
+          "source": "端到端评估的样本要覆盖短句、中句、长句三档，短多义词与长复杂句的失败模式不同。",
+          "reference": "End-to-end evaluation samples must cover short, medium and long sentences -- short polysemy and long complex sentences fail in different ways.",
+          "hypothesis": "The end-to-end assessment sample should cover the short, middle and long sentences in three tranches, with short multiwords different from the failure pattern of long complex sentences."
+        },
+        {
+          "id": 232,
+          "source": "用户锁定条目优先级最高：蒸馏不能覆盖，导入种子包也不能覆盖，除非用户显式撤销。",
+          "reference": "User-locked entries have the highest priority: neither distillation nor seed-pack imports may overwrite them unless the user explicitly unlocks them.",
+          "hypothesis": "The highest priority is given to the user lock entry: the distillation cannot be overwritten, and the imported torrent package cannot be overwritten, unless the user explicitly undos it."
+        },
+        {
+          "id": 233,
+          "source": "麦克风增益过高会让削波后的波形失去可识别性，ASR 会明显退化。",
+          "reference": "Microphone gain that is too high produces clipped waveforms with no recognisable content and degrades ASR visibly.",
+          "hypothesis": "It's too much of a microphone that loses recognition of the ripples, and ASR is clearly degenerative."
+        },
+        {
+          "id": 234,
+          "source": "扬声器输出的音量归一化要放在编码前而不是解码后，否则动态范围会丢。",
+          "reference": "Loudness normalisation for loudspeaker output must happen before encoding, not after decoding, or the dynamic range is lost.",
+          "hypothesis": "The volume integration of the loudspeaker output is left in front of the code and not after the decoding, otherwise the dynamic range is lost."
+        },
+        {
+          "id": 235,
+          "source": "录音的静音剪裁要在 VAD 判定后做，不能在波形上做简单的能量阈值。",
+          "reference": "Silence trimming must follow VAD decisions rather than a naive energy threshold on the raw waveform.",
+          "hypothesis": "The silent clipping of the recording is to be made after the VAD decision, and cannot make a simple energy threshold on the wave shape."
+        },
+        {
+          "id": 236,
+          "source": "播放头跨段跳变时要触发一次 flush，不然缓冲里会残留上一段的音频。",
+          "reference": "Cross-segment playhead jumps must trigger a flush, otherwise the previous segment's audio stays in the buffer.",
+          "hypothesis": "Play head-to-head jumps with a flush trigger, otherwise there will be a residual audio in the buffer."
+        },
+        {
+          "id": 237,
+          "source": "时间轴面板要区分视频帧号与音频样本号；两者换算依赖帧率与采样率。",
+          "reference": "The timeline panel must distinguish video frame indices from audio sample indices; converting between them depends on frame rate and sample rate.",
+          "hypothesis": "Time-axis panels distinguish between video frame numbers and audio sample numbers; both are dependent on frame rates and sampling rates."
+        },
+        {
+          "id": 238,
+          "source": "导入含 BOM 的字幕文件要能识别并剥离 BOM，不然首行字幕会带上不可见字符。",
+          "reference": "Importing a subtitle file that contains a BOM must detect and strip it, or the first line carries an invisible character.",
+          "hypothesis": "Import subtitle files with BOM to recognize and strip BOM, otherwise the initial subtitles will carry invisible characters."
+        },
+        {
+          "id": 239,
+          "source": "导出为 SRT 时的时间戳精度到毫秒即可；ASS 需要到厘秒，两者格式不同。",
+          "reference": "SRT export needs millisecond precision; ASS uses centiseconds -- the two formats are not interchangeable.",
+          "hypothesis": "Time-stamp precision to milliseconds when exporting to SRT; ASS needs calibration seconds, which are not in the same format."
+        },
+        {
+          "id": 240,
+          "source": "预览窗口按软字幕渲染，让用户能开关字幕轨；导出选项要与之解耦。",
+          "reference": "The preview pane renders soft subtitles so users can toggle tracks; the export option must stay decoupled from this choice.",
+          "hypothesis": "The preview window is rendered softly so that users can turn on the subtitle tracks; the export options are decorated with them."
+        },
+        {
+          "id": 241,
+          "source": "剪辑导出时如果只改时间轴不改内容，重封装就够，不要引入不必要的二压。",
+          "reference": "When exporting an edit that only changes timing and not content, remuxing is enough -- do not introduce unnecessary re-encoding.",
+          "hypothesis": "Reassembly is sufficient if only the time axis is not changed when the clip is exported, so do not introduce unnecessary double pressure."
+        },
+        {
+          "id": 242,
+          "source": "波形视图与频谱视图是互补的：前者看能量分布，后者看频率分布。",
+          "reference": "Waveform and spectrogram views are complementary: the first shows energy distribution, the second shows frequency distribution.",
+          "hypothesis": "Wave view complements spectrum view: the former looks at energy distribution, while the latter looks at frequency distribution."
+        },
+        {
+          "id": 243,
+          "source": "麦克风阵列的波束成形能显著提升远处说话人的信噪比，前提是采样同步。",
+          "reference": "Beam-forming on a microphone array markedly improves signal-to-noise for distant speakers, provided sample sync is preserved.",
+          "hypothesis": "The beam formation of the microphone array significantly increases the noise ratio of a distant speaker, provided the sampling is synchronized."
+        },
+        {
+          "id": 244,
+          "source": "导出前一次性校验源与目标的采样率、声道、位深三项，不匹配就提示。",
+          "reference": "Before export, verify sample rate, channels and bit depth in one pass and prompt on mismatch.",
+          "hypothesis": "The sampling rate, acoustics, bit depths before the export is checked once for source and target."
+        },
+        {
+          "id": 245,
+          "source": "音频格式转换要显式选择是否重采样，重采样要声明是否走高质量滤波器。",
+          "reference": "Audio format conversion must let the caller choose whether to resample, and resampling must declare whether to use a high-quality filter.",
+          "hypothesis": "The audio format conversion selects whether or not to retake the sample, or whether to repeat the sample to state whether to walk a high-quality filter."
+        },
+        {
+          "id": 246,
+          "source": "项目里所有对外承诺的数字都要有实测来源；预估值一律标注 \"估算\"。",
+          "reference": "Every outward-published number in this project must trace back to a measured run; estimates are labelled \"estimated\" without exception.",
+          "hypothesis": "All external commitments in the project need to be sourced in real terms; the advance valuation is always marked as \"estimated\"."
+        },
+        {
+          "id": 247,
+          "source": "侧车进程只监听本机回环，任何对外暴露都是明确的隐私不变量违背。",
+          "reference": "The sidecar binds only to the local loopback, and any external exposure would violate the privacy invariant explicitly.",
+          "hypothesis": "The side car process only listens to the loop, and any external exposure is a clear privacy violation."
+        },
+        {
+          "id": 248,
+          "source": "语言对分档决定了走哪个引擎；冷门语对可能压根就没有本地引擎可选。",
+          "reference": "Language-pair tiering decides which engine runs; cold pairs may not have any local engine at all.",
+          "hypothesis": "Language-to-segregation determines which engine to follow; cold words may not have a local engine at all."
+        },
+        {
+          "id": 249,
+          "source": "交付离线整合包时用户环境可能是离线内网，模型与词表都不能靠运行时下载。",
+          "reference": "When delivering an offline bundle the customer environment might be an air-gapped network, so neither models nor vocabularies may rely on runtime download.",
+          "hypothesis": "The user environment may be offline at the time of the delivery of the offline integration package, and neither the model nor the vocabulary can be downloaded on a running basis."
+        },
+        {
+          "id": 250,
+          "source": "精译档的质量承诺包括 \"AI 可达时尽量升级\"，不是 \"永远走本地\"。",
+          "reference": "Quality mode promises \"escalate to AI when reachable\", not \"stay local forever\".",
+          "hypothesis": "The quality commitment of the translation package includes \"AI to upgrade as far as possible\", not \"never go locally\"."
+        },
+        {
+          "id": 251,
+          "source": "实时档的延迟预算是硬约束，任何会打破预算的功能（比如 AI 升级）都要显式禁用。",
+          "reference": "The latency budget in realtime mode is a hard constraint; anything that would break it, AI upgrade included, must be explicitly disabled.",
+          "hypothesis": "The delayed budget for real-time slots is a hard one, and any functionality that breaks the budget (e.g. AI upgrades) is significantly disabled."
+        },
+        {
+          "id": 252,
+          "source": "质量偏好在设置页二选一，保存后重启生效，避免运行中改路由造成状态混乱。",
+          "reference": "The quality-preference toggle is a two-way choice in settings; changes take effect only on restart so routing cannot mutate mid-flight.",
+          "hypothesis": "Quality preferences are selected on the set page, which is saved and restarts to take effect, avoiding disruptions caused by rerouting in operation."
+        },
+        {
+          "id": 253,
+          "source": "兜底降级要区分 \"本地模型缺失\" 与 \"外部引擎不可达\"，前者可提示下载，后者要重试。",
+          "reference": "Fallback must distinguish \"local model missing\" from \"external engine unreachable\"; the first invites a download, the second a retry.",
+          "hypothesis": "The bottom down is to distinguish between \"local models are missing\" and \"out of reach\" external engines, which can be downloaded, and \"out of reach\"."
+        },
+        {
+          "id": 254,
+          "source": "模型许可矩阵是产品对外承诺的一部分，任何新增依赖都要过许可门禁。",
+          "reference": "The model-licence matrix is part of the outward commitment; every new dependency goes through the licence gate.",
+          "hypothesis": "Model licensing matrices are part of the external commitment to products, and any additional reliance is subject to licensing."
+        },
+        {
+          "id": 255,
+          "source": "执行提供程序的切换要走环境变量，不要写死在源码里。",
+          "reference": "Execution-provider selection must go through environment variables, never hard-coded in source.",
+          "hypothesis": "The switch to execute the offer is to take the environment variable and not to die in the source code."
+        },
+        {
+          "id": 256,
+          "source": "路由决策是可观测的：每次翻译的 route_plan 都能通过诊断接口读回。",
+          "reference": "Routing is observable: every translation exposes its route_plan over the diagnostics interface.",
+          "hypothesis": "Route decision-making is visible: every translator route_plan can be read back through the diagnostic interface."
+        },
+        {
+          "id": 257,
+          "source": "本地引擎与云端引擎之间是硬边界，隐私模式关闭这条边界上的所有通路。",
+          "reference": "Local engines and cloud engines are a hard boundary; privacy mode closes every path across that boundary.",
+          "hypothesis": "There is a hard border between the local engine and the cloud engine, and the privacy mode closes all the routes along the border."
+        },
+        {
+          "id": 258,
+          "source": "翻译流水线是数据驱动的：路由表可以改，未识别的配置键要显式回传不静默丢弃。",
+          "reference": "The translation pipeline is data-driven: routes can be edited, and any unknown configuration key is echoed back rather than silently dropped.",
+          "hypothesis": "Translator flow lines are data-driven: route lists can be changed, and unrecognized configuration keys are sent back silently."
+        },
+        {
+          "id": 259,
+          "source": "置信度估算不是模型输出概率，是模型质量启发式的合成，产品要如实说明。",
+          "reference": "Confidence estimation is not a raw model probability; it is a synthesis of quality heuristics, and the product says so.",
+          "hypothesis": "Confidence estimates are not model output probabilities. They are model quality-inspired synthetics, and the products are described as such."
+        },
+        {
+          "id": 260,
+          "source": "端到端语音闭环的模型体积上限约 500 MB，超了就不适合首装下载。",
+          "reference": "The end-to-end speech loop caps around 500 MB of model weight; anything larger is unfit for a first-launch download.",
+          "hypothesis": "Model size caps of about 500 MB with end-to-end voice loops, which are not suitable for primary downloads."
+        },
+        {
+          "id": 261,
+          "source": "实时同传产品在演示阶段常被称为 \"转写 + 翻译\"，不承诺 \"同传\" 是产品叙事纪律。",
+          "reference": "Real-time interpretation products in the demo phase say \"transcription plus translation\"; promising \"interpretation\" is a narrative-discipline violation.",
+          "hypothesis": "The real-time simultaneous product is often referred to at the demonstration stage as \"translation + translation\" and does not promise that \"same\" is product narrative discipline."
+        },
+        {
+          "id": 262,
+          "source": "批量本地化管线要能导入 mp4 抽音、走 ASR 转写、翻译、再回写软字幕，四步都能中断续跑。",
+          "reference": "A batch localization pipeline should be able to import mp4, extract audio, run ASR, translate, and write soft subtitles back -- all four steps interruptible and resumable.",
+          "hypothesis": "A batch of local catheters can be used to import mp4 sound, walk ASR transliterate, translate, return soft subtitles, and run in four steps."
+        },
+        {
+          "id": 263,
+          "source": "涉密文档场景要求所有本地组件都可离线获取，联网功能要能整体禁用。",
+          "reference": "Confidential-document scenarios require every local component to be obtainable offline; network features must be globally disableable.",
+          "hypothesis": "Secret document scenes require all local components to be available offline and network functionality to be disabled as a whole."
+        },
+        {
+          "id": 264,
+          "source": "桌面客户端要显示每次翻译实际走了哪个引擎，\"透明可追溯\" 是本产品的基本承诺。",
+          "reference": "The desktop client shows which engine actually ran each translation -- transparent traceability is a baseline promise of this product.",
+          "hypothesis": "The desktop client is going to show which engine is actually taken for each translation, and \"transparently traceable\" is the basic commitment of the product."
+        },
+        {
+          "id": 265,
+          "source": "翻译记忆导出要能带走或分享，但术语表按领域打包发布时不能携带用户私有条目。",
+          "reference": "Translation memory exports must be portable and shareable; but glossary seed packs must not carry user-private entries.",
+          "hypothesis": "Translation memories are exported so that they can be taken away or shared, but the glossary may not carry a user's private entry when it is published by field."
+        },
+        {
+          "id": 266,
+          "source": "端到端延迟由 VAD、ASR、MT、TTS 四段串联，任何一段劣化都会顶到用户脸上。",
+          "reference": "End-to-end latency is the sum of VAD, ASR, MT and TTS; degradation in any one of them lands squarely on the user's face.",
+          "hypothesis": "The end-to-end delay is associated with VAD, ASR, MT, TTS, and any deterioration will top the user's face."
+        },
+        {
+          "id": 267,
+          "source": "批处理任务的日志要按句粒度落盘，失败重跑时能精确恢复到出错那一条而不是从头再来。",
+          "reference": "Batch job logs must persist per sentence, so a failed rerun can resume precisely at the erroring item rather than start over.",
+          "hypothesis": "Batch task logs are to drop on a sentence particle scale so that if you fail to run again, you can accurately recover to the one where the error occurred rather than start over."
+        },
+        {
+          "id": 268,
+          "source": "长文档翻译要按段落或章节切分喂入，段间的一致性靠翻译记忆与术语表共同保证。",
+          "reference": "Long-document translation is fed segment-by-segment or section-by-section, and cross-segment consistency is carried by translation memory plus glossary.",
+          "hypothesis": "Long document translations are fed by paragraphs or sections, and consistency between paragraphs is ensured by the translation memory and the glossary."
+        },
+        {
+          "id": 269,
+          "source": "多说话人播客的本地化要先把不同说话人分流到各自的合成通道，再按时间线合流。",
+          "reference": "Localising a multi-speaker podcast first routes each diarised speaker into their own synthesis channel, then rejoins them along the timeline.",
+          "hypothesis": "The localization of multi-speaker podcasts involves the diversion of the different speakers to their respective synthetic corridors and the convergence of time lines."
+        },
+        {
+          "id": 270,
+          "source": "涉密客户的批量本地化通常要求现场部署，任何遥测都要能整体禁用。",
+          "reference": "Confidential clients typically require on-premise delivery of batch localization, and any telemetry must be globally disableable.",
+          "hypothesis": "The localization of the bulk of the client involved usually requires on-site deployment, and any telemetry is completely disabled."
+        },
+        {
+          "id": 271,
+          "source": "术语表的导入接口对包级 domain、source_lang、target_lang 三项做强制校验，防止污染通用表。",
+          "reference": "The glossary import endpoint enforces pack-level domain, source_lang and target_lang to prevent polluting the generic table.",
+          "hypothesis": "The import interface for the glossary makes mandatory verification of packages of domain, source_lang, target_lang to prevent contamination."
+        },
+        {
+          "id": 272,
+          "source": "翻译请求体的 domain 字段透传到 TM 命中的判断，跨 domain 的记忆不复用避免语境错配。",
+          "reference": "The request's domain field propagates into the TM hit check, so cross-domain memory is refused to avoid context mis-fit.",
+          "hypothesis": "The domain field of the translation request is passed through TM's life judgement, and the memory of the domain is no longer used to avoid misalignment."
+        },
+        {
+          "id": 273,
+          "source": "蒸馏 worker 是异步的，队列满时直接丢弃不阻塞主路径；这在延迟与完整性之间选了前者。",
+          "reference": "The distillation worker is asynchronous; when its queue is full it drops candidates rather than blocking the main path -- a deliberate latency-over-completeness choice.",
+          "hypothesis": "The distillation worker is an anecdotal, and when lined up, the main path is not blocked; this is the choice between delay and integrity."
+        },
+        {
+          "id": 274,
+          "source": "路由表是数据驱动的：routes.json、settings.json、环境变量、初始化 JSON 四级优先级依次覆盖。",
+          "reference": "The routing table is data-driven with four precedence levels in order: routes.json < settings.json < environment variables < initialisation JSON.",
+          "hypothesis": "The route tables are data-driven: routes.json, settings.json, environment variables, initialization of JSON IV priority coverage in order of priority."
+        },
+        {
+          "id": 275,
+          "source": "端到端评测的样本要按子领域打标签，才能算出 \"流水线核心 vs 多义词边界\" 的分组质量差。",
+          "reference": "End-to-end evaluation samples carry sub-domain labels so per-group quality deltas (\"pipeline core vs polysemy boundary\") can be computed.",
+          "hypothesis": "The end-to-end sample is labeled as a sub-area to calculate the poor quality of the grouping of the \"Vs polyphrase boundary at the core of the stream line\"."
+        },
+        {
+          "id": 276,
+          "source": "批量本地化的性能指标是 \"每小时能翻多少段\"，与实时场景的 \"端到端多少毫秒\" 是两套。",
+          "reference": "The performance metric for batch localisation is sentences per hour; the realtime metric is end-to-end milliseconds -- two completely different scales.",
+          "hypothesis": "The mass localization performance indicator is \"how many parts per hour\" and the real-time scenario \"how many milliseconds at the end\" is two sets."
+        },
+        {
+          "id": 277,
+          "source": "桌面产品的首次启动体验很重要：模型缺失时要在 UI 里明说而不是抛异常。",
+          "reference": "The first-launch experience of a desktop product matters: missing models must surface as a friendly UI message, not an exception.",
+          "hypothesis": "The first start-up experience of the desktop product is important: when the model is missing, it is important to describe it in UI rather than to leave it out of the ordinary."
+        },
+        {
+          "id": 278,
+          "source": "本地模型的下载要能显示进度并支持断点续传，几百 MB 到几 GB 的模型不适合一刀断重来。",
+          "reference": "Local model downloads must show progress and support resumable fetch; hundreds of megabytes to gigabytes are not worth restarting from zero.",
+          "hypothesis": "Local models are downloaded to show progress and support break-up. Hundreds of MB to a few GB models are not suitable for one cut."
+        },
+        {
+          "id": 279,
+          "source": "精译档与实时档的切换粒度是每请求；同一批里可以混着走，不用切档。",
+          "reference": "Switching between quality and realtime mode happens per request; a single batch can freely mix them without a global toggle.",
+          "hypothesis": "The size of the translation and real-time transfer is per request; in the same batch, it can be mixed, without a cut."
+        },
+        {
+          "id": 280,
+          "source": "sidecar 的生命周期由 UI 层管理，启动时轮询健康检查，退出时优雅 kill。",
+          "reference": "The sidecar's lifecycle is managed by the UI layer -- health-poll on startup, graceful kill on shutdown.",
+          "hypothesis": "The life cycle of the sidecar is managed by the UI layer, which rotates for health check-ups at start-up, and is elegance when exited."
+        },
+        {
+          "id": 281,
+          "source": "Python 侧车与 Rust 核心之间是 HTTP/JSON 契约，禁止 native binding 引入新的依赖负担。",
+          "reference": "The contract between the Python sidecar and the Rust core is HTTP over JSON, with native bindings forbidden so no new dependency burden creeps in.",
+          "hypothesis": "Between Python's side car and Rust's core is HTTP/JSON's contract, which prohibits the introduction of a new dependency burden."
+        },
+        {
+          "id": 282,
+          "source": "Windows 智能应用控制会拦截未签名的本地构建 DLL，产品发布签名要覆盖所有二进制。",
+          "reference": "Windows Smart App Control intercepts unsigned locally built DLLs, so product signing must cover every binary shipped.",
+          "hypothesis": "Windows smart application controls intercept unsigned local build DLLs, and the product release signature should cover all binarys."
+        },
+        {
+          "id": 283,
+          "source": "许可证门禁覆盖 Cargo.lock、Python requirements、.NET csproj 与文档引用的第三方素材。",
+          "reference": "The licence gate covers Cargo.lock, Python requirements, .NET csproj files, and any third-party material referenced from the docs.",
+          "hypothesis": "The licence door is restricted to cover third-party material cited by Cargo.lock, Python requirements,.NET csproj and the document."
+        },
+        {
+          "id": 284,
+          "source": "源码注释统一英文；文档面向中文用户，中英双版按 README 起头互链。",
+          "reference": "Source-code comments are English throughout; user-facing documentation is Chinese with an English twin linked from the README.",
+          "hypothesis": "The source note is uniform in English; the document is available to Chinese users and the Chinese and English versions are chained to each other by README."
+        },
+        {
+          "id": 285,
+          "source": "所有对外发布的数字都要能追溯到一次可复现的评测运行，含脚本、种子、时间戳。",
+          "reference": "Every externally published number must trace back to a reproducible evaluation run -- script, seed and timestamp included.",
+          "hypothesis": "All published figures are traced back to a reversible evaluation operation, containing scripts, seeds, time stampes."
+        },
+        {
+          "id": 286,
+          "source": "文档中不出现机器盘符路径；所有默认路径都走 data_dir 解析。",
+          "reference": "Docs must not carry machine drive paths; every default path resolves through data_dir.",
+          "hypothesis": "Document does not show a machine disk path; all default paths are used for data_dir resolution."
+        },
+        {
+          "id": 287,
+          "source": "构建入口以 Python 脚本为主，Windows 与 Linux 各配一个 .bat / .sh 做 OS 级薄壳。",
+          "reference": "Build entry points are Python scripts, with a thin .bat on Windows and .sh on Linux as OS-level wrappers.",
+          "hypothesis": "The construction entrance is dominated by a Python script, with Windows and Linux each having a .bat / .sh to do OS-class thin shell."
+        },
+        {
+          "id": 288,
+          "source": "pre-commit 钩子按路径触发不同检查，全绿才允许 commit。",
+          "reference": "The pre-commit hook dispatches different checks by file path and only allows a commit when every applicable check passes.",
+          "hypothesis": "Pre-committee hooks trigger different checks by path, and all green is allowed."
+        },
+        {
+          "id": 289,
+          "source": "Conventional Commits 是提交信息规范，type(scope): subject 一行说清 \"改了什么的哪部分\"。",
+          "reference": "Conventional Commits is the message convention: type(scope): subject says \"what changed in which part\" in a single line.",
+          "hypothesis": "Convenal Committees are submitting information norms, type (scope): subject lines to clarify \"what part of what has changed.\""
+        },
+        {
+          "id": 290,
+          "source": "pathspec 限定提交是并发协作下的原子性保障；共享暂存区容易被别的会话扫走。",
+          "reference": "Pathspec-scoped commits are the atomicity guarantee in concurrent collaboration; a shared staging area is easily swept by another session's commit.",
+          "hypothesis": "Pathspec limits submission as a co-ordinated atomic safeguard; shared temporary storage areas are easily swept away by other sessions."
+        },
+        {
+          "id": 291,
+          "source": "patch 文件要显式说明行尾策略，Windows 下 autocrlf=true 检出可能破坏 git apply。",
+          "reference": "Patch files must state their line-ending policy explicitly; under autocrlf=true on Windows a checkout may otherwise break git apply.",
+          "hypothesis": "The watch file shows the end-of-line policy. Windows' autocrlf=true detects the risk of damage."
+        },
+        {
+          "id": 292,
+          "source": "\"缓存\" 在 CDN 语境是 cache，在视频缓冲语境通常是 buffer；两者混用会误导读者。",
+          "reference": "\"缓存\" is cache in a CDN context but buffer in a video buffering context; conflating them misleads the reader.",
+          "hypothesis": "\"Cache\" in the CDN context is cache, and in the video buffer context it is usually buffer; the combination of the two is misleading to the reader."
+        },
+        {
+          "id": 293,
+          "source": "\"编码器\" 与 \"加密器\" 中文近似但英文完全不同：encoder 与 encryptor，翻译不能滑。",
+          "reference": "\"编码器\" and \"加密器\" are near-homographs in Chinese but encoder and encryptor in English -- the translation must not slide.",
+          "hypothesis": "The \"encoder\" and \"encrypt\" are similar in Chinese but completely different from English: encoder and encryptor, translation cannot slide."
+        },
+        {
+          "id": 294,
+          "source": "\"解码器\" 与 \"解密器\" 同样易混：decoder 与 decryptor，看是压缩域还是安全域。",
+          "reference": "\"解码器\" and \"解密器\" are equally confusable: decoder versus decryptor -- decide by compression domain or security domain.",
+          "hypothesis": "The decodor is as easy to mix with the decryptor as it is with the decryptor, see if it's compressed or safe."
+        },
+        {
+          "id": 295,
+          "source": "\"关键帧\" 是 video keyframe；\"关键帧动画\" 是 animation keyframe；同名不同物。",
+          "reference": "A video keyframe and an animation keyframe share the Chinese term \"关键帧\" but denote different things.",
+          "hypothesis": "\"Keyframe\" is video Keyframe; \"Keyframe Animation\" is animation Keyframe; a different name."
+        },
+        {
+          "id": 296,
+          "source": "\"声道\" 与 \"通道\" 在英文都是 channel；中文 UI 要根据域强制选一个不能默认。",
+          "reference": "\"声道\" and \"通道\" both render as channel in English; the UI must pick one explicitly by domain rather than default.",
+          "hypothesis": "The Channels and Channels are all chanels in English; Chinese UIs are forced to choose one from the domain without default."
+        },
+        {
+          "id": 297,
+          "source": "\"分词\" 在 NLP 是 tokenization，在中文文本处理还可能是 word segmentation，两者粒度不同。",
+          "reference": "\"分词\" is tokenization in NLP but may be word segmentation in Chinese text processing -- the two operate at different granularity.",
+          "hypothesis": "In NLP is tokenization, and in Chinese text-processing it may be word-segmenting, which is different in size."
+        },
+        {
+          "id": 298,
+          "source": "\"重采样\" 在音频域是 resample，在统计域是 bootstrap 采样；上下文域决定译法。",
+          "reference": "\"重采样\" in audio is resampling; in statistics it is bootstrap sampling -- the surrounding domain decides the rendering.",
+          "hypothesis": "The \"resample\" in the audio field is the Bootstream sample in the statistical field; the context domain determines the translation."
+        },
+        {
+          "id": 299,
+          "source": "\"预训练\" 与 \"预热\" 在中文里都含 \"pre\"，英文是 pretraining 与 warmup，工程语义完全不同。",
+          "reference": "\"预训练\" and \"预热\" both start with \"pre-\" in Chinese, but they are pretraining and warmup in English -- completely different engineering meanings.",
+          "hypothesis": "\"pre-training\" and \"pre-heat\" are all written in Chinese, and English is pretraining and warmup, which is completely different from engineering."
+        }
+      ],
+      "comet": 0.734,
+      "comet_scores_per_sample": [
+        0.7474,
+        0.8934,
+        0.748,
+        0.6343,
+        0.6641,
+        0.5882,
+        0.8328,
+        0.7348,
+        0.4888,
+        0.8754,
+        0.923,
+        0.7089,
+        0.7286,
+        0.844,
+        0.789,
+        0.6644,
+        0.7151,
+        0.6895,
+        0.846,
+        0.8336,
+        0.8633,
+        0.8545,
+        0.8216,
+        0.6841,
+        0.7482,
+        0.6427,
+        0.5888,
+        0.8034,
+        0.6886,
+        0.7619,
+        0.7307,
+        0.8539,
+        0.809,
+        0.55,
+        0.7833,
+        0.7434,
+        0.6126,
+        0.6885,
+        0.8267,
+        0.7425,
+        0.7408,
+        0.7645,
+        0.8701,
+        0.6363,
+        0.7454,
+        0.7707,
+        0.7775,
+        0.8009,
+        0.7884,
+        0.7119,
+        0.7996,
+        0.6747,
+        0.6193,
+        0.7114,
+        0.7737,
+        0.7803,
+        0.8103,
+        0.7216,
+        0.685,
+        0.8569,
+        0.7963,
+        0.7055,
+        0.7628,
+        0.7466,
+        0.6302,
+        0.7592,
+        0.7217,
+        0.6942,
+        0.7864,
+        0.6759,
+        0.8135,
+        0.6937,
+        0.6115,
+        0.6573,
+        0.645,
+        0.7288,
+        0.8112,
+        0.5911,
+        0.735,
+        0.8312,
+        0.7952,
+        0.7898,
+        0.6247,
+        0.7128,
+        0.718,
+        0.7823,
+        0.7892,
+        0.796,
+        0.8142,
+        0.6131,
+        0.8156,
+        0.883,
+        0.6788,
+        0.8546,
+        0.7421,
+        0.8658,
+        0.732,
+        0.799,
+        0.716,
+        0.7279,
+        0.5527,
+        0.6278,
+        0.632,
+        0.6453,
+        0.7015,
+        0.7053,
+        0.642,
+        0.7605,
+        0.6876,
+        0.7345,
+        0.6406,
+        0.7513,
+        0.4825,
+        0.7791,
+        0.8042,
+        0.7991,
+        0.6571,
+        0.7752,
+        0.736,
+        0.8049,
+        0.6944,
+        0.8059,
+        0.7772,
+        0.5305,
+        0.6824,
+        0.7421,
+        0.7691,
+        0.7482,
+        0.7295,
+        0.8509,
+        0.7361,
+        0.7954,
+        0.8731,
+        0.6886,
+        0.7486,
+        0.769,
+        0.8386,
+        0.7242,
+        0.706,
+        0.7288,
+        0.6312,
+        0.6967,
+        0.6334,
+        0.7939,
+        0.6499,
+        0.7857,
+        0.7796,
+        0.7773,
+        0.7968,
+        0.7623,
+        0.6996,
+        0.8029,
+        0.7585,
+        0.7831,
+        0.8087,
+        0.8032,
+        0.7124,
+        0.607,
+        0.7143,
+        0.6459,
+        0.8543,
+        0.7777,
+        0.7196,
+        0.6574,
+        0.7211,
+        0.6735,
+        0.6622,
+        0.7648,
+        0.592,
+        0.7057,
+        0.7283,
+        0.7256,
+        0.7704,
+        0.6574,
+        0.6328,
+        0.7598,
+        0.8377,
+        0.8026,
+        0.7385,
+        0.5783,
+        0.7505,
+        0.7853,
+        0.7665,
+        0.7174,
+        0.7217,
+        0.627,
+        0.6458,
+        0.7492,
+        0.6812,
+        0.7583,
+        0.8107,
+        0.7284,
+        0.7002,
+        0.8201,
+        0.7347,
+        0.6847,
+        0.8177,
+        0.8367,
+        0.7924,
+        0.5238,
+        0.7582,
+        0.6772,
+        0.7483,
+        0.6749,
+        0.7408,
+        0.778,
+        0.8637,
+        0.5753,
+        0.7699,
+        0.781,
+        0.7729,
+        0.7627,
+        0.7491,
+        0.6801,
+        0.807,
+        0.757,
+        0.7162,
+        0.7447,
+        0.7665,
+        0.7779,
+        0.7485,
+        0.7815,
+        0.7338,
+        0.6124,
+        0.7447,
+        0.8029,
+        0.8075,
+        0.7168,
+        0.7603,
+        0.779,
+        0.6459,
+        0.7501,
+        0.7269,
+        0.5824,
+        0.8026,
+        0.712,
+        0.6679,
+        0.8375,
+        0.722,
+        0.7488,
+        0.7393,
+        0.67,
+        0.8671,
+        0.7971,
+        0.6953,
+        0.6937,
+        0.7271,
+        0.7384,
+        0.6666,
+        0.7738,
+        0.7033,
+        0.7154,
+        0.6463,
+        0.6211,
+        0.7763,
+        0.6053,
+        0.7799,
+        0.851,
+        0.7971,
+        0.8092,
+        0.7545,
+        0.6384,
+        0.6302,
+        0.7946,
+        0.8089,
+        0.7258,
+        0.7172,
+        0.7785,
+        0.7828,
+        0.7452,
+        0.7848,
+        0.817,
+        0.6637,
+        0.6298,
+        0.8189,
+        0.631,
+        0.6401,
+        0.7287,
+        0.6685,
+        0.6524,
+        0.7287,
+        0.7925,
+        0.8159,
+        0.7749,
+        0.7559,
+        0.8083,
+        0.8461,
+        0.7753,
+        0.4968,
+        0.7176,
+        0.7081,
+        0.6721,
+        0.8008,
+        0.7773,
+        0.537,
+        0.7055,
+        0.6497,
+        0.774,
+        0.6823,
+        0.7555
+      ]
+    }
+  ],
+  "comet_model": "Unbabel/wmt22-comet-da"
+}
