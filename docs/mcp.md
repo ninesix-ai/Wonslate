@@ -32,7 +32,7 @@ python script/build.py        # 或单独构建：cd translator-engine && cargo 
 }
 ```
 
-Linux / macOS 用同目录的 `run-mcp.sh`。注意：**本仓所有 `.sh` 在 Git 里都以 `100644`（无执行位）入库**（Windows 侧 `core.filemode=false`，不保留 `+x`），所以客户端配置建议用 `bash` 包装，而不是直接把脚本当命令：
+Linux / macOS 用同目录的 `run-mcp.sh`。仓内所有 `.sh`（`build.sh` / `verify.sh` / `run_av_baseline.sh` / `mcp/run-mcp.sh`）都以 **`100755` 带执行位入库**，克隆后可直接 `./mcp/run-mcp.sh`；若你的客户端不接受可执行脚本当 `command`，也可用 `bash` 包装：
 
 ```json
 {
@@ -45,7 +45,7 @@ Linux / macOS 用同目录的 `run-mcp.sh`。注意：**本仓所有 `.sh` 在 G
 }
 ```
 
-或者先 `chmod +x mcp/run-mcp.sh`，再把 `command` 直接指向脚本。两个脚本只负责定位并启动服务器：若尚未构建，会打印可行动提示并以 exit 2 结束，不会静默失败。
+两个脚本只负责定位并启动服务器：若尚未构建，会打印可行动提示并以 exit 2 结束，不会静默失败。
 
 也可以直接指向裸二进制（不推荐：需自行维护构建路径与平台后缀差异）：
 
