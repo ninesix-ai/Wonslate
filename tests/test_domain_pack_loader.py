@@ -1,24 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 ninesix-ai studio
-"""S11 RED-PHASE tests for the domain-aware FFI glossary surface.
+"""S11 tests for the domain-aware FFI glossary surface.
 
 See ``docs/tasks/S11-领域路由与术语包接线.md``. These assertions author the
-desired contract; on the current tree they fail because:
-
-  * ``tt_glossary_import_pack`` is not exported by ``translator_engine``
-    (tests ⑩ and ⑪);
-  * ``tt_glossary_list`` takes only (source_lang, target_lang) today, so the
-    domain-scoped call cannot be exercised.
-
-This is the correct RED signal: the tests fail because the feature does not
-exist yet, not because of a typo or a bad fixture.
+contract of ``tt_glossary_import_pack``. They were first committed as RED-phase
+tests, back when the symbol was not exported by ``translator_engine`` at all and
+``tt_glossary_list`` still took only (source_lang, target_lang), so the
+domain-scoped call could not be exercised. S11 has since landed, so the suite
+runs GREEN against the real surface; what the assertions pin has not changed.
 
 Run:  python -m unittest tests.test_domain_pack_loader -v
 """
 import ctypes
 import json
 import os
+import pathlib
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -51,11 +49,17 @@ class GlossaryImportPackTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.lib = _load_engine()
+        # Hermetic run: every import below writes glossary rows, so pin the engine
+        # to a throw-away data dir - the same isolation test_phase1_ffi applies -
+        # instead of seeding the developer's live glossary with test packs.
+        cls._store = tempfile.TemporaryDirectory(prefix="wonslate-domain-pack-")
+        os.environ["LT_DATA_DIR"] = str(pathlib.Path(cls._store.name) / "data")
         cls.lib.tt_init(b"{}")
 
     @classmethod
     def tearDownClass(cls):
         cls.lib.tt_shutdown()
+        cls._store.cleanup()
 
     def _call(self, name, *args):
         fn = getattr(self.lib, name, None)

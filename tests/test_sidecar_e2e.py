@@ -18,6 +18,7 @@ import pathlib
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 
@@ -77,6 +78,11 @@ def main() -> int:
             ck.fail("engine DLL", str(e))
             return ck.summary()
         eng = ffi.Engine(dll)
+        # Hermetic run: pin the engine to a throw-away data dir, the same isolation
+        # test_phase1_ffi applies to itself, so this suite neither reads nor writes
+        # the developer's live TM/glossary.
+        store = tempfile.TemporaryDirectory(prefix="wonslate-sidecar-e2e-")
+        os.environ["LT_DATA_DIR"] = str(pathlib.Path(store.name) / "data")
         eng.init("{}")
         try:
             req = {
@@ -95,6 +101,7 @@ def main() -> int:
                 ck.fail("argos->sidecar hit", f"expected '[zh] hello', got {r}")
         finally:
             eng.shutdown()
+            store.cleanup()
     finally:
         proc.terminate()
         try:
