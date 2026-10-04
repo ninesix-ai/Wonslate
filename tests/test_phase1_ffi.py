@@ -746,6 +746,20 @@ def main() -> int:
         return 2
 
     _p(f"loaded DLL: {dll}")
+
+    # Hermetic run: pin the engine to a throw-away data dir, the same isolation
+    # _floor_probe() already applies to its child processes. Without it the suite
+    # reads and writes the developer's live TM/glossary, so test rows accumulate in
+    # the real store forever, and tm_list() - which returns the hit_count-ordered
+    # top `limit` rows - can push a freshly written entry out of the window on a
+    # host whose TM already holds more than `limit` rows for that language pair.
+    # Ambient LT_/WONSLATE_ variables are dropped for the same reason: the result
+    # must not depend on how this machine happens to be configured.
+    for _key in [k for k in os.environ if k.startswith(("LT_", "WONSLATE_"))]:
+        del os.environ[_key]
+    store = tempfile.TemporaryDirectory(prefix="wonslate-ffi-")
+    os.environ["LT_DATA_DIR"] = str(pathlib.Path(store.name) / "data")
+
     eng = Engine(dll)
     ck = Checker()
 
@@ -781,6 +795,7 @@ def main() -> int:
         test_quality_floor_needs_a_reachable_upgrade_engine(dll, ck)
     finally:
         eng.shutdown()
+        store.cleanup()
         _p("")
         _p("[tt_shutdown called]")
 

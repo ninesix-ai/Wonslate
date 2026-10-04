@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 ninesix-ai studio
-"""S12 RED-PHASE tests for the AV-domain benchmark harness.
+"""S12 tests for the AV-domain benchmark harness.
 
-See ``docs/tasks/S12-AV领域评测基线.md``. These assertions author the desired
-contract of ``script/bench_domain_av.py``; on the current tree the module does
-not exist, so the ``from bench_domain_av import ...`` line raises
-``ModuleNotFoundError`` at collection time. That is the correct RED signal:
-the tests fail because the feature is missing, not because of a typo.
+See ``docs/tasks/S12-AV领域评测基线.md``. These assertions author the contract of
+``script/bench_domain_av.py``. They were first committed as RED-phase tests while
+the harness was still missing - the import below used to raise
+``ModuleNotFoundError`` at collection time, which was the intended RED signal.
+The harness has since landed (``b9bd906`` onward), so the suite now runs GREEN
+against the real module; what the assertions pin has not changed.
 
 The tests mirror ``tests/test_bench_flores.py`` (S10 T1) in structure: pure
 stdlib ``unittest``, hermetic fixtures under a temp directory, no network, no
@@ -25,9 +26,9 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "script"))
 
-# This import MUST fail today: script/bench_domain_av.py is not authored yet.
-# Once S12 lands, the module will expose these four symbols.
-from bench_domain_av import (  # noqa: E402  (intentionally red)
+# The four symbols below are the public surface of the S12 harness that these
+# tests pin; they were the contract authored during the RED phase.
+from bench_domain_av import (  # noqa: E402
     DEFAULT_AV_SUBDIR,
     AvDataNotFound,
     find_pair_dir,
