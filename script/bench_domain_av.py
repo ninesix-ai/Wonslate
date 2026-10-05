@@ -68,16 +68,11 @@ PAIRS = ("av-zh-en",)
 # not by the internal "ollama" id, so callers can see which model ran.
 ENGINES = ("argos", "madlad", "ollama-qwen")
 
-# bench_translation.build_engines uses short ids: "argos", "madlad", "qwen".
-# The FFI's get_engine looks up "argos", "madlad", "ollama". This table
-# translates the user-facing "ollama-qwen" once, so the harness's own
-# surface stays aligned with the FFI's reported name.
-_BT_ID = {"ollama-qwen": "qwen"}
+# The FFI's get_engine looks up "ollama" while the engine reports itself as
+# "ollama-qwen" (Engine.name()), so the user-facing id is translated once here.
+# bench_translation's short ids no longer need a mapping: since D18 every arm is
+# issued through the FFI builder, so the shared client is out of the picture.
 _FFI_ID = {"ollama-qwen": "ollama"}
-
-
-def _bt_id(engine_id):
-    return _BT_ID.get(engine_id, engine_id)
 
 
 def _ffi_id(engine_id):
@@ -265,29 +260,22 @@ def _load_engine_for_translate():
 
 
 def _run_one(engine_id, direction, src, tgt, domain=""):
-    """Invoke one engine over the shared bench_translation client and
-    return (hypotheses, metrics). Lazy-imported so the hermetic tests
-    do not need a running sidecar or Ollama.
+    """Translate the sentence set with one engine and return (hypotheses, metrics).
 
-    When `domain` is empty the run is unscoped and goes through the shared
-    Engine client (same path bench_flores uses). When `domain` is set the
-    request body needs the field, so the harness switches to a direct FFI
-    call -- the shared client's signature is unchanged and lives in a file
-    this task does not own."""
+    Both arms of the domain control issue through the same builder
+    (_translate_via_ffi), so `domain` is the only thing that differs between a
+    baseline run and a scoped one. That is the D18 fix: the unscoped arm used to
+    take bench_translation's shared client, which meant the measured delta also
+    carried a different TM policy (the shared client may read and write the
+    memory, this path pins use_tm=False) and a different call stack. Two arms
+    that differ in more than the field under study cannot measure that field.
+
+    `score` stays a lazy import so the hermetic tests need no sidecar, no Ollama
+    and no built DLL."""
     src_lang, tgt_lang = direction.split("-")
-    if not domain:
-        from argparse import Namespace
-        from bench_translation import build_engines, score  # noqa: WPS433 (lazy)
-        ns = Namespace(engines=[_bt_id(engine_id)],
-                       argos_port=11435, madlad_port=11436,
-                       qwen_port=11434, qwen_model="qwen3:8b")
-        engines = build_engines(ns)
-        engine = engines[0]
-        hypotheses = [engine.translate(line, src_lang, tgt_lang) for line in src]
-    else:
-        from bench_translation import score  # noqa: WPS433 (lazy)
-        hypotheses = [_translate_via_ffi(engine_id, src_lang, tgt_lang, line, domain)[0]
-                      for line in src]
+    from bench_translation import score  # noqa: WPS433 (lazy)
+    hypotheses = [_translate_via_ffi(engine_id, src_lang, tgt_lang, line, domain)[0]
+                  for line in src]
     # bench_translation.score returns a (chrf, bleu) tuple, not a dict;
     # normalise it here so the evidence JSON has a stable shape that the
     # report generator can read. score_comet.py adds "comet" to the same

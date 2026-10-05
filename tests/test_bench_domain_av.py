@@ -169,5 +169,68 @@ class DomainArgumentTests(unittest.TestCase):
         self.assertEqual(params["domain"].default, "")
 
 
+class OneRequestPathTests(unittest.TestCase):
+    """D18: both arms of the domain control must travel one single request path.
+
+    The unscoped arm (domain="") used to go through bench_translation's shared
+    client while the scoped arm used _translate_via_ffi (with use_tm pinned to
+    False). Two arms that differ in more than the `domain` field cannot measure a
+    domain effect: whatever the shared client's TM behaviour or engine wiring does
+    gets charged to the delta. So the harness must issue both arms through the same
+    request builder, and only the domain may differ.
+
+    Hermetic: nothing here opens a socket, loads the DLL or scores real text.
+    """
+
+    def _run_arm(self, domain):
+        import bench_domain_av as m
+        import bench_translation
+
+        seen = []
+
+        def fake_ffi(engine_id, src_lang, tgt_lang, text, dom=""):
+            seen.append((engine_id, src_lang, tgt_lang, text, dom))
+            return ("hypothesis", {"ok": True})
+
+        def explode(*_a, **_k):
+            raise AssertionError(
+                "the unscoped arm must not reach for the shared bench_translation "
+                "client; both arms have to issue through one request builder (D18)")
+
+        orig_ffi, orig_build, orig_score = (m._translate_via_ffi,
+                                           bench_translation.build_engines,
+                                           bench_translation.score)
+        m._translate_via_ffi = fake_ffi
+        bench_translation.build_engines = explode
+        bench_translation.score = lambda h, refs, tgt: (0.0, 0.0)
+        try:
+            hypotheses, metrics = m._run_one("ollama-qwen", "zh-en", ["句子"], ["sentence"],
+                                            domain)
+        finally:
+            m._translate_via_ffi, bench_translation.build_engines = orig_ffi, orig_build
+            bench_translation.score = orig_score
+        return seen, hypotheses, metrics
+
+    def test_scoped_arm_uses_the_ffi_builder(self):
+        seen, hyps, _ = self._run_arm("av")
+        self.assertEqual([s[4] for s in seen], ["av"])
+        self.assertEqual(hyps, ["hypothesis"])
+
+    def test_unscoped_arm_uses_the_same_ffi_builder(self):
+        # RED today: the empty-domain branch takes the shared-client path, so the
+        # stub above raises before any request is recorded.
+        seen, _, _ = self._run_arm("")
+        self.assertEqual([s[4] for s in seen], [""],
+                          "the unscoped arm must issue through the same builder")
+
+    def test_both_arms_differ_only_in_the_domain_field(self):
+        scoped, _, _ = self._run_arm("av")
+        plain, _, _ = self._run_arm("")
+        self.assertEqual(len(scoped), len(plain))
+        for a, b in zip(scoped, plain):
+            self.assertEqual(a[:4], b[:4],
+                              "engine, languages and text must be identical across arms")
+
+
 if __name__ == "__main__":
     unittest.main()
