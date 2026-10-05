@@ -6,7 +6,17 @@
 Contract (strictly aligned with Rust engine/sidecar.rs, .NET SidecarManager,
 tests/mock_sidecar_server.py):
     POST /translate   body {"text","source","target"[,"glossary":[{"src","tgt"}]]}  -> 200 {"text": "<translation>"}
-    GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>"}
+    GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>"}   (LIVENESS only)
+    GET  /readyz      -> 200 {"status":"ready","backend",...} | 503 {"status":"warming","error":"not_ready","reason":...}
+                         501 {"error":"readiness_unknown"} when the backend cannot say
+    GET  /languages   -> 200 {"backend","pairs","target_codes","complete","note"}
+                         ?target=xx adds "supported": true | false | null (unknown)
+
+Failure semantics (D22): a language this backend can never serve is permanent and
+answers 422 unsupported_target with the supported set attached; a missing
+dependency or model is recoverable and keeps answering 503. Both used to be 503,
+so a batch caller could not tell "restarting this will help" from "that code does
+not exist" and burned a restart cycle on every rare language.
 
 Pluggable backends:
     --backend mock  no third-party deps; echoes an identifiable pseudo-translation.
@@ -16,7 +26,10 @@ Pluggable backends:
 
 Design rules:
     - On a missing dependency / missing model raise MissingDependency explicitly
-      with install guidance -- never crash bare, never degrade silently.
+      with install guidance -- never crash bare, never degrade silently. A
+      language that no model here can ever produce raises UnsupportedTarget.
+    - /health proves the port answers; it does NOT prove a request will not stall
+      on a cold model load. Say that on /readyz instead (D23).
     - The service binds 127.0.0.1 only (privacy: translated text never leaves
       the machine).
     - Licenses: deps ctranslate2(MIT)/sentencepiece(Apache); models
@@ -43,6 +56,7 @@ import os
 import pathlib
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 DEFAULT_ARGOS_PORT = 11435
 DEFAULT_MADLAD_PORT = 11436
@@ -50,7 +64,21 @@ DEFAULT_MADLAD_PORT = 11436
 
 class MissingDependency(RuntimeError):
     """Raised when a third-party library or model required by a real backend
-    is absent; the message carries actionable install guidance."""
+    is absent; the message carries actionable install guidance.
+
+    Recoverable in principle -- fetching a model or installing a wheel makes the
+    next request work -- which is why the service answers 503. A request naming a
+    language that no downloadable model covers is the other kind; use
+    UnsupportedTarget so the caller can give up on that pair instead of
+    restarting a healthy engine (D22)."""
+
+
+class UnsupportedTarget(MissingDependency):
+    """The requested language or pair can never be served by this backend.
+
+    Subclasses MissingDependency so every existing `except MissingDependency`
+    site keeps catching it, while the HTTP layer can single it out and answer 4xx
+    with the supported set attached."""
 
 
 # ---- Backend abstraction --------------------------------------------------
@@ -66,6 +94,18 @@ class MockBackend:
         if glossary:
             out += " +gloss"
         return out
+
+    def languages(self):
+        """It echoes anything, so it has no coverage to report -- and must not
+        imply that an empty list means 'nothing is supported'."""
+        return {"pairs": [], "target_codes": [], "complete": False,
+                "note": "mock backend echoes any pair; it declares no coverage"}
+
+    def serves_target(self, target):
+        return True
+
+    def readiness(self):
+        return {"ready": True, "reason": None, "loaded": ["mock (nothing to load)"]}
 
 
 # SentencePiece marks word boundaries with U+2581. The Argos packages carry it as
@@ -178,11 +218,33 @@ class CT2Backend:
         """Sorted 'source->target' strings for the packages found on disk."""
         return sorted("{0}->{1}".format(s, t) for s, t in self._packages)
 
+    def languages(self):
+        """For Argos the packages on disk ARE the whole coverage: complete."""
+        return {"pairs": self.available_pairs(),
+                "target_codes": sorted({t for _, t in self._packages}),
+                "complete": True,
+                "note": "enumerated from the installed Argos packages"}
+
+    def serves_target(self, target):
+        """Whether any installed package writes its output in `target`."""
+        return any(t == target for _, t in self._packages)
+
+    def readiness(self):
+        """Ready only once a pair has actually been loaded.
+
+        Discovery is eager, inference is not: a translator materialises on the
+        first request for its pair, so right after start a request still pays the
+        model load. `loaded` names what is resident so a caller can see the why."""
+        loaded = sorted("{0}->{1}".format(s, t) for s, t in self._loaded)
+        return {"ready": bool(loaded),
+                "reason": None if loaded else "model_not_loaded",
+                "loaded": loaded}
+
     def _pair(self, source, target):
         key = (source, target)
         pkg = self._packages.get(key)
         if pkg is None:
-            raise MissingDependency(
+            raise UnsupportedTarget(
                 "ct2 backend has no model for {}->{}; available: {}".format(
                     source, target, ", ".join(self.available_pairs()) or "none"))
         if key not in self._loaded:
@@ -284,12 +346,33 @@ class MadladBackend:
             self._translator = self._ct2.Translator(str(self._root), device="cpu")
         return self._translator
 
+    def languages(self):
+        """Coverage comes from the checkpoint's vocabulary, which has 450+ codes
+        and no list to hand out, so `complete` is False: only codes actually
+        probed are named. A `?target=` probe is the real answer."""
+        codes = set(self._known_targets)
+        codes.update(code for code in self._COMMON_CODES if self._known_target(code))
+        return {"pairs": [], "target_codes": sorted(codes), "complete": False,
+                "note": "MADLAD covers 450+ codes; only the ones probed so far are listed"}
+
+    def serves_target(self, target):
+        """Decide by vocabulary lookup, not by paying for a translation."""
+        return bool(target) and self._known_target(target)
+
+    def readiness(self):
+        """The 3B checkpoint is materialised on first use, so right after start a
+        request still pays the load -- exactly what /health cannot express (D23)."""
+        resident = self._translator is not None
+        return {"ready": resident,
+                "reason": None if resident else "model_not_loaded",
+                "loaded": ["checkpoint"] if resident else []}
+
     def translate(self, text, source, target, glossary=None):
         text = (text or "").strip()
         if not text:
             return ""
         if not target or not self._known_target(target):
-            raise MissingDependency(
+            raise UnsupportedTarget(
                 "madlad backend has no target language {!r}. Supported codes"
                 " follow the MADLAD-400 vocabulary (450+ languages; common"
                 " ones: {}).".format(target, " ".join(self._COMMON_CODES)))
@@ -335,10 +418,66 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path == "/health":
+        parsed = urlparse(self.path)
+        if parsed.path == "/health":
+            # Liveness only, by contract: a 200 here says the port answers, not
+            # that a translation will come back promptly. GET /readyz for that.
             self._send(200, {"status": "ok", "backend": self.server.backend.name})
+        elif parsed.path == "/readyz":
+            self._readyz()
+        elif parsed.path == "/languages":
+            self._languages(parse_qs(parsed.query))
         else:
             self._send(404, {"error": "not found"})
+
+    def _capability(self):
+        """What this backend can serve, or an honest 'it does not enumerate'.
+
+        Backends are duck-typed, so a third-party or older one may predate the
+        contract; claiming an empty set would then read as 'nothing supported'."""
+        fn = getattr(self.server.backend, "languages", None)
+        if fn is None:
+            return {"pairs": [], "target_codes": [], "complete": False,
+                    "note": "backend does not enumerate its language coverage"}
+        return fn()
+
+    def _languages(self, query):
+        body = dict(self._capability())
+        body["backend"] = self.server.backend.name
+        target = (query.get("target") or [""])[0].strip()
+        if target:
+            body["target"] = target
+            probe = getattr(self.server.backend, "serves_target", None)
+            if probe is None:
+                # Unknown must stay apart from unsupported, or a caller that
+                # treats them alike silently drops a working language.
+                body["supported"] = None
+                body["note"] = "backend cannot answer a target-code probe"
+            else:
+                body["supported"] = bool(probe(target))
+        self._send(200, body)
+
+    def _readyz(self):
+        fn = getattr(self.server.backend, "readiness", None)
+        if fn is None:
+            # 200 would claim readiness and 503 would claim a cold model; neither
+            # is known here, so say the thing is not implemented (501).
+            self._send(501, {"error": "readiness_unknown",
+                             "backend": self.server.backend.name,
+                             "note": "backend does not report its model load state"})
+            return
+        body = dict(fn())
+        # `ready` is the backend's internal verb; the wire says it once, as the
+        # status code plus "status". A null reason would only be noise.
+        ready = bool(body.pop("ready", False))
+        body["backend"] = self.server.backend.name
+        body["status"] = "ready" if ready else "warming"
+        if ready:
+            body.pop("reason", None)
+            self._send(200, body)
+        else:
+            body["error"] = "not_ready"       # reason says which half is missing
+            self._send(503, body)
 
     def do_POST(self):
         if self.path != "/translate":
@@ -357,6 +496,13 @@ class Handler(BaseHTTPRequestHandler):
         try:
             out = self.server.backend.translate(
                 text, req.get("source", ""), req.get("target", ""), req.get("glossary"))
+        except UnsupportedTarget as e:
+            # D22: permanent for this code, and ordered before MissingDependency
+            # because it IS one. Hand back the supported set so a batch caller can
+            # retire the direction instead of restarting a healthy engine.
+            self._send(422, {"error": "unsupported_target", "message": str(e),
+                             "supported": self._capability()})
+            return
         except MissingDependency as e:
             self._send(503, {"error": "backend_unavailable", "message": str(e)})
             return

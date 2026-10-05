@@ -16,14 +16,18 @@ LT_ARGOS_URL is the legacy spelling, WONSLATE_ARGOS_URL the brand one):
     $env:WONSLATE_ARGOS_URL = "http://127.0.0.1:11435"   # PowerShell
     python script/build.py --test                        # or run the GUI / FFI smoke
 
-Contract (aligned with engine/sidecar.rs):
+Contract (aligned with engine/sidecar.rs and sidecar/ct2_sidecar.py):
     POST /translate   body {"text","source","target"[,"glossary":[{src,tgt}]]}
     200 -> {"text": "<tagged pseudo-translation>"}
-    GET  /health      -> {"status":"ok"}
+    GET  /health      -> {"status":"ok"}                 (liveness only)
+    GET  /readyz      -> {"status":"ready",...}           (mock loads no model)
+    GET  /languages   -> coverage answer; the mock echoes any pair, so it must
+                         not claim an empty list is the whole set (D22/D23)
 """
 import argparse
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -36,8 +40,18 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path == "/health":
+        path = urlparse(self.path).path
+        if path == "/health":
             self._send(200, {"status": "ok"})
+        elif path == "/readyz":
+            # Nothing to load here, so readiness is honestly always true; the
+            # real backends answer this from their actual model state.
+            self._send(200, {"status": "ready", "backend": "mock",
+                             "loaded": ["mock (nothing to load)"]})
+        elif path == "/languages":
+            self._send(200, {"backend": "mock", "pairs": [], "target_codes": [],
+                             "complete": False,
+                             "note": "mock backend echoes any pair; it declares no coverage"})
         else:
             self._send(404, {"error": "not found"})
 
