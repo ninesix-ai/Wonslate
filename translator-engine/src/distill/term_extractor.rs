@@ -12,7 +12,7 @@
 //!
 //! Longer-term upgrade path: jieba-rs tokenization -> GIZA++ alignment -> neural term extraction
 
-use crate::lang::is_cjk;
+use crate::lang::{has_script_for, is_cjk};
 use crate::types::GlossaryEntry;
 
 const ZH_STOP: &[&str] = &["的","了","是","在","有","和","我","你","他","她","这","那","也","都","而","与"];
@@ -112,6 +112,18 @@ pub fn extract_term_pairs(
 
     // Extract only for zh->en / en->zh (other pairs are skipped in the MVP)
     if source_lang != "zh" && source_lang != "en" {
+        return results;
+    }
+
+    // D20: the source must be written in the language it claims. Both branches below
+    // cut units out of source_text and pair them with the target, while every other
+    // signal only judges the *target* span - so a mislabelled sentence yields fragments
+    // ("cle" -> "time", "387" -> "fine") that score up to a clean 1.0 and persist into
+    // the glossary, which build_system_prompt then hands to the AI as a term
+    // constraint. The predicate lives in lang::has_script_for, shared with the
+    // confidence estimator precisely so the two never disagree on what "wrong script"
+    // means; unclassified languages return true and are judged by the other signals.
+    if !has_script_for(source_text, source_lang) {
         return results;
     }
     let tgt_words: Vec<&str> = target_text
@@ -280,6 +292,71 @@ mod tests {
         let pairs = extract_term_pairs("hello world", "en", "hello world", "zh");
         assert!(!pairs.is_empty(), "the misdeclared pair must still produce candidates");
         assert!(pairs.iter().all(|p| p.confidence < store_bar()));
+    }
+
+    #[test]
+    fn a_source_sentence_must_be_written_in_the_language_it_claims_zh() {
+        // D20. The zh branch slides characters over whatever it is handed and never
+        // asks whether the sentence is Chinese at all, while the script gate only
+        // ever judges the *target* span. This is not a hypothetical input:
+        // tests/test_phase1_ffi.py writes rows as
+        //     source_text="tm-manager-cycle <epoch-ms>"  source_lang="zh"
+        // and that mislabelled pair is exactly where the polluted glossary rows in
+        // this machine's store came from. Paired with an ordinary English output - what
+        // a translate call on that row returns - the target script gate passes, so the
+        // only thing standing between these fragments and the glossary is a source-side
+        // check, which does not exist today.
+        let pairs = extract_term_pairs(
+            "tm-manager-cycle 1790689387227", "zh", "the cycle time is fine", "en");
+        // Either shape is a valid fix: the guard may refuse the sentence outright, or
+        // emit candidates that all fail the bar. What must never happen is a storable
+        // one. Red-phase measurement against this exact input returned 37 entries over
+        // the bar, e.g. ("cle" -> "time", 1.0) and ("387" -> "fine", 1.0).
+        // That the guard does not simply starve real traffic is pinned by
+        // the_source_guard_still_admits_a_real_chinese_sentence below.
+        let leaked: Vec<&GlossaryEntry> =
+            pairs.iter().filter(|p| p.confidence >= store_bar()).collect();
+        assert!(
+            leaked.is_empty(),
+            "a non-Chinese source must store nothing, but these cleared the bar: {:?}",
+            leaked.iter().map(|p| (&p.source_term, &p.target_term, p.confidence))
+                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_source_sentence_must_be_written_in_the_language_it_claims_en() {
+        // The mirror case: an en-labelled source that carries no letters at all. The
+        // whitespace split hands back the whole CJK string as one "word", it is not
+        // in EN_STOP, the aligned Chinese span passes the target script gate and the
+        // edge helpers find no function word - so it scores a clean 1.0 today, the
+        // worst shape a candidate can have: maximum confidence, no real term in it.
+        let pairs = extract_term_pairs(
+            "深度学习很好", "en", "很不错的深度学习", "zh");
+        // Same contract as the zh case - red phase this scored ("深度学习很好" ->
+        // "很不错的深度学习", 1.0), a maximum-confidence entry with no term in it.
+        let leaked: Vec<&GlossaryEntry> =
+            pairs.iter().filter(|p| p.confidence >= store_bar()).collect();
+        assert!(
+            leaked.is_empty(),
+            "a non-Latin source must store nothing, but these cleared the bar: {:?}",
+            leaked.iter().map(|p| (&p.source_term, &p.target_term, p.confidence))
+                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn the_source_guard_still_admits_a_real_chinese_sentence() {
+        // The guard must not become "reject everything": a genuinely Chinese sentence
+        // has to keep producing terms that clear the bar, or the distill flywheel
+        // silently stops feeding the glossary.
+        let pairs = extract_term_pairs("深度学习很好", "zh", "deep learning is great", "en");
+        assert!(
+            pairs.iter().any(|p| p.confidence >= store_bar()),
+            "a real zh->en pair must still clear the bar, got {:?}",
+            pairs.iter().map(|p| (&p.source_term, &p.target_term, p.confidence))
+                 .collect::<Vec<_>>()
+        );
     }
 
     #[test]
