@@ -31,3 +31,5 @@ coverage/
 # Qoder / AI coding-agent metadata (hook state, finding ledger, run history);
 # nested anywhere in the tree -- never part of source.
 .mimosa/
+.workbuddy/
+qoder_review_tmp/
