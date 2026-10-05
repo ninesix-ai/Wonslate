@@ -14,6 +14,13 @@ tests/mock_sidecar_server.py):
     POST /warmup      body {"source","target"} optional -> 200 readiness report with
                          "warmed" and "load_s"; 422 unsupported_target; 501 unknown
 
+Region tags (D25): BCP-47 codes are folded to their primary subtag when that is
+what the model or package can actually serve - pt-BR is served by pt, zh-Hans-CN
+by zh. A code that folds to nothing is passed to the backend untouched, so the
+422 still comes from the one component that knows its own coverage (D22). Every
+fold is echoed as "resolved_target" / "resolved_source" beside the requested code
+so a caller can audit which code answered its text.
+
 Warm-up (D23's other half): /readyz only tells the truth, it does not make the
 checkpoint resident. /warmup is how a caller turns "warming" into "ready" without
 spending a translation on it, and it is per-pair for Argos so warming one
@@ -80,6 +87,22 @@ DEFAULT_MADLAD_PORT = 11436
 _LOAD_LOCK = threading.Lock()
 
 
+def primary_subtag(code):
+    """Reduce a BCP-47 tag to its language subtag: pt-BR -> pt, zh-Hans-CN -> zh.
+
+    Product-side codes are region-qualified almost everywhere, so this belongs in
+    front of the vocabulary rather than in every integrator's loop - the failure
+    mode of the alternative is that one caller forgets and errors in production.
+    Deliberately conservative: only the first subtag is kept, case is lowered to
+    match how model vocabularies and Argos metadata spell codes, and nothing is
+    guessed for an empty or all-separator tag.
+    """
+    raw = (code or "").strip()
+    if not raw:
+        return ""
+    return raw.split("-")[0].strip().lower()
+
+
 class MissingDependency(RuntimeError):
     """Raised when a third-party library or model required by a real backend
     is absent; the message carries actionable install guidance.
@@ -121,6 +144,13 @@ class MockBackend:
 
     def serves_target(self, target):
         return True
+
+    def resolve_target(self, target):
+        """The mock echoes anything, so whatever it is handed is servable."""
+        return target or None
+
+    def resolve_source(self, source):
+        return source or None
 
     def readiness(self):
         return {"ready": True, "reason": None, "loaded": ["mock (nothing to load)"]}
@@ -249,7 +279,23 @@ class CT2Backend:
 
     def serves_target(self, target):
         """Whether any installed package writes its output in `target`."""
-        return any(t == target for _, t in self._packages)
+        return self.resolve_target(target) is not None
+
+    def resolve_target(self, target):
+        """Fold a region-qualified code onto a package this service has (D25)."""
+        targets = {t for _, t in self._packages}
+        if target in targets:
+            return target
+        base = primary_subtag(target)
+        return base if base and base in targets else None
+
+    def resolve_source(self, source):
+        """Same fold on the source side: Argos packages name exact from_codes."""
+        sources = {s for s, _ in self._packages}
+        if source in sources:
+            return source
+        base = primary_subtag(source)
+        return base if base and base in sources else None
 
     def readiness(self):
         """Ready only once a pair has actually been loaded.
@@ -286,8 +332,27 @@ class CT2Backend:
                 return self._loaded[key], True
             return self._loaded[key], False
 
+    def _resolve_pair(self, source, target):
+        """Fold both codes or raise - one answer per question, whoever is asking.
+
+        The HTTP layer folds as well (so it can echo what it resolved to), but the
+        rule has to live here too: otherwise a direct importer of this class gets
+        "no model for en->pt-BR" while /translate answers the very same pair, and
+        two implementations of one capability question disagreeing is exactly the
+        family of defect D22 and D25 are about. The error names the codes the caller
+        sent, because that is what it needs to see to fix its side.
+        """
+        resolved_source = self.resolve_source(source)
+        resolved_target = self.resolve_target(target)
+        if not resolved_source or not resolved_target:
+            raise UnsupportedTarget(
+                "ct2 backend has no model for {}->{}; available: {}".format(
+                    source, target, ", ".join(self.available_pairs()) or "none"))
+        return resolved_source, resolved_target
+
     def _pair(self, source, target):
-        return self._load(source, target)[0]
+        """Resolve (D25 fold) then load, giving the hot path one way in."""
+        return self._load(*self._resolve_pair(source, target))[0]
 
     def warm(self, source=None, target=None):
         """Load one pair, or nothing at all when no pair was named.
@@ -298,7 +363,7 @@ class CT2Backend:
         """
         loaded_now = False
         if source and target:
-            _, loaded_now = self._load(source, target)
+            _, loaded_now = self._load(*self._resolve_pair(source, target))
         loaded = sorted("{0}->{1}".format(s, t) for s, t in self._loaded)
         return {"ready": bool(loaded),
                 "already": not loaded_now,
@@ -432,7 +497,26 @@ class MadladBackend:
 
     def serves_target(self, target):
         """Decide by vocabulary lookup, not by paying for a translation."""
-        return bool(target) and self._known_target(target)
+        return self.resolve_target(target) is not None
+
+    def resolve_target(self, target):
+        """Fold `pt-BR` to the `pt` token the checkpoint actually owns (D25).
+
+        The vocabulary is the authority: `pt-BR` is not a <2xx> token, so a request
+        naming it is only servable through its primary subtag. Source needs no fold
+        here - the <2xx> prefix chooses the direction, the source text is whatever
+        the tokenizer reads.
+        """
+        if not target:
+            return None
+        if self._known_target(target):
+            return target
+        base = primary_subtag(target)
+        return base if base and base != target and self._known_target(base) else None
+
+    def resolve_source(self, source):
+        """Every source is accepted; MADLAD decides by target alone."""
+        return source or None
 
     def readiness(self):
         """The 3B checkpoint is materialised on first use, so right after start a
@@ -446,12 +530,15 @@ class MadladBackend:
         text = (text or "").strip()
         if not text:
             return ""
-        if not target or not self._known_target(target):
+        # resolve_target folds `pt-BR` onto the <2pt> token the checkpoint really
+        # owns (D25); an unknown code stays the permanent error it was before.
+        resolved = self.resolve_target(target)
+        if resolved is None:
             raise UnsupportedTarget(
                 "madlad backend has no target language {!r}. Supported codes"
                 " follow the MADLAD-400 vocabulary (450+ languages; common"
                 " ones: {}).".format(target, " ".join(self._COMMON_CODES)))
-        pieces = self._processor.encode("<2{}> {}".format(target, text), out_type=str)
+        pieces = self._processor.encode("<2{}> {}".format(resolved, text), out_type=str)
         if not pieces:
             return ""
         eos = self._processor.eos_id()
@@ -516,14 +603,55 @@ class Handler(BaseHTTPRequestHandler):
                     "note": "backend does not enumerate its language coverage"}
         return fn()
 
+    def _fold_codes(self, source, target):
+        """Fold BCP-47 tags onto codes this backend says it can serve (D25).
+
+        Returns (source, target, echoes). Only a fold the backend itself reports as
+        servable is applied; anything else goes through untouched and the backend's
+        own UnsupportedTarget answers - the handler must not invent error text about
+        a capability it does not own, or D22 would end up with two voices. Every
+        fold is echoed with the requested code beside it so a caller can audit what
+        actually served its text. A backend without these hooks (older or
+        third-party) is passed through unchanged.
+        """
+        backend = self.server.backend
+        echoes = {}
+        fold = getattr(backend, "resolve_target", None)
+        if fold is not None and target:
+            resolved = fold(target)
+            if resolved:
+                if resolved != target:
+                    echoes["requested_target"] = target
+                    echoes["resolved_target"] = resolved
+                target = resolved
+        fold_source = getattr(backend, "resolve_source", None)
+        if fold_source is not None and source:
+            resolved = fold_source(source)
+            if resolved:
+                if resolved != source:
+                    echoes["requested_source"] = source
+                    echoes["resolved_source"] = resolved
+                source = resolved
+        return source, target, echoes
+
     def _languages(self, query):
         body = dict(self._capability())
         body["backend"] = self.server.backend.name
         target = (query.get("target") or [""])[0].strip()
         if target:
             body["target"] = target
+            fold = getattr(self.server.backend, "resolve_target", None)
             probe = getattr(self.server.backend, "serves_target", None)
-            if probe is None:
+            if fold is not None:
+                # Answer through the fold, then say which code it landed on: this is
+                # the probe a batch caller uses to decide whether to bother the
+                # engine at all, and pt-BR is worth sending even though no <2pt-BR>
+                # token exists.
+                resolved = fold(target)
+                body["supported"] = resolved is not None
+                if resolved and resolved != target:
+                    body["resolved_target"] = resolved
+            elif probe is None:
                 # Unknown must stay apart from unsupported, or a caller that
                 # treats them alike silently drops a working language.
                 body["supported"] = None
@@ -572,9 +700,11 @@ class Handler(BaseHTTPRequestHandler):
         if not text or not str(text).strip():
             self._send(400, {"error": "missing 'text'"})
             return
+        folded_source, folded_target, echoes = self._fold_codes(
+            str(req.get("source") or ""), str(req.get("target") or ""))
         try:
             out = self.server.backend.translate(
-                text, req.get("source", ""), req.get("target", ""), req.get("glossary"))
+                text, folded_source, folded_target, req.get("glossary"))
         except UnsupportedTarget as e:
             # D22: permanent for this code, and ordered before MissingDependency
             # because it IS one. Hand back the supported set so a batch caller can
@@ -585,7 +715,9 @@ class Handler(BaseHTTPRequestHandler):
         except MissingDependency as e:
             self._send(503, {"error": "backend_unavailable", "message": str(e)})
             return
-        self._send(200, {"text": out})
+        body = {"text": out}
+        body.update(echoes)
+        self._send(200, body)
 
     def _warmup(self, req):
         """Load on demand, then answer with the same report /readyz would give.
@@ -600,8 +732,10 @@ class Handler(BaseHTTPRequestHandler):
                              "backend": self.server.backend.name,
                              "note": "backend does not support explicit warm-up"})
             return
-        source = str(req.get("source") or "").strip() or None
-        target = str(req.get("target") or "").strip() or None
+        source, target, echoes = self._fold_codes(
+            str(req.get("source") or "").strip(), str(req.get("target") or "").strip())
+        source = source or None
+        target = target or None
         started = time.perf_counter()
         try:
             report = fn(source, target)
@@ -623,6 +757,7 @@ class Handler(BaseHTTPRequestHandler):
         # Report a cost only when this call actually paid one; a no-op warm should
         # not teach callers to read a stopwatch that never ran.
         body["load_s"] = round(time.perf_counter() - started, 3) if warmed else 0.0
+        body.update(echoes)          # say which code was warmed, if it was folded
         if ready:
             self._send(200, body)
         else:

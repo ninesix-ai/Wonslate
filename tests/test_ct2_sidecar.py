@@ -139,6 +139,19 @@ class RealInferenceTests(unittest.TestCase):
         self.assertTrue(self.backend.serves_target("zh"))
         self.assertFalse(self.backend.serves_target("jj"))
 
+    def test_region_fold_follows_the_installed_packages(self):
+        # D25 at the Argos tier: packages carry exact codes from metadata.json, so a
+        # BCP-47 code has to fold before the lookup or a UI that says `zh-CN` cannot
+        # reach the one direction sitting on disk. No package for Portuguese means
+        # no fold invents one.
+        self.assertEqual(self.backend.resolve_target("zh-Hans"), "zh")
+        self.assertEqual(self.backend.resolve_source("en-US"), "en")
+        self.assertIsNone(self.backend.resolve_target("pt-BR"))
+        # and the pair resolution the hot path uses agrees with those answers
+        self.assertEqual(self.backend._resolve_pair("en-US", "zh-Hans"), ("en", "zh"))
+        with self.assertRaises(MissingDependency):
+            self.backend._resolve_pair("en", "pt-BR")
+
     def test_readiness_is_cold_before_any_pair_is_resident(self):
         # D23 at the Argos tier: packages are discovered eagerly, translators are
         # loaded per pair on first use, so a fresh backend must not claim ready.
@@ -207,6 +220,19 @@ class RealMadladInferenceTests(unittest.TestCase):
         report = fresh.readiness()
         self.assertFalse(report["ready"])
         self.assertEqual(report["reason"], "model_not_loaded")
+
+    def test_region_code_folds_onto_the_real_vocabulary(self):
+        # D25 against the actual MADLAD-400 vocabulary rather than a fake: `pt-BR`
+        # is not a <2xx> token while `pt` is, so only a fold makes the request
+        # servable - and the folded answer must be the same translation, not a
+        # best-effort guess at something else.
+        self.assertTrue(self.backend.serves_target("pt-BR"))
+        self.assertEqual(self.backend.resolve_target("pt-BR"), "pt")
+        self.assertEqual(self.backend.resolve_target("zh-Hans-CN"), "zh")
+        self.assertIsNone(self.backend.resolve_target("xx-YY"))
+        folded = self.backend.translate("Hello, world.", "en", "pt-BR")
+        self.assertTrue(folded)
+        self.assertEqual(folded, self.backend.translate("Hello, world.", "en", "pt"))
 
     def test_english_to_chinese_returns_cjk(self):
         out = self.backend.translate("Hello, world.", "en", "zh")
@@ -291,20 +317,31 @@ class _StubBackend:
 
     name = "stub"
 
-    def __init__(self, error=None, ready=True, pairs=None, targets=None, complete=True):
+    def __init__(self, error=None, ready=True, pairs=None, targets=None, complete=True,
+                 sources=None):
         self.error = error
         self.ready = ready
         self.pairs = list(pairs or [])
         self.targets = list(targets or [])
+        self.sources = list(sources or ([p.split("->")[0] for p in (pairs or [])]))
         self.complete = complete
         self.translate_calls = 0
         self.warmed = False
         self.warmed_pairs = []
+        self.served = []
 
     def translate(self, text, source, target, glossary=None):
         self.translate_calls += 1
+        self.served.append((source, target))
         if self.error is not None:
             raise self.error
+        if self.targets and target not in self.targets:
+            # Mirror the real backends: an unservable target is permanent and comes
+            # from the backend, so a 422 here proves the handler passed an unfolded
+            # code through instead of quietly dropping the region itself.
+            raise ct2_sidecar.UnsupportedTarget(
+                "stub has no target language {!r}; available: {}".format(
+                    target, ", ".join(self.targets)))
         return "ok: {}".format(target)
 
     def languages(self):
@@ -328,6 +365,19 @@ class _StubBackend:
         self.ready = True
         self.warmed = self.warmed or not was
         return {"ready": True, "already": was}
+
+    def resolve_target(self, target):
+        """D25: fold a region-qualified code onto one this stub can serve."""
+        if target in self.targets:
+            return target
+        base = ct2_sidecar.primary_subtag(target)
+        return base if base in self.targets else None
+
+    def resolve_source(self, source):
+        if source in self.sources:
+            return source
+        base = ct2_sidecar.primary_subtag(source)
+        return base if base in self.sources else None
 
 
 class _LegacyBackend:
@@ -707,6 +757,125 @@ class ConcurrentLoadTests(unittest.TestCase):
         reports = self._race(lambda: backend.warm("en", "zh"))
         self.assertEqual(1, sum(1 for r in reports if not r["already"]))
         self.assertEqual(backend._ct2.built, 1)
+
+
+class RegionCodeTests(unittest.TestCase):
+    """D25 (external item 006): pt-BR / zh-TW / es-419 have to fold, not fail.
+
+    Product-side language codes are BCP-47 almost everywhere, so without a fold
+    every integrator re-implements `tgt.split('-')[0]` and whichever one they
+    forget errors in production - "one line in the engine, one line per caller and
+    somebody always misses it". The fold is echoed, because a caller that asked
+    for pt-BR and was served pt is entitled to see that in the response, and
+    nothing is invented: when no fold resolves, the original code is passed to the
+    backend and the outcome stays the backend's honest answer.
+    """
+
+    def setUp(self):
+        self.servers = []
+
+    def tearDown(self):
+        for srv in self.servers:
+            srv.shutdown()
+            srv.server_close()
+
+    def _send(self, backend, method, path, body=None):
+        srv, port = serve_in_thread(backend, host="127.0.0.1", port=0)
+        self.servers.append(srv)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request(method, path,
+                     body=(json.dumps(body) if body is not None else None),
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        payload = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return resp.status, payload
+
+    def _post(self, backend, path, body=None):
+        return self._send(backend, "POST", path, body)
+
+    def _get(self, backend, path):
+        return self._send(backend, "GET", path)
+
+    def test_primary_subtag_takes_the_language_subtag(self):
+        cases = {"pt-BR": "pt", "zh-TW": "zh", "es-419": "es", "zh-Hans-CN": "zh",
+                 "pt": "pt", "PT-br": "pt", "  ": "", "-BR": "", "pt-": "pt"}
+        for code, want in cases.items():
+            self.assertEqual(ct2_sidecar.primary_subtag(code), want, code)
+
+    def test_translate_folds_a_region_code_it_cannot_serve(self):
+        backend = _StubBackend(pairs=["en->pt"], targets=["pt"], sources=["en"])
+        status, payload = self._post(
+            backend, "/translate",
+            {"text": "hello", "source": "en-US", "target": "pt-BR"})
+        self.assertEqual(status, 200)
+        self.assertEqual(backend.served, [("en", "pt")])   # the fold reached the backend
+        self.assertEqual(payload.get("resolved_target"), "pt")
+        self.assertEqual(payload.get("resolved_source"), "en")
+
+    def test_an_exact_code_is_not_echoed(self):
+        # Echo only what changed, or every response grows two keys nobody reads.
+        backend = _StubBackend(pairs=["en->pt"], targets=["pt"], sources=["en"])
+        status, payload = self._post(
+            backend, "/translate", {"text": "hello", "source": "en", "target": "pt"})
+        self.assertEqual(status, 200)
+        self.assertNotIn("resolved_target", payload)
+        self.assertNotIn("resolved_source", payload)
+
+    def test_unfoldable_code_still_answers_422(self):
+        backend = _StubBackend(pairs=["en->pt"], targets=["pt"], sources=["en"])
+        status, payload = self._post(
+            backend, "/translate", {"text": "hello", "source": "en", "target": "xx-YY"})
+        self.assertEqual(status, 422)
+        self.assertEqual(payload["error"], "unsupported_target")
+
+    def test_nothing_is_invented_when_the_backend_cannot_fold(self):
+        # targets=[] means "only the backend itself knows"; the handler must pass the
+        # requested code through untouched rather than guessing pt-BR -> pt.
+        backend = _StubBackend()
+        status, payload = self._post(
+            backend, "/translate", {"text": "hello", "source": "en-US", "target": "pt-BR"})
+        self.assertEqual(status, 200)
+        self.assertEqual(backend.served, [("en-US", "pt-BR")])
+        self.assertNotIn("resolved_target", payload)
+
+    def test_an_unfoldable_code_is_refused_by_the_backend_not_the_handler(self):
+        # One voice about capability (D22): the 422 must carry the message of the
+        # component that owns the coverage list, so the handler has to forward the
+        # original code rather than compose its own error string.
+        backend = _StubBackend(pairs=["en->pt"], targets=["pt"], sources=["en"])
+        status, payload = self._post(
+            backend, "/translate", {"text": "hello", "source": "en", "target": "xh-XG"})
+        self.assertEqual(status, 422)
+        self.assertEqual(payload["error"], "unsupported_target")
+        self.assertIn("no target language", payload["message"])
+        self.assertEqual(backend.served, [("en", "xh-XG")])
+
+    def test_probe_reports_the_folded_capability_as_supported(self):
+        # 006's practical case: a batch caller deciding whether to bother the engine.
+        backend = _StubBackend(pairs=["en->pt"], targets=["pt"], sources=["en"])
+        status, payload = self._get(backend, "/languages?target=pt-BR")
+        self.assertEqual(status, 200)
+        self.assertIs(payload["supported"], True)
+        self.assertEqual(payload.get("resolved_target"), "pt")
+
+    def test_warmup_folds_too(self):
+        # Otherwise /warmup {"target":"pt-BR"} would answer 422 while /translate on the
+        # same code works - two endpoints disagreeing about one capability.
+        backend = _StubBackend(pairs=["en->pt"], targets=["pt"], sources=["en"])
+        status, payload = self._post(
+            backend, "/warmup", {"source": "en-US", "target": "pt-BR"})
+        self.assertEqual(status, 200)
+        self.assertEqual(backend.warmed_pairs, [("en", "pt")])
+        self.assertEqual(payload.get("resolved_target"), "pt")
+
+    def test_a_backend_without_the_folding_hook_keeps_working(self):
+        # _LegacyBackend exposes nothing new: the contract must stay additive.
+        status, payload = self._post(
+            _LegacyBackend(), "/translate",
+            {"text": "hello", "source": "en", "target": "pt-BR"})
+        self.assertEqual(status, 200)
+        self.assertNotIn("resolved_target", payload)
 
 
 if __name__ == "__main__":
