@@ -34,6 +34,7 @@ Usage:
 """
 import argparse
 import datetime
+import json
 import os
 import pathlib
 import statistics
@@ -124,9 +125,13 @@ LANG_MAP = {
     "ar": "ara",   # flores101 uses ISO 639-3; the 200 edition uses arb
 }
 
-# Same nine pairs as the 108-segment regression set.
+# The nine pairs of the 108-segment regression set, plus en<->pt and en<->it so
+# every language in LANG_MAP (and therefore in the product's language picker) has
+# at least one measured direction. Sampling is seeded per direction and does not
+# depend on this list, so appending pairs leaves the existing sample ids intact.
 PAIRS = [("en", "zh"), ("en", "ja"), ("en", "ko"), ("en", "fr"), ("en", "de"),
-         ("en", "es"), ("en", "ru"), ("en", "ar"), ("zh", "ja")]
+         ("en", "es"), ("en", "ru"), ("en", "ar"), ("en", "pt"), ("en", "it"),
+         ("zh", "ja")]
 
 
 def load_split(flores_root, split):
@@ -151,6 +156,59 @@ def load_split(flores_root, split):
     return data
 
 
+def _load_resumable(out_path, sample_ids, collecting_keys=()):
+    """Read stored samples for reuse: {(engine, direction): {id: sample}}.
+
+    Also returns the stored runs this invocation is NOT collecting, so resuming
+    one engine cannot delete the evidence another engine already paid hours
+    for, plus the previous record so run-level metadata (the COMET model name)
+    survives the rewrite.
+
+    Returns None when the stored ids differ from this run's, which would make
+    the stored inputs incomparable -- the caller must then refuse rather than
+    replace evidence it cannot merge. A damaged file is deliberately allowed to
+    raise: REQ-B2 forbids silently continuing with other data.
+    """
+    previous = json.loads(out_path.read_text(encoding="utf-8"))
+    if previous.get("sample_ids") != sample_ids:
+        print("[resume] stored sample_ids differ from this run", flush=True)
+        return None
+    done = {}
+    for run in previous.get("runs", []):
+        key = (run["engine"], run["direction"])
+        done[key] = {s["id"]: s for s in run.get("samples", [])}
+    collecting_keys = set(collecting_keys)
+    preserved = [run for run in previous.get("runs", [])
+                 if (run["engine"], run["direction"]) not in collecting_keys]
+    print("[resume] {} sample(s) already stored in {}, keeping {} stored run(s)".format(
+        sum(len(v) for v in done.values()), out_path.name, len(preserved)),
+        flush=True)
+    return done, preserved, previous
+
+
+def _print_overall(record):
+    """Print the per-engine means table. Split out so it can be tested: the
+    summary must survive a direction that has quality but no latency."""
+    print("\n## Overall (mean over available directions)\n", flush=True)
+    print("| engine | directions | mean chrF++ | mean BLEU | mean latency |", flush=True)
+    print("|---|---|---|---|---|", flush=True)
+    for engine_id in dict.fromkeys(r["engine"] for r in record["runs"]):
+        runs = [r for r in record["runs"]
+                if r["engine"] == engine_id and r["chrf"] is not None]
+        if not runs:
+            continue
+        # A resumed direction can carry chrF but no latency (its samples came
+        # from the cache), so the mean is taken over the directions that have one.
+        latencies = [r["latency_mean_s"] for r in runs
+                     if r["latency_mean_s"] is not None]
+        print("| {} | {} | {:.1f} | {:.1f} | {} |".format(
+            engine_id, len(runs),
+            statistics.mean(r["chrf"] for r in runs),
+            statistics.mean(r["bleu"] for r in runs),
+            "{:.2f}s".format(statistics.mean(latencies)) if latencies else "-"),
+            flush=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Score engines on FLORES-101 devtest")
     parser.add_argument("--engines", default="madlad,qwen",
@@ -166,10 +224,13 @@ def main(argv=None):
     parser.add_argument("--qwen-port", type=int, default=11434)
     parser.add_argument("--qwen-model", default="qwen3:8b")
     parser.add_argument("--pairs", default=None,
-                        help="comma-separated pair filter, e.g. en-zh,zh-en (default: all nine pairs)")
+                        help="comma-separated pair filter, e.g. en-zh,zh-en (default: all eleven pairs)")
     parser.add_argument("--out", default=None,
                         help="evidence JSON path (default: docs/evidence/flores-benchmark-<engine>).json")
     parser.add_argument("--list", action="store_true", help="print directions and sample ids, then exit")
+    parser.add_argument("--resume", action="store_true",
+                        help="reuse samples already stored in the output file for the "
+                             "same engine/direction (long CPU runs die otherwise)")
     args = parser.parse_args(argv)
     args.engines = [e.strip() for e in args.engines.split(",") if e.strip()]
 
@@ -224,37 +285,72 @@ def main(argv=None):
         "runs": [],
     }
 
+    # Resumable collection: a full 18-direction madlad run is hours of CPU, and
+    # the old end-only write lost everything when a run died. Now every sample is
+    # appended to the evidence file as it completes, and a rerun picks up from the
+    # samples already stored for the same (engine, direction).
+    out_path = pathlib.Path(args.out) if args.out else \
+        EVIDENCE_DIR / "flores-benchmark-{}.json".format(
+            engines[0].id.split(":")[0] if len(engines) == 1 else "mixed")
+
+    done = {}                             # (engine, direction) -> {sample id: record}
+    if args.resume and out_path.is_file():
+        collecting_keys = {(engine.id, "{}->{}".format(src, tgt))
+                           for engine in engines for src, tgt in directions}
+        loaded = _load_resumable(out_path, sample_ids, collecting_keys)
+        if loaded is None:
+            print("[resume] {} holds a different sample; refusing to overwrite it. "
+                  "Collect into a new --out, or drop --resume to start over."
+                  .format(out_path.name), file=sys.stderr)
+            return 1
+        done, preserved, previous = loaded
+        record["runs"] = list(preserved)
+        if previous.get("comet_model"):
+            record["comet_model"] = previous["comet_model"]
+
     for engine in engines:
         for src, tgt in directions:
-            hyps, refs, lats, errors = [], [], [], []
+            key = (engine.id, "{}->{}".format(src, tgt))
+            cached = done.get(key, {})
+            hyps, refs, lats, errors, samples = [], [], [], [], []
             for idx in sample_ids:
-                source_text = data[LANG_MAP[src]][idx]
                 reference = data[LANG_MAP[tgt]][idx]
+                if idx in cached:
+                    samples.append(cached[idx])
+                    if cached[idx].get("hypothesis") is not None:
+                        hyps.append(cached[idx]["hypothesis"])
+                        refs.append(cached[idx]["reference"])
+                    continue
+                source_text = data[LANG_MAP[src]][idx]
                 t0 = time.perf_counter()
                 try:
                     hyp = engine.translate(source_text, src, tgt)
                 except Exception as exc:             # noqa: BLE001 - per-sample engine error
                     errors.append("{}: {}".format(type(exc).__name__, exc))
                     continue
-                lats.append(time.perf_counter() - t0)
-                hyps.append(hyp or "")
-                refs.append(reference)
-            if hyps:
-                # Score whatever succeeded; per-sample errors stay recorded in the
-                # run so a polluted direction is visible rather than silently mean.
-                chrf, bleu = score(hyps, refs, tgt)
-            else:
-                chrf, bleu = None, None
+                latency = time.perf_counter() - t0
+                lats.append(latency)
+                samples.append({"id": idx, "source": source_text,
+                                "reference": reference, "hypothesis": hyp or "",
+                                "latency_s": round(latency, 3)})
+                record["runs"] = [r for r in record["runs"]
+                                  if (r["engine"], r["direction"]) != key]
+                record["runs"].append({
+                    "engine": engine.id, "direction": "{}->{}".format(src, tgt),
+                    "partial": True, "chrf": None, "bleu": None,
+                    "samples": list(samples)})
+                write_json(out_path, record)
+            chrf, bleu = (score(hyps, refs, tgt) if hyps else (None, None))
+            record["runs"] = [r for r in record["runs"]
+                              if (r["engine"], r["direction"]) != key]
             record["runs"].append({
                 "engine": engine.id, "direction": "{}->{}".format(src, tgt),
                 "chrf": None if chrf is None else round(chrf, 1),
                 "bleu": None if bleu is None else round(bleu, 1),
                 "latency_mean_s": None if not lats else round(statistics.mean(lats), 2),
                 "errors": errors,
-                "samples": [{"id": i, "source": data[LANG_MAP[src]][i],
-                             "reference": r, "hypothesis": h}
-                            for i, r, h in zip(sample_ids, refs, hyps)],
-            })
+                "samples": sorted(samples, key=lambda s: s["id"])})
+            write_json(out_path, record)
             print("[{}] {}->{}  chrF={}  BLEU={}  mean={}s{}".format(
                 engine.id, src, tgt,
                 "-" if chrf is None else "{:.1f}".format(chrf),
@@ -270,18 +366,7 @@ def main(argv=None):
         path = write_json(out, record)
         print("\nevidence written: {}".format(path), flush=True)
 
-    print("\n## Overall (mean over available directions)\n", flush=True)
-    print("| engine | directions | mean chrF++ | mean BLEU | mean latency |", flush=True)
-    print("|---|---|---|---|---|", flush=True)
-    for engine_id in dict.fromkeys(r["engine"] for r in record["runs"]):
-        runs = [r for r in record["runs"] if r["engine"] == engine_id and r["chrf"] is not None]
-        if not runs:
-            continue
-        print("| {} | {} | {:.1f} | {:.1f} | {:.2f}s |".format(
-            engine_id, len(runs),
-            statistics.mean(r["chrf"] for r in runs),
-            statistics.mean(r["bleu"] for r in runs),
-            statistics.mean(r["latency_mean_s"] for r in runs)), flush=True)
+    _print_overall(record)
     return 0
 
 

@@ -43,10 +43,33 @@ const DEFAULT_MODEL: &str = "qwen3:8b";
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 
 /// Language pair -> instruction suffix (used to build the translation prompt).
+///
+/// The two-letter code alone is ambiguous to an LLM: "it" reads as English for
+/// "it" (the pronoun), so `en -> it` produced Romanian-looking text in the
+/// FLORES run (COMET was never taken because chrF collapsed to 31.7). Every
+/// code the picker can emit therefore maps to an explicit language name.
 fn language_prompt(source: &str, target: &str) -> String {
-    match (source.to_lowercase().as_str(), target.to_lowercase().as_str()) {
-        ("zh", "en") => "Chinese to English".to_string(),
-        ("en", "zh") => "English to Chinese".to_string(),
+    let name = |code: &str| -> Option<&'static str> {
+        Some(match code.to_lowercase().as_str() {
+            "zh" => "Chinese",
+            "en" => "English",
+            "ja" => "Japanese",
+            "ko" => "Korean",
+            "fr" => "French",
+            "de" => "German",
+            "es" => "Spanish",
+            "ru" => "Russian",
+            "pt" => "Portuguese",
+            "it" => "Italian",
+            "ar" => "Arabic",
+            _ => return None,
+        })
+    };
+    let from = name(source);
+    let to = name(target);
+    match (from, to) {
+        (Some(f), Some(t)) => format!("{} to {}", f, t),
+        // Unknown codes keep the old behaviour rather than inventing a language.
         _ => format!("{} to {}", source, target),
     }
 }

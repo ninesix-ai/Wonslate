@@ -80,11 +80,23 @@ _OPENER = urllib.request.build_opener(_LoopbackRedirect)
 
 # Mirrors language_prompt() in translator-engine/src/engine/ollama.rs so the
 # benchmark exercises the prompt the shipped engine actually sends.
+#
+# Every code the picker can emit maps to an explicit language name: "it" reads
+# to an LLM as the English pronoun, and `en -> it` really did come back as
+# Romanian-looking text, so the pair must be spelled out.
+_LANGUAGE_NAMES = {
+    "zh": "Chinese", "en": "English", "ja": "Japanese", "ko": "Korean",
+    "fr": "French", "de": "German", "es": "Spanish", "ru": "Russian",
+    "pt": "Portuguese", "it": "Italian", "ar": "Arabic",
+}
+
+
 def ollama_pair_phrase(source, target):
-    if (source, target) == ("zh", "en"):
-        return "Chinese to English"
-    if (source, target) == ("en", "zh"):
-        return "English to Chinese"
+    from_name = _LANGUAGE_NAMES.get((source or "").lower())
+    to_name = _LANGUAGE_NAMES.get((target or "").lower())
+    if from_name and to_name:
+        return "{} to {}".format(from_name, to_name)
+    # Unknown codes keep the old behaviour rather than inventing a language.
     return "{} to {}".format(source, target)
 
 
@@ -219,7 +231,18 @@ def write_json(path, payload):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as out:
             json.dump(payload, out, ensure_ascii=False, indent=2)
-        os.replace(tmp, final)
+        # Windows hands out a sharing violation here whenever an indexer or
+        # scanner holds the destination for a moment; a long run replaces the
+        # same file thousands of times, so it eventually hits one. Retry with a
+        # short backoff rather than losing the whole collection to it.
+        for attempt in range(8):
+            try:
+                os.replace(tmp, final)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.2 * (attempt + 1))
     except Exception:
         try:
             os.close(fd)
