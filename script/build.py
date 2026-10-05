@@ -188,7 +188,9 @@ def run_ffi_smoke() -> int:
                  "test_bench_domain_av.py", "test_domain_pack_loader.py",
                  "test_install_glossary_pack.py",
                  "test_xaml_lint.py",
-                 "test_pre_commit_hook.py", "test_component_licenses.py",
+                 "test_pre_commit_hook.py",
+                 "test_glossary_hygiene.py",
+                 "test_component_licenses.py",
                  "test_source_lint.py"):
         script = ROOT / "tests" / name
         if not script.exists():
