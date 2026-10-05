@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 ninesix-ai studio
-"""RED-PHASE tests for the seed-pack installer (Step 8.5 of the B-side runbook).
+"""Tests for the seed-pack installer (Step 8.5 of the B-side runbook).
 
-Author the desired shape of ``script/install_glossary_pack.py`` before writing
-the module. On the current tree the ``from install_glossary_pack import ...``
-line fails with ``ModuleNotFoundError``, which is the correct RED signal:
-the module simply does not exist yet.
+These assertions authored the shape of ``script/install_glossary_pack.py``. They
+were first committed as RED-phase tests, back when the ``from
+install_glossary_pack import ...`` line raised ``ModuleNotFoundError`` at
+collection time - that was the intended RED signal. The module has since landed,
+so the suite runs GREEN against the real implementation; what the assertions pin
+has not changed.
 
 Design in one sentence: the installer reads one or more pack JSONs from the
 repo's ``docs/glossary-packs/`` directory and pipes each through the FFI
@@ -14,9 +16,11 @@ callable seam so tests stay hermetic.
 
 Run: ``python -m unittest tests.test_install_glossary_pack -v``
 """
+import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import sys
 import tempfile
 import unittest
@@ -24,8 +28,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "script"))
 
-# RED: this module does not exist yet.
-from install_glossary_pack import (  # noqa: E402  (intentionally red)
+from install_glossary_pack import (  # noqa: E402  (needs the sys.path shim above)
     DEFAULT_PACK_DIR, DEFAULT_REPO_ROOT, discover_packs, load_pack, import_pack,
     build_arg_parser,
 )
@@ -51,11 +54,40 @@ def write_pack(root, domain="av", src_lang="zh", tgt_lang="en", entries=None):
 class PathConstantTests(unittest.TestCase):
     """① Repo-root and default-pack-directory constants exist and are correct."""
 
-    def test_default_repo_root_is_the_wonslate_clone(self):
+    def test_default_repo_root_is_this_checkout(self):
         # The installer lives under <repo>/script, and its DEFAULT_PACK_DIR
         # must be a subdir of that same repo. This guards against a stray
         # absolute path (a S10 T1 lesson).
-        self.assertTrue(str(DEFAULT_REPO_ROOT).replace("\\", "/").endswith("Wonslate"))
+        #
+        # D19: this used to assert the checkout directory is named "Wonslate",
+        # which pinned one developer's folder wording instead of the intent
+        # above, and failed on every renamed checkout - a git worktree, or CI's
+        # actions/checkout with a path: input. The layout fact is what matters:
+        # this file sits in <repo>/tests, so the repo root is two levels up.
+        self.assertEqual(
+            DEFAULT_REPO_ROOT,
+            pathlib.Path(__file__).resolve().parents[1])
+
+    def test_repo_root_follows_a_renamed_checkout(self):
+        # The positive half of D19: resolve the installer from a clone whose
+        # directory name is deliberately not "Wonslate" and confirm the root
+        # tracks that location instead of a magic name. The module derives ROOT
+        # from __file__ and imports nothing from the repository, so copying the
+        # single file is enough to simulate the checkout under any name.
+        origin = pathlib.Path(__file__).resolve().parents[1] / "script"
+        with tempfile.TemporaryDirectory(prefix="wonslate-clone-") as td:
+            clone = pathlib.Path(td) / "renamed-checkout"
+            (clone / "script").mkdir(parents=True)
+            copy = clone / "script" / "install_glossary_pack.py"
+            shutil.copy2(origin / "install_glossary_pack.py", copy)
+            self.assertNotEqual(clone.name, "Wonslate")
+            spec = importlib.util.spec_from_file_location("igp_renamed", copy)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            self.assertEqual(mod.DEFAULT_REPO_ROOT, clone.resolve())
+            self.assertEqual(
+                mod.DEFAULT_PACK_DIR.relative_to(mod.DEFAULT_REPO_ROOT).as_posix(),
+                "docs/glossary-packs")
 
     def test_default_pack_dir_is_docs_glossary_packs(self):
         self.assertEqual(
