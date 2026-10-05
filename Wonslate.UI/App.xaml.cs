@@ -36,6 +36,9 @@ public partial class App : Application
         // The shell owns the ViewModel so it can push startup diagnostics into it,
         // and supplies the voice panel with the real audio player.
         _vm = new MainViewModel(new VoiceViewModel(playWav: PlayWavFile));
+        // The engine named in each response decides which endpoint gets warmed (D23);
+        // the managers are created below, so this must tolerate them being absent.
+        _vm.OnEngineUsed = WarmEndpointFor;
         _window = new MainWindow(_vm);
         _window.Show();
         PublishDiagnostics();
@@ -64,6 +67,31 @@ public partial class App : Application
         sidecar.Start();
         PublishDiagnostics();
     });
+
+    /// <summary>
+    /// Keep the sidecar that just served a translation resident, so the next sentence does
+    /// not pay the model load again, and let its state stop claiming Warming once it can serve.
+    ///
+    /// Only the endpoint the response names is touched. Guessing from the mode would copy the
+    /// router's rules into the UI, and warming both would pin a 2.95 GB checkpoint for an
+    /// engine nobody used. Unmanaged engines (tm / demo / ollama) simply match nothing.
+    /// </summary>
+    private void WarmEndpointFor(string engine)
+    {
+        var manager = engine switch
+        {
+            "argos" => _argos,
+            "madlad" => _madlad,
+            _ => null,
+        };
+        if (manager is null) return;
+        // Off the dispatcher: a warm-up is the model load itself, up to seconds on CPU.
+        Task.Run(() =>
+        {
+            manager.Warm();
+            PublishDiagnostics();
+        });
+    }
 
     /// <summary>Engine init result plus the live state of every sidecar endpoint.</summary>
     private void PublishDiagnostics()

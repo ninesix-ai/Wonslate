@@ -6,8 +6,9 @@ using Xunit;
 namespace Wonslate.UI.Tests;
 
 /// <summary>
-/// SidecarManager lifecycle state-machine tests. Launch and health probe run on injected fake delegates,
-/// fully hermetic: no real process, no real HTTP; only state transitions and the"the never-throw"contract are verified.
+/// SidecarManager lifecycle state-machine tests. Launch, health probe, readiness probe and
+/// warm-up post all run on injected fake delegates, fully hermetic: no real process, no real
+/// HTTP; only state transitions and the "the never-throw" contract are verified.
 /// Real absence / timeout fallback is the Rust side's job (is_available + routing to demo); here we only assert the .NET side never crashes.
 /// </summary>
 public class SidecarManagerTests
@@ -174,5 +175,200 @@ public class SidecarManagerTests
 
         Assert.True(mgr.Start());
         Assert.Equal("http://127.0.0.1:11435/health", probedUrl);
+    }
+
+    // ---- D23: liveness and readiness are two different verdicts ----------------------
+
+    [Fact]
+    public void Start_EndpointAliveButModelCold_SettlesAtWarmingNotFailed()
+    {
+        // The old code called any /health answer Ready. The endpoint is up here and its
+        // checkpoint is not, and that has to be a state of its own rather than a success.
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: _ => Readiness.Warming);
+
+        Assert.False(mgr.Start());               // not usable yet, which Start() admits
+        Assert.Equal(SidecarState.Warming, mgr.State);
+    }
+
+    [Fact]
+    public void Start_Warming_IsSettledAtOnceAndNeverTimesOutIntoAKill()
+    {
+        // The timeout branch is the one that calls ReleaseOwnedProcess(); reaching a
+        // verdict from the first readiness answer means a slow model load cannot walk an
+        // endpoint we just launched into Failed, and therefore cannot kill it.
+        int sleeps = 0;
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => sleeps++,
+            readyProbe: _ => Readiness.Warming);
+
+        mgr.Start();
+        Assert.Equal(0, sleeps);
+        Assert.Equal(SidecarState.Warming, mgr.State);
+    }
+
+    [Fact]
+    public void Start_WhenReadinessCannotTell_KeepsTheLivenessVerdict()
+    {
+        // An older sidecar has no /readyz at all. Treating "it cannot answer that question"
+        // as a fault would regress every build that predates the endpoint.
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: _ => Readiness.Unknown);
+
+        Assert.True(mgr.Start());
+        Assert.Equal(SidecarState.Ready, mgr.State);
+    }
+
+    [Fact]
+    public void Start_WithoutAReadinessProbe_ProbesNothingAndTrustsLiveness()
+    {
+        // What every pre-existing test above relies on, made explicit: no delegate means
+        // no /readyz traffic, so unit tests stay hermetic by construction.
+        string? readyUrl = null;
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: null,
+            warmPost: url => { readyUrl = url; return true; });
+
+        Assert.True(mgr.Start());
+        Assert.Null(readyUrl);
+    }
+
+    [Fact]
+    public void Start_AskReadiness_AtTheReadyUrl_OfBaseUrl()
+    {
+        string? readyUrl = null;
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: url => { readyUrl = url; return Readiness.Ready; });
+
+        Assert.True(mgr.Start());
+        Assert.Equal("http://127.0.0.1:11435/readyz", readyUrl);
+    }
+
+    [Fact]
+    public void Start_AfterWarming_DoesNotLaunchASecondProcess()
+    {
+        // Warming means "already brought up, model still loading"; re-entering Start()
+        // must not spawn a rival sidecar for the same port.
+        int launches = 0;
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => { launches++; return true; },
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: _ => Readiness.Warming);
+
+        Assert.False(mgr.Start());
+        Assert.False(mgr.Start());
+        Assert.Equal(SidecarState.Warming, mgr.State);
+        Assert.Equal(1, launches);
+    }
+
+    // ---- Warm-up: the way out of Warming -------------------------------------------
+
+    [Fact]
+    public void Warm_FromWarming_PostsWarmupAndAdvancesToReady()
+    {
+        string? warmUrl = null;
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: _ => Readiness.Warming,
+            warmPost: url => { warmUrl = url; return true; });
+        mgr.Start();
+
+        Assert.True(mgr.Warm());
+        Assert.Equal("http://127.0.0.1:11435/warmup", warmUrl);
+        Assert.Equal(SidecarState.Ready, mgr.State);
+    }
+
+    [Fact]
+    public void Warm_WhenAlreadyReady_IsANoOpSoTheShellDoesNotPostPerSentence()
+    {
+        // The shell reports the engine after every translation; once the endpoint is
+        // resident that must not turn into an extra HTTP round trip per sentence.
+        int posts = 0;
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: _ => Readiness.Ready,
+            warmPost: _ => { posts++; return true; });
+        mgr.Start();
+
+        Assert.True(mgr.Warm());
+        Assert.Equal(0, posts);
+    }
+
+    [Fact]
+    public void Warm_WhenTheEndpointRefuses_StaysWarming_AndDoesNotThrow()
+    {
+        // A refused or failed warm-up is not evidence of death: the state must stay
+        // Warming so a later real request (which loads the model itself) can still fix it.
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: _ => Readiness.Warming,
+            warmPost: _ => false);
+        mgr.Start();
+
+        Assert.False(mgr.Warm());
+        Assert.Equal(SidecarState.Warming, mgr.State);
+    }
+
+    [Fact]
+    public void Warm_WhenProbeThrows_IsHandledNotPropagated()
+    {
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: _ => Readiness.Warming,
+            warmPost: _ => throw new System.Net.Http.HttpRequestException("connect refused"));
+        mgr.Start();
+
+        Assert.False(mgr.Warm());
+        Assert.Equal(SidecarState.Warming, mgr.State);
+    }
+
+    [Fact]
+    public void Warm_BeforeAnyStart_IsANoOpAndSaysSo()
+    {
+        bool posted = false;
+        var mgr = new SidecarManager(
+            Spec("http://127.0.0.1:11435"),
+            launch: _ => true,
+            healthProbe: _ => true,
+            sleep: _ => { },
+            readyProbe: _ => Readiness.Ready,
+            warmPost: _ => { posted = true; return true; });
+
+        Assert.False(mgr.Warm());
+        Assert.False(posted);          // nothing is up yet; do not knock on the port
+        Assert.Equal(SidecarState.Stopped, mgr.State);
     }
 }

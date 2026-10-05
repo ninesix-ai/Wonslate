@@ -390,6 +390,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
     /// </summary>
     internal Func<string, string> InvokeTranslate { get; set; } = EngineNative.TranslateFull;
 
+    /// <summary>
+    /// Told which engine actually served each successful request.
+    ///
+    /// The shell uses this to warm exactly that sidecar endpoint (D23). It is a report and
+    /// not a guess: deriving the engine from the mode would copy Rust's routing rules into
+    /// the UI, where they can drift out of step with the router in silence.
+    /// </summary>
+    internal Action<string>? OnEngineUsed { get; set; }
+
     /// <summary>Per-attempt timeout for the async path. The native call cannot be aborted,
     /// so an overrun is abandoned (logical cancellation) rather than applied late.</summary>
     public TimeSpan TranslateTimeout { get; set; } = TimeSpan.FromSeconds(20);
@@ -529,6 +538,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _             => result.Source,
         };
         EngineLabel = $"[{srcLabel}] {result.Engine} · {result.LatencyMs}ms";
+
+        // The endpoint that just served is the one worth keeping resident: tell the shell
+        // before anything else can overwrite this result.
+        if (result.Ok && result.Engine.Length > 0) OnEngineUsed?.Invoke(result.Engine);
 
         // The engine resolves "auto" to a concrete code; TM / glossary writes need it.
         if (result.SourceLang.Length > 0) DetectedSourceLang = result.SourceLang;

@@ -23,6 +23,7 @@ Contract (aligned with engine/sidecar.rs and sidecar/ct2_sidecar.py):
     GET  /readyz      -> {"status":"ready",...}           (mock loads no model)
     GET  /languages   -> coverage answer; the mock echoes any pair, so it must
                          not claim an empty list is the whole set (D22/D23)
+    POST /warmup      -> same report as /readyz (mock has nothing to load)
 """
 import argparse
 import json
@@ -56,7 +57,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path != "/translate":
+        path = urlparse(self.path).path
+        if path == "/warmup":
+            # Nothing to load in the mock, so warm-up is an immediate yes. The real
+            # backends answer this by actually loading, and report what it cost.
+            self._send(200, {"status": "ready", "backend": "mock",
+                             "warmed": False, "load_s": 0.0,
+                             "loaded": ["mock (nothing to load)"]})
+            return
+        if path != "/translate":
             self._send(404, {"error": "not found"})
             return
         n = int(self.headers.get("Content-Length", 0))

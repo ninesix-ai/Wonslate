@@ -11,6 +11,13 @@ tests/mock_sidecar_server.py):
                          501 {"error":"readiness_unknown"} when the backend cannot say
     GET  /languages   -> 200 {"backend","pairs","target_codes","complete","note"}
                          ?target=xx adds "supported": true | false | null (unknown)
+    POST /warmup      body {"source","target"} optional -> 200 readiness report with
+                         "warmed" and "load_s"; 422 unsupported_target; 501 unknown
+
+Warm-up (D23's other half): /readyz only tells the truth, it does not make the
+checkpoint resident. /warmup is how a caller turns "warming" into "ready" without
+spending a translation on it, and it is per-pair for Argos so warming one
+direction never drags every installed package into memory.
 
 Failure semantics (D22): a language this backend can never serve is permanent and
 answers 422 unsupported_target with the supported set attached; a missing
@@ -55,11 +62,22 @@ import json
 import os
 import pathlib
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 DEFAULT_ARGOS_PORT = 11435
 DEFAULT_MADLAD_PORT = 11436
+
+# Guards the lazy model loads below. The service is a ThreadingHTTPServer, so two
+# clients hitting a cold backend can both pass the "not loaded yet" check and each
+# build a translator -- duplicating a 2.95 GB MADLAD checkpoint inside one process.
+# One lock for the whole module is deliberate: loads are rare and short compared to
+# inference, and serialising them is cheaper than reasoning about per-instance
+# lifecycle in two backends (external feedback item 003 proved the race corrupts
+# nothing but memory; this keeps the memory honest too).
+_LOAD_LOCK = threading.Lock()
 
 
 class MissingDependency(RuntimeError):
@@ -106,6 +124,10 @@ class MockBackend:
 
     def readiness(self):
         return {"ready": True, "reason": None, "loaded": ["mock (nothing to load)"]}
+
+    def warm(self, source=None, target=None):
+        """Nothing to load; already: True keeps load_s at zero for callers."""
+        return {"ready": True, "already": True, "loaded": ["mock (nothing to load)"]}
 
 
 # SentencePiece marks word boundaries with U+2581. The Argos packages carry it as
@@ -240,19 +262,49 @@ class CT2Backend:
                 "reason": None if loaded else "model_not_loaded",
                 "loaded": loaded}
 
-    def _pair(self, source, target):
+    def _load(self, source, target):
+        """Return the pair's translator and whether *this* call built it.
+
+        The second value is decided inside the lock, not before it: three clients can
+        each see a cold store and then wait their turn, and if the flag were read
+        outside the lock all three would claim they paid for the one load.
+        """
         key = (source, target)
         pkg = self._packages.get(key)
         if pkg is None:
             raise UnsupportedTarget(
                 "ct2 backend has no model for {}->{}; available: {}".format(
                     source, target, ", ".join(self.available_pairs()) or "none"))
-        if key not in self._loaded:
-            processor = self._spm.SentencePieceProcessor(
-                model_file=str(pkg / "sentencepiece.model"))
-            translator = self._ct2.Translator(str(pkg / "model"), device="cpu")
-            self._loaded[key] = (translator, processor)
-        return self._loaded[key]
+        if key in self._loaded:
+            return self._loaded[key], False
+        with _LOAD_LOCK:                    # double-checked: one load per pair
+            if key not in self._loaded:
+                processor = self._spm.SentencePieceProcessor(
+                    model_file=str(pkg / "sentencepiece.model"))
+                self._loaded[key] = (self._ct2.Translator(str(pkg / "model"), device="cpu"),
+                                     processor)
+                return self._loaded[key], True
+            return self._loaded[key], False
+
+    def _pair(self, source, target):
+        return self._load(source, target)[0]
+
+    def warm(self, source=None, target=None):
+        """Load one pair, or nothing at all when no pair was named.
+
+        Refusing to load every installed package on a bare request is the point:
+        a user with 40 directions would otherwise pay for all of them to serve one
+        sentence. Callers that want a specific direction pass source and target.
+        """
+        loaded_now = False
+        if source and target:
+            _, loaded_now = self._load(source, target)
+        loaded = sorted("{0}->{1}".format(s, t) for s, t in self._loaded)
+        return {"ready": bool(loaded),
+                "already": not loaded_now,
+                "loaded": loaded,
+                "reason": None if loaded else "model_not_loaded",
+                "note": "pass source and target to warm one Argos direction"}
 
     def translate(self, text, source, target, glossary=None):
         text = (text or "").strip()
@@ -341,10 +393,33 @@ class MadladBackend:
                 return False
         return True
 
+    def _ensure_engine(self):
+        """Return the translator and whether this call built it (decided in the lock)."""
+        if self._translator is not None:
+            return self._translator, False
+        with _LOAD_LOCK:                    # double-checked: one checkpoint only
+            if self._translator is None:
+                self._translator = self._ct2.Translator(str(self._root), device="cpu")
+                return self._translator, True
+            return self._translator, False
+
     def _engine(self):
-        if self._translator is None:
-            self._translator = self._ct2.Translator(str(self._root), device="cpu")
-        return self._translator
+        return self._ensure_engine()[0]
+
+    def warm(self, source=None, target=None):
+        """Materialise the checkpoint now instead of on the first sentence.
+
+        An unknown target still raises UnsupportedTarget, so warming a language the
+        vocabulary does not cover is answered the same permanent way as translating
+        into it would be (D22).
+        """
+        if target is not None and not self._known_target(target):
+            raise UnsupportedTarget(
+                "madlad backend has no target language {!r}; probe"
+                " GET /languages?target={}".format(target, target))
+        _, built_now = self._ensure_engine()
+        return {"ready": True, "already": not built_now,
+                "loaded": [] if built_now else ["checkpoint"]}
 
     def languages(self):
         """Coverage comes from the checkpoint's vocabulary, which has 450+ codes
@@ -480,7 +555,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(503, body)
 
     def do_POST(self):
-        if self.path != "/translate":
+        path = urlparse(self.path).path
+        if path not in ("/translate", "/warmup"):
             self._send(404, {"error": "not found"})
             return
         n = int(self.headers.get("Content-Length", 0) or 0)
@@ -488,6 +564,9 @@ class Handler(BaseHTTPRequestHandler):
             req = json.loads(self.rfile.read(n) or b"{}")
         except json.JSONDecodeError:
             self._send(400, {"error": "invalid json"})
+            return
+        if path == "/warmup":
+            self._warmup(req)
             return
         text = req.get("text")
         if not text or not str(text).strip():
@@ -507,6 +586,48 @@ class Handler(BaseHTTPRequestHandler):
             self._send(503, {"error": "backend_unavailable", "message": str(e)})
             return
         self._send(200, {"text": out})
+
+    def _warmup(self, req):
+        """Load on demand, then answer with the same report /readyz would give.
+
+        Readiness decides the status code, not whether the call ran: a warm that
+        left the backend cold (Argos with no pair named) must not read as success,
+        or a caller polling this endpoint would keep believing it was ready.
+        """
+        fn = getattr(self.server.backend, "warm", None)
+        if fn is None:
+            self._send(501, {"error": "warmup_unknown",
+                             "backend": self.server.backend.name,
+                             "note": "backend does not support explicit warm-up"})
+            return
+        source = str(req.get("source") or "").strip() or None
+        target = str(req.get("target") or "").strip() or None
+        started = time.perf_counter()
+        try:
+            report = fn(source, target)
+        except UnsupportedTarget as e:
+            # D22 again: warming a language the backend can never produce is
+            # permanent, so it gets the same 422 the translate path gives.
+            self._send(422, {"error": "unsupported_target", "message": str(e),
+                             "supported": self._capability()})
+            return
+        except MissingDependency as e:
+            self._send(503, {"error": "backend_unavailable", "message": str(e)})
+            return
+        warmed = not bool(report.get("already"))
+        ready = bool(report.get("ready"))
+        body = {k: v for k, v in report.items() if k not in ("ready", "already")}
+        body["backend"] = self.server.backend.name
+        body["status"] = "ready" if ready else "warming"
+        body["warmed"] = warmed
+        # Report a cost only when this call actually paid one; a no-op warm should
+        # not teach callers to read a stopwatch that never ran.
+        body["load_s"] = round(time.perf_counter() - started, 3) if warmed else 0.0
+        if ready:
+            self._send(200, body)
+        else:
+            body["error"] = "not_ready"
+            self._send(503, body)
 
     def log_message(self, *_):  # silence the access log
         pass

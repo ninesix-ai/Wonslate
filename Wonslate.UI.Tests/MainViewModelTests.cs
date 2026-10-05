@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 ninesix-ai studio
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -600,6 +601,54 @@ public class MainViewModelTests
         Assert.Equal("调用失败", vm.EngineLabel);
         Assert.Contains("native library missing", vm.Output);
         Assert.False(vm.IsBusy);
+    }
+
+    // ---- D23: which engine served is reported out, so only that endpoint warms ----
+
+    [Fact]
+    public void Translate_ReportsTheEngineThatActuallyServed()
+    {
+        // The shell needs a fact, not a guess: the response names the engine, so warming
+        // follows the routing decision instead of duplicating it in the UI.
+        var seen = new List<string>();
+        var vm = new MainViewModel { Input = "hello", OnEngineUsed = seen.Add };
+        vm.InvokeTranslate = _ => OkJson;
+
+        vm.Translate();
+
+        Assert.Equal(new[] { "demo" }, seen);
+    }
+
+    [Fact]
+    public void Translate_ReportsASidecarEngineByItsOwnName()
+    {
+        var seen = new List<string>();
+        var vm = new MainViewModel { Input = "hello", OnEngineUsed = seen.Add };
+        vm.InvokeTranslate = _ => """
+            {"ok":true,"engine":"madlad","source_lang":"en","target_lang":"zh",
+             "input":"hello","output":"你好","source":"local","latency_ms":4100,"confidence":0.86}
+            """;
+
+        vm.Translate();
+
+        Assert.Equal(new[] { "madlad" }, seen);
+    }
+
+    [Fact]
+    public void Translate_WhenTheEngineFailed_ReportsNothingToWarm()
+    {
+        // A failed request proved no engine is resident; warming on it would knock on the
+        // port of whatever was blamed for the failure.
+        var seen = new List<string>();
+        var vm = new MainViewModel { Input = "hello", OnEngineUsed = seen.Add };
+        vm.InvokeTranslate = _ => """
+            {"ok":false,"engine":"","source_lang":"en","target_lang":"zh",
+             "input":"hello","output":"","source":"","error":"NO_RESULT","message":"no engine could translate"}
+            """;
+
+        vm.Translate();
+
+        Assert.Empty(seen);
     }
 
     // ---- Busy / diagnostics surface (N-06) -----------------------------------

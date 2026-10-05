@@ -8,7 +8,7 @@
 | 集成形态 | 状态 | 说明 |
 |---|---|---|
 | **C ABI FFI（`tt_*`）** | ✅ 已落地（本文主体） | **唯一契约真相源**；C / C# / Python 等语言均可直接绑定 |
-| sidecar 本机 HTTP | ✅ 已落地 | `POST /translate`、`GET /health`（存活）、`GET /readyz`（就绪）、`GET /languages`（能力枚举），仅绑定 `127.0.0.1`（内部契约，见 §8） |
+| sidecar 本机 HTTP | ✅ 已落地 | `POST /translate`、`GET /health`（存活）、`GET /readyz`（就绪）、`POST /warmup`（显式预热）、`GET /languages`（能力枚举），仅绑定 `127.0.0.1`（内部契约，见 §8） |
 | 官方 .NET / Python SDK 包 | ⏳ 规划中（未发布） | 发布前请按本文直接绑定 FFI |
 | CLI / REST API / MCP Server / 批量接口 | ⏳ 规划中（未实现） | 当前批处理请在调用方循环；见 [terminology.md](terminology.md) |
 
@@ -366,10 +366,13 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
 | `GET /health` | — | `200 {"status":"ok","backend":"mock\|ct2\|madlad"}` —— **只代表存活（端口在应答），不代表首句不会卡在冷加载** |
 | `GET /readyz` | — | 就绪 `200 {"status":"ready","backend":…,"loaded":[…]}`；未就绪 `503 {"status":"warming","error":"not_ready","reason":"model_not_loaded"}`；后端无法自述 `501 {"error":"readiness_unknown"}` |
 | `GET /languages` | 可选 `?target=xx` | `200 {"backend":…,"pairs":[…],"target_codes":[…],"complete":bool,"note":"…"}`；带 `?target=` 时附加 `"supported": true\|false\|null`（`null` = 后端无法判定，与「不支持」严格区分） |
+| `POST /warmup` | 可选 `{"source":"en","target":"zh"}` | 就绪 `200 {"status":"ready","backend":…,"warmed":bool,"load_s":秒,"loaded":[…]}`；仍未就绪 `503 {"status":"warming","error":"not_ready"}`；后端不支持 `501 {"error":"warmup_unknown"}`；语言码不可用 `422 unsupported_target` |
 
 两类失败**必须分开处理**（D22）：`422 unsupported_target` 是该引擎在这个语言码上**永久无解**，重试、重启、重载模型都不会改变，响应里的 `supported` 已给出可用集合，调用方应直接跳过该方向；`503 backend_unavailable` 才是可恢复故障（依赖或模型尚未就位），值得等待与重试。把两者混为 503 会让批量任务在冷门语言上白白付出「杀进程 → 等端口 → 重载」的整轮代价。
 
 就绪与存活是**两个信号**（D23）：MADLAD 的 3B 检查点与 Argos 的逐对 translator 都是首次翻译才加载，故 `/health` 的 200 只说明进程已监听；要避免首批句子撞上冷加载，请轮询 `/readyz` 至 `status:"ready"`。`/languages` 让调用方在**不消耗一次翻译**的前提下问清能力边界（`?target=` 探针直接查词表/磁盘包）。
+
+`/readyz` 只说真话，不会把模型装进内存——**把它变成就绪的手段是 `POST /warmup`**。该端点按当前配置真实加载并回报代价（`warmed` 表示本次是否真的付了加载，`load_s` 仅在真加载时为非零）。**Argos 是按方向加载的**：不带 `source`/`target` 的 warmup 不会把磁盘上所有包都拉进内存（那比懒加载贵得多），而是回 `503 warming` 并在 `note` 里提示方、目标语言；若调用方把 200 当作“已暖好”，这个区分就是必需的。桌面客户端的用法：先 `GET /readyz` 探得 warming，再在后台 `POST /warmup`，完成后状态转 `ready`。
 
 约束：**只绑定 `127.0.0.1`**（翻译文本不出设备）。该契约与 Rust `engine/sidecar.rs`、.NET `SidecarManager`、测试 mock 四方对齐；作为内部接口随实现演进，不承诺与 FFI 同级的兼容性——新集成请优先用 FFI。
 
