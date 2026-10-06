@@ -81,6 +81,7 @@ jobs:
           python tests/test_install_glossary_pack.py
           python tests/test_xaml_lint.py
           python tests/test_pre_commit_hook.py
+          python tests/test_glossary_hygiene.py
           python tests/test_component_licenses.py
           python tests/test_source_lint.py
 
