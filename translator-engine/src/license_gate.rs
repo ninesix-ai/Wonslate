@@ -79,6 +79,11 @@ pub const REGISTERED_DEPS: &[Dep] = &[
     // Reached by the benchmark scoring path (script/bench_translation.py::score),
     // not by the shipped product runtime; registered because it is a real dep.
     Dep { name: "sacrebleu",                     license: "Apache-2.0", kind: Kind::Component },
+    // Imported only by script/diag_sidecar_batch.py, the batch diagnostics behind
+    // defects D24/D30. Deliberately absent from sidecar/requirements.txt: the
+    // product runtime stays free of it, this is an operator-side tool.
+    // PyPI official project (upstream: https://github.com/giampaolo/psutil)
+    Dep { name: "psutil",                        license: "BSD-3-Clause", kind: Kind::Component },
     // PyPI official project (upstream: https://github.com/Unbabel/COMET).
     // Imported only by script/score_comet.py, the offline COMET scorer; it never
     // enters the product runtime, which stays free of any Python ML stack.
