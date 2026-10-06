@@ -32,6 +32,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Build and start the GUI | `python script/build.py --run` |
 | XAML static lint + window-appears smoke | `verify.bat` / `verify.sh` |
 | Self-sign output so local smokes repeat | `sign.bat` |
+| Measure what a long batch actually costs (D24/D30 probes; `--help` for the four modes) | `python script/diag_sidecar_batch.py <mode>` |
 
 ## 3. Traps that have already cost someone a session
 
