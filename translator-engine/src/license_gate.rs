@@ -79,6 +79,17 @@ pub const REGISTERED_DEPS: &[Dep] = &[
     // Reached by the benchmark scoring path (script/bench_translation.py::score),
     // not by the shipped product runtime; registered because it is a real dep.
     Dep { name: "sacrebleu",                     license: "Apache-2.0", kind: Kind::Component },
+    // PyPI official project (upstream: https://github.com/Unbabel/COMET).
+    // Imported only by script/score_comet.py, the offline COMET scorer; it never
+    // enters the product runtime, which stays free of any Python ML stack.
+    Dep { name: "unbabel-comet",                 license: "Apache-2.0", kind: Kind::Component },
+    // PyPI official project (upstream: https://github.com/pytorch/pytorch), the
+    // tensor runtime COMET loads for scoring; same offline-only boundary as above.
+    Dep { name: "torch",                         license: "BSD-3-Clause", kind: Kind::Component },
+    // PyPI official project (upstream: https://github.com/huggingface/huggingface_hub).
+    // Registered license is Apache-2.0 per that repository: the gate reads no
+    // installed metadata, whose free-form License field here is a bare "Apache".
+    Dep { name: "huggingface_hub",               license: "Apache-2.0", kind: Kind::Component },
     // Google official release on Hugging Face (facebook/madlad400)
     Dep { name: "madlad-400",                    license: "Apache-2.0", kind: Kind::Model },
     // Argos translate official model repository (MIT-licensed package exports)
