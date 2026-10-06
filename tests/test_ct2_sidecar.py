@@ -21,6 +21,7 @@ import http.client
 import json
 import os
 import pathlib
+import socket
 import sys
 import tempfile
 import threading
@@ -757,6 +758,96 @@ class ConcurrentLoadTests(unittest.TestCase):
         reports = self._race(lambda: backend.warm("en", "zh"))
         self.assertEqual(1, sum(1 for r in reports if not r["already"]))
         self.assertEqual(backend._ct2.built, 1)
+
+
+class AbandonedRequestTests(unittest.TestCase):
+    """A client that gives up has not stopped the handler, so "single flight" overlaps.
+
+    Defect D24 was reported as a ladder of slowdown under a strictly sequential
+    batch client, which reads as impossible until you remember that
+    ThreadingHTTPServer keeps serving a socket nobody is reading any more: the
+    retry overlaps the handler it replaced, and in the revision without
+    _LOAD_LOCK every overlapping handler built its own 2.95 GB checkpoint.
+
+    ConcurrentLoadTests pins the lock by calling _engine() directly. This pins it
+    through a real socket and a real timeout -- the place where the overlap is
+    actually produced, so a refactor that moves the load off the request path or
+    hands each request its own backend is caught here instead of silently
+    shipping. Needs no model and no third-party stack, so it runs on every
+    platform and never skips.
+    """
+
+    LOAD_SECONDS = 0.6         # how long a checkpoint "takes" to materialise
+    CLIENT_TIMEOUT = 0.05      # far shorter, so the client always gives up first
+
+    class _SlowCt2:
+        """ctranslate2 stand-in: a Translator construction is slow and counted."""
+
+        def __init__(self, load_seconds):
+            self.load_seconds = load_seconds
+            self.built = 0      # finished constructions
+
+        class _Translator:
+            def __init__(self, owner):
+                time.sleep(owner.load_seconds)
+                owner.built += 1
+
+        def Translator(self, path, **kwargs):
+            return self._Translator(self)
+
+    @staticmethod
+    def _warm(port, timeout):
+        """One POST /warmup over its own connection, with a client-side deadline."""
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+        try:
+            conn.request("POST", "/warmup", body=json.dumps({}),
+                         headers={"Content-Type": "application/json"})
+            return json.loads(conn.getresponse().read())
+        finally:
+            conn.close()
+
+    def test_retries_after_client_timeouts_build_the_checkpoint_once(self):
+        backend = MadladBackend.__new__(MadladBackend)   # skip the model check on disk
+        ct2 = self._SlowCt2(self.LOAD_SECONDS)
+        backend._ct2 = ct2
+        backend._root = pathlib.Path(".")
+        backend._translator = None
+
+        srv, port = ct2_sidecar.serve_in_thread(backend)
+        # A handler that is still working when its client hung up gets a broken
+        # pipe while answering; that is the event under test, not a defect, so
+        # keep its traceback out of the suite output. handle_error lives on the
+        # server (socketserver.BaseServer), not on the request handler class.
+        srv.handle_error = lambda *_: None
+        timeouts = 0
+        built_at_last_timeout = None
+        try:
+            for _ in range(3):                          # strictly sequential: one in flight
+                try:
+                    self._warm(port, self.CLIENT_TIMEOUT)
+                except (TimeoutError, socket.timeout):
+                    timeouts += 1
+                    built_at_last_timeout = ct2.built
+            final = self._warm(port, self.LOAD_SECONDS + 2.0)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+        # Anti-rot guards first: without them this test could quietly stop
+        # exercising an overlap while still reporting green.
+        self.assertGreaterEqual(timeouts, 2,
+                                "no client timed out, so nothing was abandoned and "
+                                "no handler ever overlapped")
+        self.assertEqual(0, built_at_last_timeout,
+                         "the abandoned handler had already finished loading; the "
+                         "retry never met it, so retune LOAD_SECONDS/CLIENT_TIMEOUT")
+        # The property D24 needs.
+        self.assertEqual(1, ct2.built,
+                         "%d handlers built %d checkpoints for one cold service"
+                         % (timeouts + 1, ct2.built))
+        self.assertEqual("ready", final.get("status"))
+        self.assertFalse(final.get("warmed"),
+                         "a later caller claimed a load it did not pay for: %r" % (final,))
 
 
 class RegionCodeTests(unittest.TestCase):
