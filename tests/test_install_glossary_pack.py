@@ -59,7 +59,7 @@ class PathConstantTests(unittest.TestCase):
         # must be a subdir of that same repo. This guards against a stray
         # absolute path (a S10 T1 lesson).
         #
-        # D19: this used to assert the checkout directory is named "Wonslate",
+        # This test used to assert the checkout directory is named "Wonslate",
         # which pinned one developer's folder wording instead of the intent
         # above, and failed on every renamed checkout - a git worktree, or CI's
         # actions/checkout with a path: input. The layout fact is what matters:
@@ -69,7 +69,7 @@ class PathConstantTests(unittest.TestCase):
             pathlib.Path(__file__).resolve().parents[1])
 
     def test_repo_root_follows_a_renamed_checkout(self):
-        # The positive half of D19: resolve the installer from a clone whose
+        # The positive half of that rule: resolve the installer from a clone whose
         # directory name is deliberately not "Wonslate" and confirm the root
         # tracks that location instead of a magic name. The module derives ROOT
         # from __file__ and imports nothing from the repository, so copying the

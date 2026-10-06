@@ -603,7 +603,7 @@ public class MainViewModelTests
         Assert.False(vm.IsBusy);
     }
 
-    // ---- D23: which engine served is reported out, so only that endpoint warms ----
+    // ---- which engine served is reported out, so only that endpoint warms ----
 
     [Fact]
     public void Translate_ReportsTheEngineThatActuallyServed()

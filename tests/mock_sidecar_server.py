@@ -22,7 +22,7 @@ Contract (aligned with engine/sidecar.rs and sidecar/ct2_sidecar.py):
     GET  /health      -> {"status":"ok"}                 (liveness only)
     GET  /readyz      -> {"status":"ready",...}           (mock loads no model)
     GET  /languages   -> coverage answer; the mock echoes any pair, so it must
-                         not claim an empty list is the whole set (D22/D23)
+                         not claim an empty list is the whole set
     POST /warmup      -> same report as /readyz (mock has nothing to load)
 """
 import argparse

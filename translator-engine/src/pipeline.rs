@@ -166,7 +166,7 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
 
     // S11 (REQ-B2): a caller that asked for a specific domain must be able to tell,
     // from the response alone, whether that domain actually shaped the output. Two
-    // honest outcomes stay distinct (D17): a domain with no rows of its own is a data
+    // honest outcomes stay distinct: a domain with no rows of its own is a data
     // gap - legitimate on a fresh install - while an engine that cannot act on term
     // context is a capability gap. The capability check comes first because it stays
     // true even after rows are loaded.

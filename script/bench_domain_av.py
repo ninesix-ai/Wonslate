@@ -70,7 +70,7 @@ ENGINES = ("argos", "madlad", "ollama-qwen")
 
 # The FFI's get_engine looks up "ollama" while the engine reports itself as
 # "ollama-qwen" (Engine.name()), so the user-facing id is translated once here.
-# bench_translation's short ids no longer need a mapping: since D18 every arm is
+# bench_translation's short ids no longer need a mapping: every arm is
 # issued through the FFI builder, so the shared client is out of the picture.
 _FFI_ID = {"ollama-qwen": "ollama"}
 
@@ -264,7 +264,7 @@ def _run_one(engine_id, direction, src, tgt, domain=""):
 
     Both arms of the domain control issue through the same builder
     (_translate_via_ffi), so `domain` is the only thing that differs between a
-    baseline run and a scoped one. That is the D18 fix: the unscoped arm used to
+    baseline run and a scoped one. The unscoped arm used to
     take bench_translation's shared client, which meant the measured delta also
     carried a different TM policy (the shared client may read and write the
     memory, this path pins use_tm=False) and a different call stack. Two arms

@@ -115,7 +115,7 @@ pub fn extract_term_pairs(
         return results;
     }
 
-    // D20: the source must be written in the language it claims. Both branches below
+    // The source must be written in the language it claims. Both branches below
     // cut units out of source_text and pair them with the target, while every other
     // signal only judges the *target* span - so a mislabelled sentence yields fragments
     // ("cle" -> "time", "387" -> "fine") that score up to a clean 1.0 and persist into
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn a_source_sentence_must_be_written_in_the_language_it_claims_zh() {
-        // D20. The zh branch slides characters over whatever it is handed and never
+        // The zh branch slides characters over whatever it is handed and never
         // asks whether the sentence is Chinese at all, while the script gate only
         // ever judges the *target* span. This is not a hypothetical input:
         // tests/test_phase1_ffi.py writes rows as

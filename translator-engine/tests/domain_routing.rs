@@ -196,7 +196,7 @@ fn empty_specific_domain_surfaces_a_note() {
     );
 }
 
-/// ⑧ D17: a scoped request the engine cannot honour must say so. The existing note
+/// ⑧ A scoped request the engine cannot honour must say so. The existing note
 /// only covers "this domain has no specific rows"; when the glossary *is* populated
 /// but the engine cannot act on term context at all, the response used to look
 /// exactly like a successfully domain-scoped translation (REQ-B2).
@@ -207,7 +207,7 @@ fn scoped_request_on_a_term_blind_engine_says_it_was_not_applied() {
     // store needs an av row for *this request's own pair* (en->zh). Reusing the zh->en
     // helper here proved nothing while also writing a row that case ⑦ asserts on: the
     // two cases shared one key, and whichever ran last decided whether ⑦ saw
-    // source=seed:av or source=manual (D21). "latency" belongs to no other case.
+    // source=seed:av or source=manual. "latency" belongs to no other case.
     let av_row = GlossaryEntry {
         source_term: "latency".into(),
         source_lang: "en".into(),

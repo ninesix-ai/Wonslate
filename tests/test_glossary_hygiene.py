@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ninesix-ai studio
 """Glossary hygiene gate: every term row must be written in the language it claims.
 
-Why: D20. The distiller used to cut n-grams out of a source sentence without
+Why: the distiller used to cut n-grams out of a source sentence without
 asking whether that sentence is in the language it declares, so one mislabelled
 TM row turned into glossary entries like ("cle" -> "time", 1.0) -- and the glossary
 is injected into AI prompts as a term constraint. The extractor is now guarded

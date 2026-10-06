@@ -14,19 +14,19 @@ tests/mock_sidecar_server.py):
     POST /warmup      body {"source","target"} optional -> 200 readiness report with
                          "warmed" and "load_s"; 422 unsupported_target; 501 unknown
 
-Region tags (D25): BCP-47 codes are folded to their primary subtag when that is
+Region tags: BCP-47 codes are folded to their primary subtag when that is
 what the model or package can actually serve - pt-BR is served by pt, zh-Hans-CN
 by zh. A code that folds to nothing is passed to the backend untouched, so the
-422 still comes from the one component that knows its own coverage (D22). Every
+422 still comes from the one component that knows its own coverage. Every
 fold is echoed as "resolved_target" / "resolved_source" beside the requested code
 so a caller can audit which code answered its text.
 
-Warm-up (D23's other half): /readyz only tells the truth, it does not make the
+Warm-up: /readyz only tells the truth, it does not make the
 checkpoint resident. /warmup is how a caller turns "warming" into "ready" without
 spending a translation on it, and it is per-pair for Argos so warming one
 direction never drags every installed package into memory.
 
-Failure semantics (D22): a language this backend can never serve is permanent and
+Failure semantics: a language this backend can never serve is permanent and
 answers 422 unsupported_target with the supported set attached; a missing
 dependency or model is recoverable and keeps answering 503. Both used to be 503,
 so a batch caller could not tell "restarting this will help" from "that code does
@@ -43,7 +43,7 @@ Design rules:
       with install guidance -- never crash bare, never degrade silently. A
       language that no model here can ever produce raises UnsupportedTarget.
     - /health proves the port answers; it does NOT prove a request will not stall
-      on a cold model load. Say that on /readyz instead (D23).
+      on a cold model load. Say that on /readyz instead.
     - The service binds 127.0.0.1 only (privacy: translated text never leaves
       the machine).
     - Licenses: deps ctranslate2(MIT)/sentencepiece(Apache); models
@@ -111,7 +111,7 @@ class MissingDependency(RuntimeError):
     next request work -- which is why the service answers 503. A request naming a
     language that no downloadable model covers is the other kind; use
     UnsupportedTarget so the caller can give up on that pair instead of
-    restarting a healthy engine (D22)."""
+    restarting a healthy engine."""
 
 
 class UnsupportedTarget(MissingDependency):
@@ -282,7 +282,7 @@ class CT2Backend:
         return self.resolve_target(target) is not None
 
     def resolve_target(self, target):
-        """Fold a region-qualified code onto a package this service has (D25)."""
+        """Fold a region-qualified code onto a package this service has."""
         targets = {t for _, t in self._packages}
         if target in targets:
             return target
@@ -339,7 +339,7 @@ class CT2Backend:
         rule has to live here too: otherwise a direct importer of this class gets
         "no model for en->pt-BR" while /translate answers the very same pair, and
         two implementations of one capability question disagreeing is exactly the
-        family of defect D22 and D25 are about. The error names the codes the caller
+        class of bug this rule exists to prevent. The error names the codes the caller
         sent, because that is what it needs to see to fix its side.
         """
         resolved_source = self.resolve_source(source)
@@ -351,7 +351,7 @@ class CT2Backend:
         return resolved_source, resolved_target
 
     def _pair(self, source, target):
-        """Resolve (D25 fold) then load, giving the hot path one way in."""
+        """Resolve (region fold) then load, giving the hot path one way in."""
         return self._load(*self._resolve_pair(source, target))[0]
 
     def warm(self, source=None, target=None):
@@ -476,7 +476,7 @@ class MadladBackend:
 
         An unknown target still raises UnsupportedTarget, so warming a language the
         vocabulary does not cover is answered the same permanent way as translating
-        into it would be (D22).
+        into it would be.
         """
         if target is not None and not self._known_target(target):
             raise UnsupportedTarget(
@@ -500,7 +500,7 @@ class MadladBackend:
         return self.resolve_target(target) is not None
 
     def resolve_target(self, target):
-        """Fold `pt-BR` to the `pt` token the checkpoint actually owns (D25).
+        """Fold `pt-BR` to the `pt` token the checkpoint actually owns.
 
         The vocabulary is the authority: `pt-BR` is not a <2xx> token, so a request
         naming it is only servable through its primary subtag. Source needs no fold
@@ -520,7 +520,7 @@ class MadladBackend:
 
     def readiness(self):
         """The 3B checkpoint is materialised on first use, so right after start a
-        request still pays the load -- exactly what /health cannot express (D23)."""
+        request still pays the load -- exactly what /health cannot express."""
         resident = self._translator is not None
         return {"ready": resident,
                 "reason": None if resident else "model_not_loaded",
@@ -531,7 +531,7 @@ class MadladBackend:
         if not text:
             return ""
         # resolve_target folds `pt-BR` onto the <2pt> token the checkpoint really
-        # owns (D25); an unknown code stays the permanent error it was before.
+        # owns; an unknown code stays the permanent error it was before.
         resolved = self.resolve_target(target)
         if resolved is None:
             raise UnsupportedTarget(
@@ -604,12 +604,12 @@ class Handler(BaseHTTPRequestHandler):
         return fn()
 
     def _fold_codes(self, source, target):
-        """Fold BCP-47 tags onto codes this backend says it can serve (D25).
+        """Fold BCP-47 tags onto codes this backend says it can serve.
 
         Returns (source, target, echoes). Only a fold the backend itself reports as
         servable is applied; anything else goes through untouched and the backend's
         own UnsupportedTarget answers - the handler must not invent error text about
-        a capability it does not own, or D22 would end up with two voices. Every
+        a capability it does not own, or the capability answer would end up with two voices. Every
         fold is echoed with the requested code beside it so a caller can audit what
         actually served its text. A backend without these hooks (older or
         third-party) is passed through unchanged.
@@ -706,7 +706,7 @@ class Handler(BaseHTTPRequestHandler):
             out = self.server.backend.translate(
                 text, folded_source, folded_target, req.get("glossary"))
         except UnsupportedTarget as e:
-            # D22: permanent for this code, and ordered before MissingDependency
+            # Permanent for this code, and ordered before MissingDependency
             # because it IS one. Hand back the supported set so a batch caller can
             # retire the direction instead of restarting a healthy engine.
             self._send(422, {"error": "unsupported_target", "message": str(e),
@@ -740,7 +740,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             report = fn(source, target)
         except UnsupportedTarget as e:
-            # D22 again: warming a language the backend can never produce is
+            # Warming a language the backend can never produce is
             # permanent, so it gets the same 422 the translate path gives.
             self._send(422, {"error": "unsupported_target", "message": str(e),
                              "supported": self._capability()})

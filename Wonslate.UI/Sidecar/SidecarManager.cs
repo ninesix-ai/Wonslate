@@ -15,7 +15,7 @@ internal enum SidecarState
     /// <summary>Answering, and able to serve a request without waiting on a model load.</summary>
     Ready,
     /// <summary>
-    /// The process is up but its checkpoint is not resident yet (D23).
+    /// The process is up but its checkpoint is not resident yet.
     ///
     /// A distinct state, not a failure: the old code turned "answers /health" into
     /// Ready, which made the diagnostics line promise more than the endpoint could
@@ -61,7 +61,7 @@ internal sealed record SidecarSpec(
 /// Key contracts:
 ///  - Any Start failure (process will not launch / liveness timeout / probe exception) returns false and NEVER throws,
 ///    transitioning to Failed; the Rust side then falls back to demo explicitly, so translation never breaks on an absent sidecar.
-///  - Liveness and readiness are separate verdicts (D23): answering /health brings the endpoint up, but only /readyz
+///  - Liveness and readiness are separate verdicts: answering /health brings the endpoint up, but only /readyz
 ///    decides Ready. A cold endpoint settles at Warming and its process is left running, because "still loading" is not
 ///    a fault and the old behaviour would have killed a healthy sidecar we had just launched.
 ///  - An empty ExePath means "reuse an externally started sidecar": launch is skipped, only the probe runs.
@@ -79,7 +79,7 @@ internal sealed class SidecarManager
     private readonly Action<int>? _sleep;
     private readonly Action<SidecarSpec>? _kill;
     // Readiness is optional on purpose: with no delegate injected the manager keeps
-    // the liveness-only verdict it had before D23, so unit tests stay hermetic and
+    // the liveness-only verdict it started with, so unit tests stay hermetic and
     // nothing has to reach a socket to be exercised. Production injects both.
     private readonly Func<string, Readiness>? _ready;
     private readonly Func<string, bool>? _warm;
@@ -148,7 +148,7 @@ internal sealed class SidecarManager
         {
             if (SafeProbe())
             {
-                // Alive is not the same as usable (D23). Readiness is a second, separate
+                // Alive is not the same as usable. Readiness is a second, separate
                 // verdict, and a cold answer settles at Warming: failing there would run
                 // ReleaseOwnedProcess() and kill a sidecar that is merely still loading.
                 var settled = ObserveReadiness();
@@ -184,11 +184,11 @@ internal sealed class SidecarManager
     }
 
     /// <summary>One readiness question, mapped to a state. Without an injected probe the
-    /// manager only knows liveness, which is exactly the pre-D23 behaviour it keeps.</summary>
+    /// manager only knows liveness, which is exactly the behaviour it keeps.</summary>
     private SidecarState ObserveReadiness()
     {
         // No delegate injected: the endpoint's readiness is simply unknown to us, so the
-        // manager keeps the liveness-only verdict it had before D23.
+        // manager keeps the liveness-only verdict it had before.
         if (_ready is null) return SidecarState.Ready;
         // "It cannot tell" (including an older sidecar with no /readyz, and a probe that
         // threw) is honoured as Ready rather than as a fault: inventing a failure there

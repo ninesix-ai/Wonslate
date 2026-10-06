@@ -170,7 +170,7 @@ class DomainArgumentTests(unittest.TestCase):
 
 
 class OneRequestPathTests(unittest.TestCase):
-    """D18: both arms of the domain control must travel one single request path.
+    """Both arms of the domain control must travel one single request path.
 
     The unscoped arm (domain="") used to go through bench_translation's shared
     client while the scoped arm used _translate_via_ffi (with use_tm pinned to
@@ -195,7 +195,7 @@ class OneRequestPathTests(unittest.TestCase):
         def explode(*_a, **_k):
             raise AssertionError(
                 "the unscoped arm must not reach for the shared bench_translation "
-                "client; both arms have to issue through one request builder (D18)")
+                "client; both arms have to issue through one request builder")
 
         orig_ffi, orig_build, orig_score = (m._translate_via_ffi,
                                            bench_translation.build_engines,

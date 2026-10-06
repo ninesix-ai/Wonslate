@@ -36,7 +36,7 @@ public partial class App : Application
         // The shell owns the ViewModel so it can push startup diagnostics into it,
         // and supplies the voice panel with the real audio player.
         _vm = new MainViewModel(new VoiceViewModel(playWav: PlayWavFile));
-        // The engine named in each response decides which endpoint gets warmed (D23);
+        // The engine named in each response decides which endpoint gets warmed;
         // the managers are created below, so this must tolerate them being absent.
         _vm.OnEngineUsed = WarmEndpointFor;
         _window = new MainWindow(_vm);

@@ -177,7 +177,7 @@ public class SidecarManagerTests
         Assert.Equal("http://127.0.0.1:11435/health", probedUrl);
     }
 
-    // ---- D23: liveness and readiness are two different verdicts ----------------------
+    // ---- liveness and readiness are two different verdicts ----------------------
 
     [Fact]
     public void Start_EndpointAliveButModelCold_SettlesAtWarmingNotFailed()

@@ -393,7 +393,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     /// <summary>
     /// Told which engine actually served each successful request.
     ///
-    /// The shell uses this to warm exactly that sidecar endpoint (D23). It is a report and
+    /// The shell uses this to warm exactly that sidecar endpoint. It is a report and
     /// not a guess: deriving the engine from the mode would copy Rust's routing rules into
     /// the UI, where they can drift out of step with the router in silence.
     /// </summary>

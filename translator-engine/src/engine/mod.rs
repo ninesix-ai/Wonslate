@@ -38,7 +38,7 @@ pub trait Translator: Send + Sync {
     /// it drops the context and calls the plain translate. Engines that weave the
     /// terms into a prompt override this to `true`. Engines that cannot honour them
     /// must not, because claiming `true` lets a request carrying a domain look
-    /// scoped when nothing applied it (D17, same spirit as REQ-B2).
+    /// scoped when nothing applied it (same spirit as REQ-B2).
     fn accepts_term_context(&self) -> bool {
         false
     }
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn term_context_capability_matches_the_backends() {
-        // D17. ollama composes the terms into the prompt; the dictionary engine and
+        // ollama composes the terms into the prompt; the dictionary engine and
         // the CT2 / MADLAD sidecars cannot act on them (the sidecar backends say so
         // in their own docstrings), so claiming `true` for those would let a scoped
         // request look honoured when nothing applied it.

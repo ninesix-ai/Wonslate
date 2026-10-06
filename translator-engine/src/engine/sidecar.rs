@@ -109,8 +109,8 @@ impl Translator for SidecarTranslator {
     // request payload, but the CT2 and MADLAD backends read them and do nothing -
     // their own docstrings state "Glossary injection is not supported by these
     // checkpoints". Reporting `true` here would describe the wire format rather than
-    // the behaviour, and would let a scoped request look applied when it was ignored
-    // (D17). The trait default (false) is the honest answer.
+    // the behaviour, and would let a scoped request look applied when it was ignored.
+    // The trait default (false) is the honest answer.
 }
 
 

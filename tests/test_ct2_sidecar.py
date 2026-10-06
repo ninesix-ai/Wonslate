@@ -6,7 +6,7 @@ Pure stdlib unittest. Two layers are covered:
 
   * dependency-free: the backend abstraction, the HTTP contract (/translate,
     /health liveness, /readyz readiness, /languages enumeration), the split
-    between permanent and recoverable failure (D22) and the explicit-degradation
+    between permanent and recoverable failure and the explicit-degradation
     paths (missing deps, missing model dir, dir without packages, unsupported
     pair) -- always runs, no skips.
   * real inference: loads the CTranslate2 + sentencepiece stack and an unpacked
@@ -128,7 +128,7 @@ class RealInferenceTests(unittest.TestCase):
             self.backend.translate("hello", "en", "ja")
 
     def test_languages_reports_the_packages_on_disk(self):
-        # D22: for Argos the discovered directories ARE the whole coverage, so
+        # For Argos the discovered directories ARE the whole coverage, so
         # the enumeration must claim to be exhaustive.
         capability = self.backend.languages()
         self.assertEqual(capability["pairs"], self.backend.available_pairs())
@@ -140,7 +140,7 @@ class RealInferenceTests(unittest.TestCase):
         self.assertFalse(self.backend.serves_target("jj"))
 
     def test_region_fold_follows_the_installed_packages(self):
-        # D25 at the Argos tier: packages carry exact codes from metadata.json, so a
+        # Region folding at the Argos tier: packages carry exact codes from metadata.json, so a
         # BCP-47 code has to fold before the lookup or a UI that says `zh-CN` cannot
         # reach the one direction sitting on disk. No package for Portuguese means
         # no fold invents one.
@@ -153,7 +153,7 @@ class RealInferenceTests(unittest.TestCase):
             self.backend._resolve_pair("en", "pt-BR")
 
     def test_readiness_is_cold_before_any_pair_is_resident(self):
-        # D23 at the Argos tier: packages are discovered eagerly, translators are
+        # Readiness at the Argos tier: packages are discovered eagerly, translators are
         # loaded per pair on first use, so a fresh backend must not claim ready.
         fresh = CT2Backend(model_dir=str(default_model_dir()))
         self.assertFalse(fresh.readiness()["ready"])
@@ -208,13 +208,13 @@ class RealMadladInferenceTests(unittest.TestCase):
         cls.model_dir = str(model_dir)
 
     def test_target_probe_follows_the_vocabulary(self):
-        # D22: `tl`-style answers must come from the checkpoint's own vocabulary,
+        # `tl`-style answers must come from the checkpoint's own vocabulary,
         # cheaply, instead of by burning a request that then 5xx-fails.
         self.assertTrue(self.backend.serves_target("zh"))
         self.assertFalse(self.backend.serves_target("xx"))
 
     def test_readiness_is_cold_until_the_checkpoint_is_loaded(self):
-        # D23: construction only reads the tokenizer; the 3B checkpoint is lazy,
+        # Construction only reads the tokenizer; the 3B checkpoint is lazy,
         # which is precisely what /health cannot distinguish from "usable".
         fresh = MadladBackend(model_dir=self.model_dir)
         report = fresh.readiness()
@@ -222,7 +222,7 @@ class RealMadladInferenceTests(unittest.TestCase):
         self.assertEqual(report["reason"], "model_not_loaded")
 
     def test_region_code_folds_onto_the_real_vocabulary(self):
-        # D25 against the actual MADLAD-400 vocabulary rather than a fake: `pt-BR`
+        # Region folding against the actual MADLAD-400 vocabulary rather than a fake: `pt-BR`
         # is not a <2xx> token while `pt` is, so only a fold makes the request
         # servable - and the folded answer must be the same translation, not a
         # best-effort guess at something else.
@@ -300,7 +300,7 @@ class HttpContractTests(unittest.TestCase):
         self.assertEqual(status, 404)
 
 
-# ---- D22 / D23: permanent vs recoverable, readiness, enumeration ------------
+# ---- permanent vs recoverable, readiness, enumeration ------------
 #
 # Three separate questions a batch caller has to be able to ask, none of which
 # the contract used to answer (external feedback pack, items 001 and 002):
@@ -367,7 +367,7 @@ class _StubBackend:
         return {"ready": True, "already": was}
 
     def resolve_target(self, target):
-        """D25: fold a region-qualified code onto one this stub can serve."""
+        """Fold a region-qualified code onto one this stub can serve."""
         if target in self.targets:
             return target
         base = ct2_sidecar.primary_subtag(target)
@@ -404,7 +404,7 @@ class _ColdAfterWarmBackend:
 
 
 class ErrorSeparationTests(unittest.TestCase):
-    """D22: a code that can never work must not look like an engine that is down."""
+    """A code that can never work must not look like an engine that is down."""
 
     def setUp(self):
         self.servers = []
@@ -465,7 +465,7 @@ class ErrorSeparationTests(unittest.TestCase):
 
 
 class ReadinessContractTests(unittest.TestCase):
-    """D23: "the port answers" and "a request will not stall" are different facts."""
+    """Liveness ("the port answers") and readiness ("a request will not stall") are different facts."""
 
     def setUp(self):
         self.servers = []
@@ -526,7 +526,7 @@ class ReadinessContractTests(unittest.TestCase):
 
 
 class LanguagesEndpointTests(unittest.TestCase):
-    """D22: answer the capability question before a request spends a translation."""
+    """Answer the capability question before a request spends a translation."""
 
     def setUp(self):
         self.servers = []
@@ -583,12 +583,12 @@ class LanguagesEndpointTests(unittest.TestCase):
 
 
 class WarmupContractTests(unittest.TestCase):
-    """D23 consumer side: somebody has to turn "warming" into "ready".
+    """Consumer side of readiness: somebody has to turn "warming" into "ready".
 
     /readyz only reports the truth; it does not make the model resident. Without
     an explicit warm-up the first real translate is what pays the load, and a
     desktop app that wants to say "ready" has no way to get there without burning
-    a sentence. The endpoint must also be consistent with D22: asking to warm a
+    a sentence. It must also follow the /translate rule: asking to warm a
     language the backend cannot produce is permanent, so it is 422, not 503.
     """
 
@@ -637,7 +637,7 @@ class WarmupContractTests(unittest.TestCase):
         self.assertEqual(backend.warmed_pairs, [("en", "zh")])
 
     def test_unwarmable_language_is_422_not_503(self):
-        # Same rule as /translate (D22): no retry makes this succeed.
+        # Same rule as /translate: no retry makes this succeed.
         backend = _StubBackend(ready=False, targets=["zh"])
         status, payload = self._post(backend, {"source": "en", "target": "xx"})
         self.assertEqual(status, 422)
@@ -760,7 +760,7 @@ class ConcurrentLoadTests(unittest.TestCase):
 
 
 class RegionCodeTests(unittest.TestCase):
-    """D25 (external item 006): pt-BR / zh-TW / es-419 have to fold, not fail.
+    """pt-BR / zh-TW / es-419 have to fold, not fail.
 
     Product-side language codes are BCP-47 almost everywhere, so without a fold
     every integrator re-implements `tgt.split('-')[0]` and whichever one they
@@ -840,7 +840,7 @@ class RegionCodeTests(unittest.TestCase):
         self.assertNotIn("resolved_target", payload)
 
     def test_an_unfoldable_code_is_refused_by_the_backend_not_the_handler(self):
-        # One voice about capability (D22): the 422 must carry the message of the
+        # One voice about capability: the 422 must carry the message of the
         # component that owns the coverage list, so the handler has to forward the
         # original code rather than compose its own error string.
         backend = _StubBackend(pairs=["en->pt"], targets=["pt"], sources=["en"])
