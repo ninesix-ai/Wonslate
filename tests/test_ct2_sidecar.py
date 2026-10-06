@@ -1069,5 +1069,185 @@ class RegionCodeTests(unittest.TestCase):
         self.assertNotIn("resolved_target", payload)
 
 
+class _BatchResult:
+    """A ctranslate2 batch result; the translate path only reads .hypotheses[0]."""
+
+    def __init__(self, hypothesis):
+        self.hypotheses = [hypothesis]
+
+
+class ConcurrentColdStartTests(unittest.TestCase):
+    """Several clients on one cold service must still build one translator.
+
+    Three shapes reach the same lock and only two were pinned. ConcurrentLoadTests
+    races the loader in-process; AbandonedRequestTests gets there through a retry that
+    overlapped a handler its client had abandoned. This is the shape a batch run starts
+    in, and the first thing external item 004 did: several connections open at once,
+    nobody timing out, nothing retried, and the 2.95 GB MADLAD checkpoint not resident
+    yet. In the revision before _LOAD_LOCK every one of those handlers built its own.
+
+    The checkpoint is a fake whose construction sleeps and counts, so this needs no
+    model and no ctranslate2: it runs on every host and never skips, which is what
+    REQ-F3's runtime-precondition column exists to make visible.
+    """
+
+    LOAD_SECONDS = 0.8       # long enough that a late-scheduled handler still arrives cold
+    CLIENTS = 3
+    SENTENCE = "Hello, please import the audio file."
+
+    class _Ct2:
+        """ctranslate2 stand-in: slow constructions, counted, and every decode counted.
+
+        `built` is the property under test. `decodes` is the guard against winning it
+        the wrong way -- a service that answered one request and dropped the other two
+        would also report a single build.
+        """
+
+        def __init__(self, load_seconds):
+            self.load_seconds = load_seconds
+            self.built = 0
+            self.live = 0
+            self.peak = 0
+            self.decodes = 0
+            self._lock = threading.Lock()
+
+        def Translator(self, path, **kwargs):
+            return self._Translator(self)
+
+        class _Translator:
+            def __init__(self, owner):
+                self.owner = owner
+                with owner._lock:
+                    owner.live += 1
+                    owner.peak = max(owner.peak, owner.live)
+                time.sleep(owner.load_seconds)      # what a checkpoint really costs
+                with owner._lock:
+                    owner.built += 1
+                    owner.live -= 1
+
+            def translate_batch(self, tokens, **kwargs):
+                with self.owner._lock:
+                    self.owner.decodes += 1
+                return [_BatchResult(["<2zh>", "ok"])]
+
+    class _Sp:
+        """sentencepiece stand-in: enough for the vocabulary probe and one decode."""
+
+        def SentencePieceProcessor(self, model_file=None):
+            return self._Proc()
+
+        class _Proc:
+            def encode(self, text, out_type=str):
+                head = text.split(" ", 1)[0]
+                if head.startswith("<2") and head.endswith(">"):
+                    return [head] + text.split(" ", 1)[1:]
+                return text.split()
+
+            def eos_id(self):
+                return None
+
+            def id_to_piece(self, piece_id):
+                return "</s>"
+
+            def decode(self, pieces):
+                return " ".join(pieces)
+
+    class _ObservingMadlad(MadladBackend):
+        """MadladBackend that tallies the callers that reached it while still cold.
+
+        Built this way because the premise can rot: on a single-threaded service the
+        second request is only read after the first finished loading, so one build
+        happens for a reason that has nothing to do with the lock, and the assertion
+        below would stay green while testing nothing. The tally is taken on the real
+        request path, before any waiting, so it says how many handlers met a cold
+        service -- which is the whole point of the test.
+
+        __init__ is not inherited: the parent's would demand ctranslate2 and a
+        checkpoint on disk, and neither is what is under review here.
+        """
+
+        def __init__(self):
+            self._ct2 = None
+            self._spm = None
+            self._root = pathlib.Path(".")
+            self._translator = None     # cold, and every client is about to find it so
+            self._known_targets = set()
+            self.cold_entrants = 0
+            self._probe_lock = threading.Lock()
+
+        def translate(self, text, source, target, glossary=None):
+            if self._translator is None:
+                with self._probe_lock:
+                    self.cold_entrants += 1
+            return MadladBackend.translate(self, text, source, target, glossary)
+
+    def test_concurrent_cold_requests_build_one_translator(self):
+        backend = self._ObservingMadlad()
+        ct2 = self._Ct2(self.LOAD_SECONDS)
+        sp = self._Sp()
+        backend._ct2 = ct2
+        backend._spm = sp
+        backend._processor = sp.SentencePieceProcessor()
+
+        srv, port = ct2_sidecar.serve_in_thread(backend)
+        gate = threading.Barrier(self.CLIENTS)
+        record = threading.Lock()
+        seen = []                      # (status, payload) per client
+
+        def client():
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            gate.wait()                # set off together, on separate connections
+            try:
+                conn.request("POST", "/translate",
+                             body=json.dumps({"text": self.SENTENCE, "source": "en",
+                                              "target": "zh"}),
+                             headers={"Content-Type": "application/json"})
+                resp = conn.getresponse()
+                payload = json.loads(resp.read().decode("utf-8"))
+                with record:
+                    seen.append((resp.status, payload))
+            finally:
+                conn.close()
+
+        threads = [threading.Thread(target=client) for _ in range(self.CLIENTS)]
+        try:
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=60)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+        alive = [t for t in threads if t.is_alive()]
+        self.assertFalse(alive, "clients never came back: %r" % (alive,))
+
+        # Premise first, then the property -- in that order, so a future failure reads
+        # as "this stopped testing an overlap" rather than as a broken lock.
+        self.assertGreaterEqual(
+            backend.cold_entrants, 2,
+            "only %d of %d clients reached the service while it was cold, so no two"
+            " handlers ever competed for the load and a single build here proves"
+            " nothing (raise LOAD_SECONDS, or check the service is still threaded)"
+            % (backend.cold_entrants, self.CLIENTS))
+
+        self.assertEqual(self.CLIENTS, len(seen), "a cold burst lost a request: %r" % (seen,))
+        self.assertEqual([200] * self.CLIENTS, sorted(code for code, _ in seen),
+                         "every client must be served, not just the lucky first one: %r"
+                         % (seen,))
+        self.assertEqual(1, ct2.built,
+                         "%d handlers met a cold service and built %d checkpoints of 2.95"
+                         " GB each -- the duplicate load external item 004 measured"
+                         % (backend.cold_entrants, ct2.built))
+        self.assertEqual(1, ct2.peak,
+                         "two translators were materialising at once even though one"
+                         " survived: %r" % (ct2,))
+        self.assertEqual(self.CLIENTS, ct2.decodes,
+                         "one checkpoint served %d of %d requests: sharing the engine must"
+                         " not mean dropping the work" % (ct2.decodes, self.CLIENTS))
+        for _, payload in seen:
+            self.assertTrue(payload.get("text"), "a client got an empty translation")
+
+
 if __name__ == "__main__":
     unittest.main()
