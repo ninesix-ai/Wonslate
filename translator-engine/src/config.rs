@@ -579,31 +579,36 @@ pub fn data_dir() -> PathBuf {
 /// (kept as-is so existing local data directories continue to be found) when
 /// none is set.
 fn data_dir_from(lookup: &dyn Fn(&str) -> Option<String>) -> PathBuf {
+    data_dir_for(std::env::consts::OS, lookup)
+}
+
+/// Pure and platform-explicit: the same resolution with the OS passed in, so
+/// every branch compiles and runs on every host. `std::env::consts::OS` supplies
+/// the value in production; tests name `"windows"` / `"linux"` / `"macos"`.
+///
+/// Before this, the branches were `#[cfg(target_os = ...)]`: a Windows build never
+/// compiled the linux or the macos arm, so those two documented rules had no test
+/// anywhere, and CI's linux/macos legs reported one fewer Rust test than a Windows
+/// host did (defect D29).
+fn data_dir_for(os: &str, lookup: &dyn Fn(&str) -> Option<String>) -> PathBuf {
     if let Some(v) = first_env(lookup, &["LT_DATA_DIR", "WONSLATE_DATA_DIR"]) {
         return PathBuf::from(v);
     }
-    #[cfg(target_os = "windows")]
-    {
-        lookup("LOCALAPPDATA")
+    match os {
+        "windows" => lookup("LOCALAPPDATA")
             .map(|p| PathBuf::from(p).join("Wonslate"))
-            .unwrap_or_else(|| PathBuf::from("./lt-data"))
-    }
-    #[cfg(target_os = "linux")]
-    {
-        lookup("XDG_DATA_HOME")
+            .unwrap_or_else(|| PathBuf::from("./lt-data")),
+        "linux" => lookup("XDG_DATA_HOME")
             .or_else(|| lookup("HOME").map(|h| format!("{h}/.local/share")))
             .map(|p| PathBuf::from(p).join("wonslate"))
-            .unwrap_or_else(|| PathBuf::from("./lt-data"))
+            .unwrap_or_else(|| PathBuf::from("./lt-data")),
+        "macos" => lookup("HOME")
+            .map(|h| PathBuf::from(h).join("Library/Application Support/Wonslate"))
+            .unwrap_or_else(|| PathBuf::from("./lt-data")),
+        // Unrecognised target: keep the legacy name so an existing local data
+        // directory is still found instead of silently starting a fresh one.
+        _ => PathBuf::from("./lt-data"),
     }
-    #[cfg(target_os = "macos")]
-    {
-        lookup("HOME")
-            .map(|h| PathBuf::from(h)
-                .join("Library/Application Support/Wonslate"))
-            .unwrap_or_else(|| PathBuf::from("./lt-data"))
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-    { PathBuf::from("./lt-data") }
 }
 
 pub fn ensure_dirs() -> Result<(), crate::error::EngineError> {
@@ -995,10 +1000,52 @@ mod tests {
         assert_eq!(p, PathBuf::from("/tmp/legacy"));
     }
 
-    #[cfg(target_os = "windows")]
+    // Each platform branch is exercised on every host by naming the OS in the
+    // call, instead of `#[cfg(target_os = ...)]` which left the linux and macos
+    // arms uncompiled (and therefore untested) wherever the other OS ran.
     #[test]
     fn windows_data_dir_uses_localappdata() {
-        let p = data_dir_from(&only(&[("LOCALAPPDATA", "C:\\Users\\x\\AppData\\Local")]));
+        let p = data_dir_for("windows", &only(&[("LOCALAPPDATA", "C:\\Users\\x\\AppData\\Local")]));
         assert_eq!(p, PathBuf::from("C:\\Users\\x\\AppData\\Local").join("Wonslate"));
+    }
+
+    #[test]
+    fn linux_data_dir_prefers_xdg_data_home() {
+        let p = data_dir_for("linux", &only(&[("XDG_DATA_HOME", "/home/x/.local/share")]));
+        assert_eq!(p, PathBuf::from("/home/x/.local/share").join("wonslate"));
+    }
+
+    #[test]
+    fn linux_data_dir_falls_back_to_home_when_xdg_unset() {
+        // The XDG spec makes `$HOME/.local/share` the default location, so a bare
+        // HOME has to resolve the same way; only the lower-case brand dir name is
+        // linux-specific here.
+        let p = data_dir_for("linux", &only(&[("HOME", "/home/x")]));
+        assert_eq!(p, PathBuf::from("/home/x/.local/share").join("wonslate"));
+    }
+
+    #[test]
+    fn macos_data_dir_uses_application_support() {
+        let p = data_dir_for("macos", &only(&[("HOME", "/Users/x")]));
+        assert_eq!(p, PathBuf::from("/Users/x/Library/Application Support/Wonslate"));
+    }
+
+    #[test]
+    fn unknown_os_and_empty_env_fall_back_to_lt_data() {
+        // The legacy `./lt-data` name is kept deliberately so existing local data
+        // directories on unusual targets are still found.
+        assert_eq!(data_dir_for("android", &only(&[("HOME", "/data")])), PathBuf::from("./lt-data"));
+        assert_eq!(data_dir_for("windows", &empty()), PathBuf::from("./lt-data"));
+        assert_eq!(data_dir_for("linux", &empty()), PathBuf::from("./lt-data"));
+        assert_eq!(data_dir_for("macos", &empty()), PathBuf::from("./lt-data"));
+    }
+
+    #[test]
+    fn explicit_os_matches_the_env_var_layer_on_every_platform() {
+        // Env precedence must not depend on which OS the binary is running on.
+        for os in ["windows", "linux", "macos", "harmonyos"] {
+            let p = data_dir_for(os, &only(&[("LT_DATA_DIR", "/tmp/legacy")]));
+            assert_eq!(p, PathBuf::from("/tmp/legacy"), "LT_DATA_DIR must win on {}", os);
+        }
     }
 }
