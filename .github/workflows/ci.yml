@@ -70,6 +70,11 @@ jobs:
       - name: Build engine (cdylib)
         run: cargo build --release
         working-directory: translator-engine
+      # The benchmark suites score with sacrebleu (script/bench_translation.py::score).
+      # Without it the python-ffi job aborted before the later gates ever ran.
+      # Pinned: same version the local bench baseline was measured with.
+      - name: Install scoring dependency
+        run: python -m pip install sacrebleu==2.6.0
       - name: Python smoke (FFI, sidecar e2e + unit, benchmark path + lint, hook guards)
         run: |
           python tests/test_phase1_ffi.py

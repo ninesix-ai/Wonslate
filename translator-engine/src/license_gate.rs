@@ -75,6 +75,10 @@ pub const REGISTERED_DEPS: &[Dep] = &[
     Dep { name: "ctranslate2",                   license: "MIT",        kind: Kind::Component },
     // PyPI official project (upstream: https://github.com/google/sentencepiece)
     Dep { name: "sentencepiece",                 license: "Apache-2.0", kind: Kind::Component },
+    // PyPI official project (upstream: https://github.com/mjpost/sacrebleu).
+    // Reached by the benchmark scoring path (script/bench_translation.py::score),
+    // not by the shipped product runtime; registered because it is a real dep.
+    Dep { name: "sacrebleu",                     license: "Apache-2.0", kind: Kind::Component },
     // Google official release on Hugging Face (facebook/madlad400)
     Dep { name: "madlad-400",                    license: "Apache-2.0", kind: Kind::Model },
     // Argos translate official model repository (MIT-licensed package exports)
