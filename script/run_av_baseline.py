@@ -70,6 +70,11 @@ SIDECAR_PY = REPO / "sidecar" / "ct2_sidecar.py"
 BENCH_PY = REPO / "script" / "bench_domain_av.py"
 INSTALL_PY = REPO / "script" / "install_glossary_pack.py"
 SCORE_PY = REPO / "script" / "score_comet.py"
+# Every runner print is mirrored here so a double-click that closes its
+# window on exit still leaves the full Preflight/Bench/Summary trace on
+# disk. A first-time user losing the console before reading the Summary
+# was the reported failure; this is the durable fix.
+RUN_LOG = REPO / "run_av_baseline.log"
 
 LIB_NAME = ("translator_engine.dll" if os.name == "nt"
             else "libtranslator_engine.dylib" if sys.platform == "darwin"
@@ -473,18 +478,26 @@ def _hypothesis_block(summary, baselines, scoped, ranges) -> list:
     lines = ["## 差值与四条待验证假设", ""]
     qwen = next((s for s in summary if s["engine"] == "ollama-qwen"), None)
     if qwen and qwen["delta_comet"] is not None:
-        poly = ranges[6]  # "多义词边界" is index 6
         rows = _subdomain_rows(baselines.get("ollama-qwen"), scoped.get("ollama-qwen"), ranges)
+        # "多义词边界" is the 7th range (index 6) in av_domain_ranges.json.
+        # A row is (name, count, base_chrF, scope_chrF, base_comet, scope_comet);
+        # the subset delta must subtract same-metric columns, i.e. index 5-4 for
+        # COMET and 3-2 for chrF. (A prior bug mixed 5-3 and produced a nonsense
+        # ~-48 number.) Guard against NaN with x == x.
         poly_row = rows[6]
-        # poly_row = (name, count, b_ch, s_ch, b_co, s_co)
-        poly_delta = (poly_row[5] - poly_row[3]) if (poly_row[3] == poly_row[3] and poly_row[5] == poly_row[5]) else None
-        overall_delta = qwen["delta_comet"]
+        _b_ch, _s_ch, _b_co, _s_co = poly_row[2], poly_row[3], poly_row[4], poly_row[5]
+        poly_comet = (_s_co - _b_co) if (_s_co == _s_co and _b_co == _b_co) else None
+        poly_chrf = (_s_ch - _b_ch) if (_s_ch == _s_ch and _b_ch == _b_ch) else None
+        overall_comet = qwen["delta_comet"]
+        overall_chrf = (qwen["scope_chrF"] - qwen["base_chrF"]
+                        if qwen["scope_chrF"] and qwen["base_chrF"] else None)
         lines += [
-            f"- **多义词边界子集 Δ vs 全样 Δ**：全样 Δ={_fmt_pct(overall_delta)}，"
-            f"多义词 Δ={_fmt_pct(poly_delta)}。"
-            + ("多义词子集 Δ 更大，与 S11 种子包设计目标一致。"
-               if (poly_delta is not None and overall_delta is not None and poly_delta > overall_delta)
-               else "差值不显著或反向，需查看具体证据。"),
+            f"- **多义词边界子集 Δ vs 全样 Δ（ollama-qwen）**："
+            f"全样 COMET Δ={_fmt_pct(overall_comet)}、chrF Δ={_fmt_pct(overall_chrf)}；"
+            f"多义词子集 COMET Δ={_fmt_pct(poly_comet)}、chrF Δ={_fmt_pct(poly_chrf)}。"
+            + ("多义词子集提升大于全样，与 S11 种子包「术语消歧」设计目标一致。"
+               if (poly_chrf is not None and overall_chrf is not None and poly_chrf > overall_chrf)
+               else "多义词子集未见大于全样的提升，需回看具体证据。"),
         ]
     if any(s["engine"] == "madlad" and s["delta_comet"] is not None for s in summary):
         m = next(s for s in summary if s["engine"] == "madlad")
@@ -558,7 +571,88 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+class _Tee:
+    """Mirror everything written to one stream into a log file too.
+
+    Keeps the interactive console live (so a foreground run still shows
+    progress) while persisting the same text for a double-click whose
+    window vanishes on exit. fileno is delegated so any child process
+    spawned with stdout=sys.stdout still inherits the real handle."""
+
+    def __init__(self, stream, log_handle):
+        self._stream = stream
+        self._log = log_handle
+
+    def write(self, data):
+        n = self._stream.write(data)
+        try:
+            self._log.write(data)
+            self._log.flush()
+        except Exception:  # noqa: BLE001 (never fail the run for logging)
+            pass
+        return n
+
+    def flush(self):
+        try:
+            self._stream.flush()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self._log.flush()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def fileno(self):
+        return self._stream.fileno()
+
+    def isatty(self):
+        try:
+            return self._stream.isatty()
+        except Exception:  # noqa: BLE001
+            return False
+
+
 def main(argv=None) -> int:
+    """Wrap the pipeline so stdout/stderr land in run_av_baseline.log too.
+
+    Uses line-buffered text mode and swallows any logging error -- losing
+    the mirror must never abort a 1-3 hour measurement run."""
+    log_handle = None
+    orig_out, orig_err = sys.stdout, sys.stderr
+    try:
+        log_handle = open(RUN_LOG, "w", encoding="utf-8")
+    except OSError as exc:
+        print(f"[warn] cannot open {RUN_LOG} for logging: {exc}", file=sys.stderr)
+        log_handle = None
+    if log_handle:
+        stamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        log_handle.write(f"=== run_av_baseline started {stamp} ===\n")
+        log_handle.write(f"args: {argv if argv is not None else sys.argv[1:]}\n\n")
+        log_handle.flush()
+        sys.stdout = _Tee(orig_out, log_handle)
+        sys.stderr = _Tee(orig_err, log_handle)
+    try:
+        rc = _run_all(argv)
+    except BaseException:  # noqa: BLE001 (log then re-raise)
+        if log_handle:
+            import traceback
+            log_handle.write("\n=== UNCAUGHT EXCEPTION ===\n")
+            log_handle.write(traceback.format_exc())
+            log_handle.flush()
+        raise
+    finally:
+        sys.stdout, sys.stderr = orig_out, orig_err
+        if log_handle:
+            try:
+                log_handle.write(f"\n=== run_av_baseline finished rc={rc} ===\n")
+                log_handle.close()
+            except Exception:  # noqa: BLE001
+                pass
+            orig_out.write(f"(full log saved to {RUN_LOG})\n")
+    return rc
+
+
+def _run_all(argv=None) -> int:
     args = build_parser().parse_args(argv)
     args.engines = tuple(e.strip() for e in args.engines.split(",") if e.strip())
     unknown = [e for e in args.engines if e not in ENGINES]

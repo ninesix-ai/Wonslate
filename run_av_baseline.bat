@@ -13,4 +13,10 @@ python "%SCRIPT_DIR%script\run_av_baseline.py" %*
 set EXITCODE=%ERRORLEVEL%
 echo.
 echo [run_av_baseline] exit %EXITCODE%
+echo [run_av_baseline] full log: %SCRIPT_DIR%run_av_baseline.log
+rem Keep the window open so a double-click does not vanish before the Summary
+rem is read. Press any key to close. Scripted callers should invoke
+rem script/run_av_baseline.py directly to avoid this pause.
+echo.
+pause >nul
 exit /b %EXITCODE%
