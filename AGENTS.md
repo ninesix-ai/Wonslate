@@ -104,8 +104,10 @@ Status truth is `docs/requirements/00-需求总纲.md` and `docs/tasks/00-任务
 the private umbrella repo. The open items worth knowing before picking a task — the
 identifiers are stable anchors, the detail lives in the ledgers:
 
-- `D24` — throughput degrades silently under sustained batch load; it also undermines
-  the validity of the AV-domain baseline rerun.
+- `D30` — a long batch offers no way to notice degradation: `/health` reports liveness
+  only, and a request the client already abandoned keeps decoding server-side. The
+  checkpoint-reload amplifier behind the reported `D24` ladder is already fixed; what
+  is open is the absence of signals, not the slowdown itself.
 - `REQ-B2` — undecided scope: does the no-silent-degradation invariant cover the
   sidecar's public HTTP channel, or only the Rust pipeline?
 - `S12` — the AV-domain baseline needs a rerun on the Ollama tier, because the CT2
