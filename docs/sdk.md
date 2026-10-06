@@ -1,6 +1,6 @@
 # SDK 说明（C ABI FFI 集成）
 
-> 本文是 Wonslate（万邦译）的对外集成契约说明，主体为 `translator_engine` 动态库的 16 个 C ABI 导出函数。
+> 本文是 Wonslate（万邦译）的对外集成契约说明，主体为 `translator_engine` 动态库的 18 个 C ABI 导出函数。
 > 缩写解释见 [terminology.md](terminology.md)；面向最终用户的操作见 [user-guide.md](user-guide.md)。
 
 ## 1. 定位与现状
@@ -142,7 +142,7 @@ int main(void) {
 - **初始化**：`tt_init` 每进程调用一次即可；配置在启动时读取一次，**修改配置需重启进程**。`tt_init` 的 `config_json` 是最高优先级配置层（§7）。
 - **线程安全**：核心内部使用进程级单例（TM 存储、配置、蒸馏队列），调用方无需自行加锁；但不要在翻译进行中并发调用 `tt_shutdown`。
 
-## 4. 函数参考（16 个导出）
+## 4. 函数参考（18 个导出）
 
 ### 4.1 生命周期与元信息
 
@@ -210,6 +210,8 @@ int main(void) {
 | `tt_glossary_list` | `char* tt_glossary_list(source_lang, target_lang)` | 返回 JSON 数组（最多 500 条，按置信度降序） |
 | `tt_glossary_upsert` | `char* tt_glossary_upsert(const char* entry_json)` | 新增 / 更新（§5.4）；`confidence` 以调用方为准，`source` 被强制标记为 `manual` |
 | `tt_glossary_delete` | `char* tt_glossary_delete(source_term, source_lang, target_lang)` | 按键删除，返回 Ack |
+| `tt_glossary_list_with_domain` | `char* tt_glossary_list_with_domain(source_lang, target_lang, domain, uint32_t limit)` | S11：按领域取术语行；`domain` 为空串等同只取泛域行（`tt_glossary_list` 即其 limit=500 的便捷形态） |
+| `tt_glossary_import_pack` | `char* tt_glossary_import_pack(const char* pack_json)` | 导入领域术语包，返回 `{"ok":true,"imported":N}`；该路径**不经过**蒸馏的源语言守卫，故错标行仍能入库，由 `tests/test_glossary_hygiene.py` 兜 |
 
 ## 5. JSON 数据契约
 
