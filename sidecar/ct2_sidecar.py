@@ -65,7 +65,9 @@ downloads or installs anything automatically):
 The module is importable by unit tests (serve only blocks under __main__).
 """
 import argparse
+import collections
 import json
+import math
 import os
 import pathlib
 import sys
@@ -85,6 +87,118 @@ DEFAULT_MADLAD_PORT = 11436
 # lifecycle in two backends (external feedback item 003 proved the race corrupts
 # nothing but memory; this keeps the memory honest too).
 _LOAD_LOCK = threading.Lock()
+
+# How many recent translation latencies /health describes. Fixed size on purpose:
+# an unbounded history would be exactly the per-request accumulation this service
+# was accused of (defect D24), and a percentile over the last N calls is the
+# number that answers "is it slowing down right now?".
+_LATENCY_WINDOW = 200
+
+
+def _percentile(ordered, fraction):
+    """Nearest-rank percentile over the recorded window; None when empty.
+
+    Null rather than 0.0 when nothing has run yet: a batch client that reads a
+    fast percentile out of a stopwatch that never started is the exact failure
+    these fields exist to prevent.
+    """
+    if not ordered:
+        return None
+    rank = max(1, int(math.ceil(fraction * len(ordered))))
+    return round(ordered[min(rank, len(ordered)) - 1], 6)
+
+
+def process_rss_bytes():
+    """Resident memory of this process, or None where the platform hides it.
+
+    stdlib only by deliberate choice: psutil is registered as an operator-side
+    diagnostic dependency and the shipped runtime stays free of it, so this reads
+    the OS directly and reports "unknown" instead of reaching for a new dep.
+    """
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _Counters(ctypes.Structure):
+                _fields_ = [("cb", wintypes.DWORD),
+                            ("PageFaultCount", wintypes.DWORD),
+                            ("PeakWorkingSetSize", ctypes.c_size_t),
+                            ("WorkingSetSize", ctypes.c_size_t),
+                            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                            ("PagefileUsage", ctypes.c_size_t),
+                            ("PeakPagefileUsage", ctypes.c_size_t)]
+
+            # The signatures are declared, not assumed: GetCurrentProcess returns
+            # the pseudo-handle -1, so leaving restype/argtypes unset truncates it
+            # to 32 bits on a 64-bit host and GetProcessMemoryInfo fails. Measured
+            # that way on Python 3.10 / Windows 11 -- it reported None, not an error.
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            psapi = ctypes.WinDLL("psapi", use_last_error=True)
+            psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE,
+                                                   ctypes.POINTER(_Counters),
+                                                   wintypes.DWORD]
+            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+
+            counters = _Counters()
+            counters.cb = ctypes.sizeof(counters)
+            if psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(),
+                                          ctypes.byref(counters), counters.cb):
+                return int(counters.WorkingSetSize)
+            return None
+        except Exception:
+            return None
+    try:                                    # Linux: resident pages from procfs
+        statm = pathlib.Path("/proc/self/statm").read_text().split()
+        return int(statm[1]) * int(os.sysconf("SC_PAGE_SIZE"))
+    except Exception:
+        pass
+    try:                                    # macOS and anything else
+        import resource
+        value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        # ru_maxrss is bytes on macOS, kilobytes on Linux and the BSDs.
+        return value if sys.platform == "darwin" else value * 1024
+    except Exception:
+        return None
+
+
+class HealthSignals:
+    """What /health reports next to "ok": served count, recent latency, memory.
+
+    External item 004 measured a long batch that kept returning 200 while it
+    slowed down, so a caller following the "restart on failure" rule had nothing
+    to fire on: there never was a failure. These three numbers are what lets it
+    tell fine from degraded without timing its own wall clock.
+    """
+
+    def __init__(self, window=_LATENCY_WINDOW):
+        self._lock = threading.Lock()
+        self._latencies = collections.deque(maxlen=window)
+        self._served = 0
+
+    def record_served(self):
+        """One /translate reached the engine, however it ended."""
+        with self._lock:
+            self._served += 1
+
+    def record_latency(self, seconds):
+        """One translation completed; failures are deliberately not sampled."""
+        with self._lock:
+            self._latencies.append(float(seconds))
+
+    def snapshot(self):
+        with self._lock:
+            served = self._served
+            ordered = sorted(self._latencies)
+        return {"requests_served": served,
+                "latency_samples": len(ordered),
+                "last_latency_p50": _percentile(ordered, 0.50),
+                "last_latency_p99": _percentile(ordered, 0.99),
+                "rss_bytes": process_rss_bytes()}
 
 
 def primary_subtag(code):
@@ -584,7 +698,11 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/health":
             # Liveness only, by contract: a 200 here says the port answers, not
             # that a translation will come back promptly. GET /readyz for that.
-            self._send(200, {"status": "ok", "backend": self.server.backend.name})
+            # The signal fields are additive, so an existing consumer reading
+            # "status" gets exactly what it got before (defect D30).
+            report = {"status": "ok", "backend": self.server.backend.name}
+            report.update(self.server.signals.snapshot())
+            self._send(200, report)
         elif parsed.path == "/readyz":
             self._readyz()
         elif parsed.path == "/languages":
@@ -702,6 +820,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         folded_source, folded_target, echoes = self._fold_codes(
             str(req.get("source") or ""), str(req.get("target") or ""))
+        started = time.perf_counter()
         try:
             out = self.server.backend.translate(
                 text, folded_source, folded_target, req.get("glossary"))
@@ -709,12 +828,19 @@ class Handler(BaseHTTPRequestHandler):
             # Permanent for this code, and ordered before MissingDependency
             # because it IS one. Hand back the supported set so a batch caller can
             # retire the direction instead of restarting a healthy engine.
+            self.server.signals.record_served()
             self._send(422, {"error": "unsupported_target", "message": str(e),
                              "supported": self._capability()})
             return
         except MissingDependency as e:
+            self.server.signals.record_served()
             self._send(503, {"error": "backend_unavailable", "message": str(e)})
             return
+        # Counted and sampled together only on this path: an error is fast, and
+        # letting it into the percentile would report a healthy engine at the
+        # exact moment the engine is failing.
+        self.server.signals.record_served()
+        self.server.signals.record_latency(time.perf_counter() - started)
         body = {"text": out}
         body.update(echoes)
         self._send(200, body)
@@ -771,6 +897,7 @@ class Handler(BaseHTTPRequestHandler):
 def build_server(backend, host="127.0.0.1", port=0):
     srv = ThreadingHTTPServer((host, port), Handler)
     srv.backend = backend
+    srv.signals = HealthSignals()
     return srv
 
 

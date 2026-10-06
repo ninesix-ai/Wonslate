@@ -526,6 +526,106 @@ class ReadinessContractTests(unittest.TestCase):
         self.assertFalse(mock.languages()["complete"])
 
 
+class _SlowStubBackend(_StubBackend):
+    """Pays a real cost inside translate, so the latency window has something to see."""
+
+    COST = 0.05
+
+    def translate(self, text, source, target, glossary=None):
+        time.sleep(self.COST)
+        return _StubBackend.translate(self, text, source, target, glossary)
+
+
+class HealthSignalsTests(unittest.TestCase):
+    """A batch client must be able to see that it is degrading (defect D30).
+
+    External item 004 measured a long batch that got slower and slower while
+    every call returned 200 and /health kept answering ok. Nothing in the
+    response body let the caller tell "fine" from "degraded", so its recovery
+    strategy (restart on failure) could not fire: there was never a failure.
+
+    These fields are additive. /health stays a liveness probe with the same
+    meaning it had before (defect D23 fixed what readiness means, and the .NET
+    client depends on this shape), so an old consumer keeps working untouched.
+    Percentiles are null with zero samples instead of 0.0: a stopwatch that
+    never ran must not look like a fast one.
+    """
+
+    def setUp(self):
+        self.servers = []
+
+    def tearDown(self):
+        for srv in self.servers:
+            srv.shutdown()
+            srv.server_close()
+
+    def _serve(self, backend):
+        srv, port = serve_in_thread(backend, host="127.0.0.1", port=0)
+        self.servers.append(srv)
+        return port
+
+    def _get(self, port, path):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        payload = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return resp.status, payload
+
+    def _translate(self, port, text="hello", target="zh"):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("POST", "/translate", body=json.dumps(
+            {"text": text, "source": "en", "target": target}),
+            headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return resp.status
+
+    def test_health_advertises_the_signals_without_inventing_values(self):
+        port = self._serve(_StubBackend())
+        status, payload = self._get(port, "/health")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "ok")          # unchanged semantics
+        self.assertEqual(payload["backend"], "stub")       # unchanged fields
+        self.assertEqual(payload["requests_served"], 0)
+        self.assertEqual(payload["latency_samples"], 0)
+        self.assertIsNone(payload["last_latency_p50"],
+                          "no sample was taken, so a percentile must not be 0.0")
+        self.assertIsNone(payload["last_latency_p99"])
+        # rss_bytes must be a real reading wherever the platform exposes one; the
+        # product's own platform is Windows, so a silent None there is a failure.
+        self.assertIsNotNone(payload["rss_bytes"], "this platform can report RSS")
+        self.assertGreater(payload["rss_bytes"], 0)
+
+    def test_served_translations_are_counted_and_timed(self):
+        port = self._serve(_SlowStubBackend())
+        for _ in range(3):
+            self.assertEqual(self._translate(port), 200)
+        # Probing health must not pollute the very numbers it reports.
+        self._get(port, "/health")
+        self._get(port, "/health")
+        _, payload = self._get(port, "/health")
+        self.assertEqual(payload["requests_served"], 3)
+        self.assertEqual(payload["latency_samples"], 3)
+        # Asserted against the cost the backend actually paid, not against 0.0:
+        # "positive" would pass on a stopwatch that timed nothing but the probe.
+        self.assertGreaterEqual(payload["last_latency_p50"], _SlowStubBackend.COST * 0.8)
+        self.assertGreaterEqual(payload["last_latency_p99"], payload["last_latency_p50"])
+
+    def test_a_failing_translation_counts_but_produces_no_latency_sample(self):
+        # A permanent 422 or a 503 costs microseconds; letting it into the
+        # percentile would report a healthy engine precisely when the engine is
+        # failing, so the latency window tracks completed work only.
+        port = self._serve(_StubBackend(
+            error=ct2_sidecar.MissingDependency("model dir does not exist")))
+        self.assertEqual(self._translate(port), 503)
+        _, payload = self._get(port, "/health")
+        self.assertEqual(payload["requests_served"], 1)
+        self.assertEqual(payload["latency_samples"], 0)
+        self.assertIsNone(payload["last_latency_p99"])
+
+
 class LanguagesEndpointTests(unittest.TestCase):
     """Answer the capability question before a request spends a translation."""
 

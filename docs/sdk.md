@@ -365,7 +365,7 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
 | 接口 | 请求 | 响应 |
 |---|---|---|
 | `POST /translate` | `{"text":"…","source":"en","target":"zh"[,"glossary":[{"src":"…","tgt":"…"}]]}` | `200 {"text":"…"}`（发生区域码折叠时附带 `requested_target`/`resolved_target`，源侧同理）；`400 {"error":"missing 'text'"/"invalid json"}`；**`422 {"error":"unsupported_target","message":"…","supported":{…}}`**；`503 {"error":"backend_unavailable","message":"…"}` |
-| `GET /health` | — | `200 {"status":"ok","backend":"mock\|ct2\|madlad"}` —— **只代表存活（端口在应答），不代表首句不会卡在冷加载** |
+| `GET /health` | — | `200 {"status":"ok","backend":"mock\|ct2\|madlad","requests_served":N,"latency_samples":N,"last_latency_p50":秒\|null,"last_latency_p99":秒\|null,"rss_bytes":字节\|null}` —— **只代表存活（端口在应答），不代表首句不会卡在冷加载**；后五个字段是给批量调用方的退化可观测量（见下） |
 | `GET /readyz` | — | 就绪 `200 {"status":"ready","backend":…,"loaded":[…]}`；未就绪 `503 {"status":"warming","error":"not_ready","reason":"model_not_loaded"}`；后端无法自述 `501 {"error":"readiness_unknown"}` |
 | `GET /languages` | 可选 `?target=xx` | `200 {"backend":…,"pairs":[…],"target_codes":[…],"complete":bool,"note":"…"}`；带 `?target=` 时附加 `"supported": true\|false\|null`（`null` = 后端无法判定，与「不支持」严格区分）；区域码经折叠而可用时为 `true` 并附 `resolved_target` |
 | `POST /warmup` | 可选 `{"source":"en","target":"zh"}` | 就绪 `200 {"status":"ready","backend":…,"warmed":bool,"load_s":秒,"loaded":[…]}`；仍未就绪 `503 {"status":"warming","error":"not_ready"}`；后端不支持 `501 {"error":"warmup_unknown"}`；语言码不可用 `422 unsupported_target`（与 `/translate` 同一判定，区域码同样先折叠） |
@@ -374,7 +374,9 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
 
 区域码**由引擎自己折叠**：`pt-BR`→`pt`、`zh-Hans-CN`→`zh`、`es-419`→`es`（取 BCP-47 主语言子标），因为产品侧语言码几乎都带区域后缀，而 MADLAD 词表与 Argos 包只认主码。折叠只朝向**后端确认能服务**的码：折不出可行目标的请求仍按原码交给引擎，422 文案由它（唯一知道自己覆盖面的组件）给出。发生过折叠时，响应会并列 `requested_target` 与 `resolved_target` 供审计；未折叠则不多这两个字段。`GET /languages?target=pt-BR` 同样回答 `supported: true` 并附 `resolved_target`，所以批量调用方**不必自己再写一份 `split('-')[0]`**。
 
-就绪与存活是**两个信号**：MADLAD 的 3B 检查点与 Argos 的逐对 translator 都是首次翻译才加载，故 `/health` 的 200 只说明进程已监听；要避免首批句子撞上冷加载，请轮询 `/readyz` 至 `status:"ready"`。`/languages` 让调用方在**不消耗一次翻译**的前提下问清能力边界（`?target=` 探针直接查词表/磁盘包）。
+就绪与存活是**两个信号**：MADLAD 的 3B 检查点与 Argos 的逐对 translator 都是首次翻译才加载，故 `/health` 的 200 只说明进程已监听；要避免首批句子撞上冷加载，请轮询 `/readyz` 至 `status:"ready"`。`/languages?target=tl` 同理——它回答能力，不消耗一次翻译。
+
+**长跑批的自证手段**（`/health` 后五个字段，2026-10-06）：`requests_served` 是到达引擎的 `/translate` 次数；`last_latency_p50` / `last_latency_p99` 来自一个**定长 200** 的耗时窗（`latency_samples` 告诉你窗里现在有几个样本，`p99` 在 2 个样本上没有统计意义）；`rss_bytes` 是本进程常驻内存，平台给不出时为 `null`。三条口径纪律：① **无样本时两个百分位是 `null` 而不是 `0.0`**——没跑过的秒表不得显示“很快”；② 失败请求**计入 `requests_served` 但不进耗时窗**（422/503 只需微秒，混进去会在引擎正坏的时候显示健康）；③ 该窗不随请求增长，所以服务本身不会因为这些计数器而变成新的内存泄露源。判定退化的用法：把 `last_latency_p99` 与你自己前 N 句的基线相比，显著抬高就应当怀疑并重启——而不是去等一个不会来的错误。`/languages` 让调用方在**不消耗一次翻译**的前提下问清能力边界（`?target=` 探针直接查词表/磁盘包）。
 
 `/readyz` 只说真话，不会把模型装进内存——**把它变成就绪的手段是 `POST /warmup`**。该端点按当前配置真实加载并回报代价（`warmed` 表示本次是否真的付了加载，`load_s` 仅在真加载时为非零）。**Argos 是按方向加载的**：不带 `source`/`target` 的 warmup 不会把磁盘上所有包都拉进内存（那比懒加载贵得多），而是回 `503 warming` 并在 `note` 里提示方、目标语言；若调用方把 200 当作“已暖好”，这个区分就是必需的。桌面客户端的用法：先 `GET /readyz` 探得 warming，再在后台 `POST /warmup`，完成后状态转 `ready`。
 
