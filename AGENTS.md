@@ -110,11 +110,12 @@ identifiers are stable anchors, the detail lives in the ledgers:
   client abandoned keeps decoding server-side, and there is no batch limit or reload.
 - `REQ-B2` — undecided scope: does the no-silent-degradation invariant cover the
   sidecar's public HTTP channel, or only the Rust pipeline?
-- `S12` — the Ollama-tier rerun is done and the quality-gain claim did not survive it, **but that
-  run predates D32**: its scoped arm injected a fixed pack prefix (0.09 relevant terms per row on
-  average), not the terms each sentence actually uses. Repeating it is worth doing now that
-  injection is input-aware. T2 (more pairs) and T4 (larger corpus) remain, and a pack's value must
-  not be judged by COMET alone.
+- `S12` — closed as **a small but statistically supported gain**, once D32 was fixed and both arms were
+  rerun under input-aware injection. The earlier "no attributable gain" reading was an artifact of
+  injecting a pack prefix rather than the terms each sentence uses: a measurement hole can erase a
+  real effect as easily as a scoring bug can invent one. Disclose it as terminology consistency plus
+  a modest quality edge, never as "much better translation" — the polysemant subset came out
+  slightly negative. T2 (more pairs) and T4 (larger corpus) remain.
 - `N-10` — microphone capture is missing; the voice chain runs on files only.
 - `F4` — cross-platform has not started; the client is Windows-only today.
 - `REQ-F5` — MCP covers the stdio server; SDK, Resources and authentication are open.
