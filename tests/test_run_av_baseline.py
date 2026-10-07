@@ -138,5 +138,57 @@ class RepeatAveragingTests(unittest.TestCase):
         self.assertAlmostEqual(s["delta_comet"], 0.025, places=4)
 
 
+class TermAdherenceReportingTests(unittest.TestCase):
+    """The report must surface terminology adherence, and label which pack it counts.
+
+    The whole-pack rate is not an injection rate: most of a large pack can never
+    reach a prompt (defect D32), so a gain measured across the whole pack cannot be
+    attributed to the terminology that was actually sent. The report therefore has to
+    carry the counts, not just a percentage, and must say when the numbers cover
+    different sets of rows between the arms.
+    """
+
+    @staticmethod
+    def _ad(hits, opportunities, terms=266):
+        return {"terms_in_pack": terms, "rows_with_terms": 270,
+                "opportunities": opportunities, "hits": hits,
+                "rate": round(hits / opportunities, 6) if opportunities else None}
+
+    def test_rates_and_counts_are_pooled_across_repeats(self):
+        base = _run(["a", "b"])
+        base["term_adherence"] = self._ad(403, 667)
+        again = _run(["a", "b"])
+        again["term_adherence"] = self._ad(405, 667)
+        scope = _run(["a2", "b2"])
+        scope["term_adherence"] = self._ad(421, 667)
+        s = summarize_engine("ollama-qwen", [base, again], [scope])
+        self.assertEqual(s["base_adherence"]["opportunities"], 1334)
+        self.assertEqual(s["base_adherence"]["hits"], 808)
+        self.assertAlmostEqual(s["base_adherence"]["rate"], 808 / 1334, places=6)
+        self.assertEqual(s["scope_adherence"]["opportunities"], 667)
+        self.assertAlmostEqual(s["adherence_delta"],
+                               421 / 667 - 808 / 1334, places=6)
+
+    def test_evidence_without_the_field_reports_none_rather_than_zero(self):
+        # Older evidence files predate the metric; "not measured" must not become
+        # "0% adherent", which would read as the worst possible terminology result.
+        s = summarize_engine("argos", [_run(["a"])], [_run(["a2"])])
+        self.assertIsNone(s["base_adherence"])
+        self.assertIsNone(s["scope_adherence"])
+        self.assertIsNone(s["adherence_delta"])
+
+    def test_mismatched_opportunity_counts_are_flagged_as_not_comparable(self):
+        # If the two arms were graded against different row sets the delta is an
+        # artifact again -- the exact mistake D31 was. Say so instead of subtracting.
+        base = _run(["a", "b"])
+        base["term_adherence"] = self._ad(300, 500)
+        scope = _run(["a2", "b2"])
+        scope["term_adherence"] = self._ad(300, 667)
+        s = summarize_engine("ollama-qwen", [base], [scope])
+        self.assertIsNotNone(s["base_adherence"])
+        self.assertFalse(s["adherence_comparable"],
+                         "rates over 500 and 667 opportunities must not be subtracted")
+
+
 if __name__ == "__main__":
     unittest.main()

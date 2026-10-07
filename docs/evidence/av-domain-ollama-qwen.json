@@ -2119,7 +2119,14 @@
         0.7681,
         0.8228
       ],
-      "comet_scored": 300
+      "comet_scored": 300,
+      "term_adherence": {
+        "terms_in_pack": 266,
+        "rows_with_terms": 270,
+        "opportunities": 667,
+        "hits": 403,
+        "rate": 0.604198
+      }
     },
     {
       "engine": "ollama-qwen",
@@ -4238,7 +4245,14 @@
         0.7681,
         0.8316
       ],
-      "comet_scored": 300
+      "comet_scored": 300,
+      "term_adherence": {
+        "terms_in_pack": 266,
+        "rows_with_terms": 270,
+        "opportunities": 667,
+        "hits": 403,
+        "rate": 0.604198
+      }
     }
   ],
   "comet_model": "Unbabel/wmt22-comet-da"

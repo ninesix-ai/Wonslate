@@ -404,6 +404,29 @@ def _status(has_base, has_scope, failed_rows, delta, noise_floor) -> str:
     return head + tail
 
 
+def _pooled_adherence(runs):
+    """Sum the terminology counts over repeats; None when no run carries them.
+
+    Older evidence predates the metric, and "not measured" must stay distinguishable
+    from "0% adherent" -- the latter would read as the worst possible terminology
+    result rather than the absence of one.
+
+    `opps_per_run` is what makes two arms comparable: subtracting a rate computed
+    over 500 opportunities from one over 667 is the same mistake D31 was, just one
+    layer over.
+    """
+    blocks = [r.get("term_adherence") for r in runs if r.get("term_adherence")]
+    if not blocks:
+        return None
+    opportunities = sum(b.get("opportunities") or 0 for b in blocks)
+    hits = sum(b.get("hits") or 0 for b in blocks)
+    return {"opportunities": opportunities, "hits": hits,
+            "rate": (hits / opportunities) if opportunities else None,
+            "terms_in_pack": blocks[0].get("terms_in_pack"),
+            "rows_with_terms": blocks[-1].get("rows_with_terms"),
+            "opps_per_run": sorted({b.get("opportunities") or 0 for b in blocks})}
+
+
 def summarize_engine(engine, base_runs, scope_runs) -> dict:
     """Compare one engine's two arms on the rows both of them translated.
 
@@ -446,6 +469,14 @@ def summarize_engine(engine, base_runs, scope_runs) -> dict:
         delta = scope_comet - base_comet        # no per-sample scores yet
     else:
         delta = None
+    base_adh = _pooled_adherence(base_runs)
+    scope_adh = _pooled_adherence(scope_runs)
+    adh_comparable = bool(base_adh and scope_adh
+                          and base_adh["opps_per_run"] == scope_adh["opps_per_run"])
+    if adh_comparable and base_adh["rate"] is not None and scope_adh["rate"] is not None:
+        adh_delta = scope_adh["rate"] - base_adh["rate"]
+    else:
+        adh_delta = None
     return {
         "engine": engine,
         "has_base": has_base, "has_scope": has_scope,
@@ -453,6 +484,8 @@ def summarize_engine(engine, base_runs, scope_runs) -> dict:
         "base_chrF": base_chrf, "scope_chrF": scope_chrf,
         "delta_comet": delta, "paired_n": paired_n,
         "failed_rows": failed_rows, "noise_floor": noise_floor,
+        "base_adherence": base_adh, "scope_adherence": scope_adh,
+        "adherence_delta": adh_delta, "adherence_comparable": adh_comparable,
         "delta_paired": bool(per_pair),
         "repeats": max(len(base_runs), len(scope_runs)),
         "status": _status(has_base, has_scope, failed_rows, delta, noise_floor),
@@ -618,8 +651,47 @@ def _compute_evidence_note(baselines, scoped) -> str:
     return f"每引擎 {lo}-{hi} 句"
 
 
+def _terminology_lines(summary) -> list:
+    """Terminology adherence per engine, with the caveat that makes it readable.
+
+    The rate is measured against the whole seed pack, while only a prefix of that
+    pack can ever reach a prompt (defect D32). So a positive rate here is not proof
+    that injection worked, and this line has to say which set was counted -- the
+    alternative is a column that quietly means something else, which is how D31 got
+    published in the first place.
+    """
+    lines = []
+    for s in summary:
+        base, scope = s.get("base_adherence"), s.get("scope_adherence")
+        if not base and not scope:
+            continue                     # older evidence: omit rather than invent
+        if base and scope and not s.get("adherence_comparable"):
+            lines.append(
+                f"- **术语遵循率（{s['engine']}）**：两臂统计的机会数不同"
+                f"（{base['opportunities']} vs {scope['opportunities']}），"
+                "**不可相减**（D31 同类错误，只是换了一层）；请核对两臂是否跑同一句集。")
+            continue
+        parts = []
+        for label, block in (("未接线", base), ("接线", scope)):
+            if block and block["rate"] is not None:
+                parts.append(f"{label} {block['hits']}/{block['opportunities']}"
+                             f" = {block['rate']:.3f}")
+        delta = s.get("adherence_delta")
+        lines.append(
+            "- **术语遵循率（{}，整包口径）**：{}{}"
+            "——注意：这量的是“包里规定的译法有没有被用出”，不是质量分；且一个进程实际只能"
+            "注入固定条数的术语，而**该子集具体是哪几条本报告不固定**（D32：排序按 confidence，"
+            "而绝大多数种子包行置信度相同，平局由哈希表迭代序决定），因此**此 Δ 不可归因到注入**。".format(
+                s["engine"], "、".join(parts) if parts else "未测",
+                "，Δ={:+.3f}".format(delta) if delta is not None else "，Δ 未算"))
+    if not lines:
+        lines.append("- **术语遵循率**：本批 evidence 未包含该字段（早于该度量），不能得出任何结论。")
+    return lines
+
+
 def _hypothesis_block(summary, baselines, scoped, ranges) -> list:
     lines = ["## 差值与四条待验证假设", ""]
+    lines += _terminology_lines(summary)
     qwen = next((s for s in summary if s["engine"] == "ollama-qwen"), None)
     if qwen and qwen["delta_comet"] is not None:
         rows = _subdomain_rows(baselines.get("ollama-qwen"), scoped.get("ollama-qwen"), ranges)
@@ -685,10 +757,14 @@ def _limitations_block() -> list:
         "- **单语言对**：仅 zh→en；ja/ko/fr/de/es/ru/pt/it/ar 与 en→zh 挂在 S12 T2；",
         "- **术语注入的机制依赖**：madlad / qwen 通过 prompt 消费术语表；argos（Marian 系）不吃这个上下文，Δ 可能为 0——这是**引擎能力边界**，不是 S11 缺陷；",
         "- **COMET 参考不完美**：在通用域与人工判断相关性高，在窄域技术文本上会下降；本报告数字作为**同引擎同批样本的相对 Δ**解读；",
-        "- **术语注入窗口很窄，且与输入无关**：`GlossaryContext::top_terms(n)` 返回**存储顺序的前 n 条**（n=20），"
-        "并不会按输入相关性把本句真正出现的术语挑出来。因此几百条的领域包只落入该窗口的部分可能影响译文——"
-        "**Δ≈0 不可读作“术语无效”**，它同样可能是“术语根本没进 prompt”。逐句覆盖率可由"
-        "`docs/glossary-packs/*.json` 与 `samples[].source` 直接算出（本轮实测值已记入伞仓 REQ-A3）；",
+        "- **术语注入窗口很窄，而且不确定选的是哪几条（D32）**：`glossary_list()` 先按 pair/domain 过滤、"
+        "再按 confidence 降序取前 n 条（n=20）。但种子包内绝大多数行置信度相同（本仓 266 条 av 行里 264 条同为 0.90），"
+        "平局由 Rust `HashMap` 的迭代序决定，而它**每个进程随机**——实测三个独立进程问同一查询，拿回的 20 条几乎不相交。"
+        "后果有两层：① 注入选择与“本句真正出现哪些术语”无关，包的绝大部分在任何一次运行里都可能完全没进 prompt；"
+        "② **同一构建两次跑批注入的术语不同，所以领域对照本身不可复现**。因此“Δ≈0”**不可读作“术语无用”**，"
+        "也不能反过来把一组的整数差当成术语的效果——先修 D32（按输入命中筛选，并对平局给出确定序）才能建立可信的对照；",
+        "- **术语遵循率的口径**：evidence 里的 `term_adherence` 是**整包口径**（包内命中的源术语 → 规定译法是否出现），"
+        "英文术语按词边界匹配；它不是“注入集口径”，因为后者在当前实现下不固定（见上一条）；",
         "- **Δ 必须有噪声地板才成立**：同臂两次复采（`--repeats 2`）的均值差即地板，|Δ| 在地板内不足以归因——"
         "ollama 档以 `temperature 0.3` 且无 seed 生成，单跑一次无法区分术语效果与采样噪声。"
         "**引擎失败行已从分母剔除**（defect D31：曾把 19 行空译文当“译得差”计入，使 Δ 高估至 +0.0330）；",
