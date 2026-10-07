@@ -204,8 +204,9 @@ class OneRequestPathTests(unittest.TestCase):
         bench_translation.build_engines = explode
         bench_translation.score = lambda h, refs, tgt: (0.0, 0.0)
         try:
-            hypotheses, metrics = m._run_one("ollama-qwen", "zh-en", ["句子"], ["sentence"],
-                                            domain)
+            hypotheses, metrics, _failures = m._run_one("ollama-qwen", "zh-en",
+                                                       ["句子"], ["sentence"],
+                                                       domain)
         finally:
             m._translate_via_ffi, bench_translation.build_engines = orig_ffi, orig_build
             bench_translation.score = orig_score
@@ -230,6 +231,173 @@ class OneRequestPathTests(unittest.TestCase):
         for a, b in zip(scoped, plain):
             self.assertEqual(a[:4], b[:4],
                               "engine, languages and text must be identical across arms")
+
+
+class EngineFailureAccountingTests(unittest.TestCase):
+    """D31: a row the engine did not translate must not be scored as a translation.
+
+    Measured, not theorised: in the 2026-10-05 ollama comparison the unscoped arm
+    returned nothing for 19 of 300 sentences. `_run_one` kept only
+    `resp.get("output") or ""` and threw the response away, so an engine error
+    became an empty hypothesis that stayed inside `evaluated`, got scored as if the
+    engine had produced a bad translation, and let the report print "complete".
+    The published COMET delta was +0.0330; the paired delta over the 281 rows both
+    arms actually answered was +0.0058 -- five sixths of the headline was flakiness.
+
+    Replay proves these were transient: all 19 rows translate fine today (1.9-3.8s,
+    engine field intact), so the only thing that ever distinguished them was the
+    harness throwing away the reason. Hence: retry once, then record what is left.
+
+    Hermetic: no sidecar, no DLL, no network -- the request builder is stubbed the
+    same way OneRequestPathTests stubs it.
+    """
+
+    SRC = ["启用流式合成。", "第二句。", "第三句。"]
+    TGT = ["Enable streaming synthesis.", "Second sentence.", "Third sentence."]
+
+    def _run_one(self, replies):
+        import bench_domain_av as m
+        import bench_translation
+
+        seen, scored = [], []
+
+        def fake_ffi(engine_id, src_lang, tgt_lang, text, dom=""):
+            attempt = sum(1 for t, _d in seen if t == text) + 1
+            seen.append((text, dom))
+            entry = replies[text]
+            return entry(attempt) if callable(entry) else entry
+
+        def fake_score(hyps, refs, tgt_lang):
+            scored.append((list(hyps), list(refs)))
+            return (0.0, 0.0)
+
+        orig_ffi, orig_score = m._translate_via_ffi, bench_translation.score
+        m._translate_via_ffi = fake_ffi
+        bench_translation.score = fake_score
+        try:
+            result = m._run_one("ollama-qwen", "zh-en", self.SRC, self.TGT, "")
+        finally:
+            m._translate_via_ffi, bench_translation.score = orig_ffi, orig_score
+        return result, seen, scored
+
+    def test_row_that_returns_nothing_is_recorded_as_a_failure(self):
+        replies = {
+            self.SRC[0]: ("one", {"engine": "ollama-qwen"}),
+            self.SRC[1]: ("", {"error": "engine_timeout", "message": "30s elapsed"}),
+            self.SRC[2]: ("three", {"engine": "ollama-qwen"}),
+        }
+        (hyps, _metrics, failures), _seen, scored = self._run_one(replies)
+        self.assertEqual([f["id"] for f in failures], [1])
+        self.assertEqual(failures[0]["reason"], "engine_timeout")
+        # The slot stays: samples are positional, and the two arms must remain
+        # comparable row by row -- dropping the row would shift every later id.
+        self.assertEqual(hyps[1], "")
+        # But it is not part of what gets scored.
+        self.assertEqual(scored[0][0], ["one", "three"])
+        self.assertEqual(scored[0][1], [self.TGT[0], self.TGT[2]])
+
+    def test_empty_output_without_an_error_field_is_still_a_failure(self):
+        # A response shaped like success but carrying no text is exactly the shape
+        # that hid for a whole run; the reason must say so rather than vanish.
+        replies = {
+            self.SRC[0]: ("", {}),
+            self.SRC[1]: ("two", {"engine": "ollama-qwen"}),
+            self.SRC[2]: ("three", {"engine": "ollama-qwen"}),
+        }
+        (_h, _m, failures), _seen, _s = self._run_one(replies)
+        self.assertEqual(failures, [{"id": 0, "reason": "empty_output"}])
+
+    def test_transient_failure_that_recovers_on_retry_is_not_recorded(self):
+        # 19 of 19 replayed rows answered first try today, so the original failures
+        # were transient: one retry is the difference between a logged failure and a
+        # silently scored empty string.
+        def flaky(attempt):
+            if attempt == 1:
+                return "", {"error": "engine_timeout"}
+            return "recovered", {"engine": "ollama-qwen"}
+
+        replies = {
+            self.SRC[0]: ("one", {"engine": "ollama-qwen"}),
+            self.SRC[1]: flaky,
+            self.SRC[2]: ("three", {"engine": "ollama-qwen"}),
+        }
+        (hyps, _metrics, failures), seen, _scored = self._run_one(replies)
+        self.assertEqual(failures, [])
+        self.assertEqual(hyps[1], "recovered")
+        self.assertEqual(sum(1 for t, _d in seen if t == self.SRC[1]), 2,
+                         "the failed row must be given exactly one retry")
+        self.assertEqual(sum(1 for t, _d in seen if t == self.SRC[0]), 1,
+                         "a row that answered must not be re-asked")
+
+
+class EvidenceFailureFieldsTests(unittest.TestCase):
+    """D31: the evidence file must state how many rows actually answered.
+
+    `requested` and `evaluated` were both 300 while 19 rows were empty, so nothing
+    in the artifact distinguished a complete run from one that lost rows -- which is
+    how a +0.0058 result shipped as +0.0330 marked complete. `evaluated` now means
+    "rows that produced a translation and were scored".
+
+    Also pins the repeat slot: S12 needs each arm run more than once to tell a
+    terminology effect from ollama's sampling noise (temperature 0.3, no seed), and
+    the evidence shape already carries a `runs` array for exactly that.
+    """
+
+    def setUp(self):
+        import bench_domain_av
+        self.m = bench_domain_av
+        self.tmp = tempfile.TemporaryDirectory()
+        self.orig_dir = self.m.EVIDENCE_DIR
+        self.m.EVIDENCE_DIR = pathlib.Path(self.tmp.name)
+
+    def tearDown(self):
+        self.m.EVIDENCE_DIR = self.orig_dir
+        self.tmp.cleanup()
+
+    def _read(self):
+        import json
+        path = self.m.EVIDENCE_DIR / "av-domain-ollama-qwen.json"
+        with io.open(str(path), encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def _write(self, hyps, failures, run_index=1):
+        self.m._write_evidence("ollama-qwen", "zh-en",
+                               ["s1", "s2", "s3"], ["t1", "t2", "t3"],
+                               hyps, {"chrF": 10.0, "BLEU": 1.0}, None, "",
+                               failures=failures, run_index=run_index)
+
+    def test_failed_rows_and_the_scored_count_are_written(self):
+        self._write(["a", "", "c"], [{"id": 1, "reason": "engine_timeout"}])
+        run = self._read()["runs"][0]
+        self.assertEqual(run["requested"], 3)
+        self.assertEqual(run["evaluated"], 2, "empty rows must not count as evaluated")
+        self.assertEqual(run["scored"], 2)
+        self.assertEqual(run["failed"], [{"id": 1, "reason": "engine_timeout"}])
+
+    def test_a_clean_run_records_no_failures(self):
+        self._write(["a", "b", "c"], [])
+        run = self._read()["runs"][0]
+        self.assertEqual(run["failed"], [])
+        self.assertEqual(run["evaluated"], 3)
+
+    def test_a_second_repeat_appends_a_run_instead_of_replacing_the_first(self):
+        # Noise floor needs two runs of the same arm in the same artifact, otherwise
+        # the second repeat silently destroys the evidence for the first.
+        self._write(["a", "b", "c"], [], run_index=1)
+        self._write(["a2", "b2", "c2"], [], run_index=2)
+        record = self._read()
+        self.assertEqual(len(record["runs"]), 2)
+        self.assertEqual(record["runs"][1]["samples"][0]["hypothesis"], "a2")
+        self.assertEqual(record["runs"][0]["samples"][0]["hypothesis"], "a")
+
+    def test_repeat_one_starts_a_series_rather_than_appending_to_an_old_one(self):
+        # Stale repeats from a previous build must not masquerade as noise controls
+        # for this one.
+        self._write(["a", "b", "c"], [], run_index=1)
+        self._write(["x", "y", "z"], [], run_index=1)
+        record = self._read()
+        self.assertEqual(len(record["runs"]), 1)
+        self.assertEqual(record["runs"][0]["samples"][0]["hypothesis"], "x")
 
 
 if __name__ == "__main__":

@@ -180,6 +180,11 @@ def build_arg_parser():
                              "scope added by S11)")
     parser.add_argument("--n", type=int, default=None,
                         help="limit to first N pairs (smoke)")
+    parser.add_argument("--run-index", type=int, default=1,
+                        help="repeat slot inside this arm's `runs` array: 1 starts a "
+                             "fresh series, 2 and above append. S12 uses two runs per "
+                             "arm to tell a terminology effect from ollama's sampling "
+                             "noise (temperature 0.3, no seed)")
     parser.add_argument("--list", action="store_true",
                         help="print known pairs and how many lines each side has")
     return parser
@@ -235,6 +240,30 @@ def _translate_via_ffi(engine_id, src_lang, tgt_lang, text, domain=""):
     return resp.get("output") or "", resp
 
 
+def _translate_row(engine_id, src_lang, tgt_lang, text, domain, attempts=2):
+    """Translate one row; return (hypothesis, failure_reason_or_None).
+
+    Defect D31: the response used to be discarded by the caller, so any engine
+    error collapsed into `resp.get("output") or ""` -- an empty hypothesis that
+    stayed inside `evaluated`, was scored as a bad translation, and let the report
+    call the run complete. On 2026-10-05 that turned 19 transient ollama failures
+    into five sixths of a published +0.0330 delta.
+
+    An empty output is treated as a failure whatever the response looks like, since
+    "the engine answered but produced nothing" is not a translation. Transient is
+    the common case (all 19 rows replay clean), so the row gets one retry before it
+    is recorded; the reason is taken from the response when it has one.
+    """
+    reason = "empty_output"
+    for _ in range(max(1, attempts)):
+        hyp, resp = _translate_via_ffi(engine_id, src_lang, tgt_lang, text, domain)
+        if hyp.strip():
+            return hyp, None
+        reason = (resp.get("error") or resp.get("status") or resp.get("reason")
+                  or "empty_output")
+    return "", reason
+
+
 # Reuse the CDLL loader without duplicating the argtypes dance: the shared
 # library is opened once per process and cached here so a whole corpus run
 # does not repeatedly dlopen.
@@ -260,9 +289,16 @@ def _load_engine_for_translate():
 
 
 def _run_one(engine_id, direction, src, tgt, domain=""):
-    """Translate the sentence set with one engine and return (hypotheses, metrics).
+    """Translate the sentence set with one engine.
 
-    Both arms of the domain control issue through the same builder
+    Returns (hypotheses, metrics, failures). `hypotheses` keeps one slot per source
+    row -- positions are how the two arms are compared row by row, so a row that
+    failed stays in place as an empty string rather than shifting every later id.
+    `failures` names those rows and why (defect D31), and `metrics` is computed over
+    the rows that actually answered: scoring an engine failure as a translation
+    measures the reliability of the endpoint, not the quality of the engine.
+
+    Both arms of the domain control issue through the same request builder
     (_translate_via_ffi), so `domain` is the only thing that differs between a
     baseline run and a scoped one. The unscoped arm used to
     take bench_translation's shared client, which meant the measured delta also
@@ -274,34 +310,52 @@ def _run_one(engine_id, direction, src, tgt, domain=""):
     and no built DLL."""
     src_lang, tgt_lang = direction.split("-")
     from bench_translation import score  # noqa: WPS433 (lazy)
-    hypotheses = [_translate_via_ffi(engine_id, src_lang, tgt_lang, line, domain)[0]
-                  for line in src]
+    hypotheses, failures = [], []
+    for index, line in enumerate(src):
+        hyp, reason = _translate_row(engine_id, src_lang, tgt_lang, line, domain)
+        hypotheses.append(hyp)
+        if reason is not None:
+            failures.append({"id": index, "reason": reason})
+    answered = [i for i, h in enumerate(hypotheses) if h.strip()]
     # bench_translation.score returns a (chrf, bleu) tuple, not a dict;
     # normalise it here so the evidence JSON has a stable shape that the
     # report generator can read. score_comet.py adds "comet" to the same
     # metrics dict after a live run.
-    chrf, bleu = score(hypotheses, tgt, tgt_lang)
+    chrf, bleu = score([hypotheses[i] for i in answered], [tgt[i] for i in answered],
+                       tgt_lang)
     metrics = {"chrF": chrf, "BLEU": bleu}
-    return hypotheses, metrics
+    return hypotheses, metrics, failures
 
 
-def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, domain=""):
+def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, domain="",
+                    failures=None, run_index=1):
     """Persist one engine's run so a later COMET pass or diff report can
     pick it up. Layout mirrors docs/evidence/flores-benchmark-*.json.
 
     The domain is folded into the filename (empty -> `av-domain-<engine>.json`,
     non-empty -> `av-domain-<engine>-<domain>.json`) so a baseline run and a
-    scoped run of the same engine coexist for the S12 T3 comparison pass."""
+    scoped run of the same engine coexist for the S12 T3 comparison pass.
+
+    `evaluated`/`scored` count the rows that produced a translation, not the rows
+    that were asked for (defect D31: 300/300 was reported while 19 were empty).
+    `run_index` is the repeat slot: 1 starts a fresh series -- stale repeats from an
+    older build must not pose as noise controls for this one -- while 2..n append to
+    `runs`, which is the array score_comet.py already iterates and the report can
+    average to separate a terminology effect from ollama's sampling noise."""
+    import json
+
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     tag = "-{}".format(domain) if domain else ""
     out = EVIDENCE_DIR / "av-domain-{}{}.json".format(engine_id, tag)
-    import json
+    answered = sum(1 for h in hypotheses if h.strip())
     run = {
         "engine": engine_id,
         "direction": direction,
         "domain": domain,
         "requested": n if n is not None else len(src),
-        "evaluated": len(src),
+        "evaluated": answered,
+        "scored": answered,
+        "failed": list(failures or []),
         "metrics": metrics,
         "samples": [
             {"id": i, "source": s, "reference": r, "hypothesis": h}
@@ -312,10 +366,17 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
     # (which iterates record.get("runs", []) and adds run["comet"] plus
     # run["comet_scores_per_sample"]) can score it. Same shape as
     # docs/evidence/flores-benchmark-*.json.
+    earlier = []
+    if run_index > 1 and out.exists():
+        try:
+            previous = json.loads(out.read_text(encoding="utf-8"))
+            earlier = list(previous.get("runs") or [])
+        except (ValueError, OSError):
+            earlier = []          # unreadable: start clean rather than lose the run
     payload = {
         "corpus": "av-domain",
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "runs": [run],
+        "runs": earlier + [run],
     }
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
@@ -335,11 +396,19 @@ def main(argv=None):
     src, tgt = load_pair(pair_dir, pair_prefix)
     if args.n is not None:
         src, tgt = src[:args.n], tgt[:args.n]
-    hypotheses, metrics = _run_one(args.engine, args.direction, src, tgt,
+    hypotheses, metrics, failures = _run_one(args.engine, args.direction, src, tgt,
                                     args.domain)
     out = _write_evidence(args.engine, args.direction, src, tgt,
-                          hypotheses, metrics, args.n, args.domain)
+                          hypotheses, metrics, args.n, args.domain,
+                          failures=failures, run_index=args.run_index)
     print("wrote", out)
+    if failures:
+        # Loud on purpose (D31): these rows are out of the denominators, so this run
+        # is not comparable to a clean one until the report says how many answered.
+        print("  %d of %d rows produced no translation and are excluded from the "
+              "metrics; ids=%s reasons=%s"
+              % (len(failures), len(src), [f["id"] for f in failures][:20],
+                 sorted({f["reason"] for f in failures})), file=sys.stderr)
     return 0
 
 
