@@ -194,6 +194,19 @@ jobs:
           tool: cargo-llvm-cov
       - name: Generate coverage
         run: cargo llvm-cov --release --lcov --output-path lcov.info
+      # `--lcov` replaces the default text summary, so the percentage never reached
+      # the job log and the ledger's "coverage figure still blank" could not be closed
+      # from CI. This rebuilds exactly the same table from the profdata the step above
+      # left on disk; it does not re-run the test suite.
+      - name: Coverage summary
+        run: cargo llvm-cov report --release
+      # Also keep the raw file: the Codecov upload below is not fail-closed, so an
+      # unconfigured token cannot be told apart from a passing upload in the log.
+      - name: Upload lcov artefact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-lcov
+          path: translator-engine/lcov.info
       - name: Upload coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:

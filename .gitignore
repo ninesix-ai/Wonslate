@@ -26,6 +26,7 @@ lt-data/
 .ci-data/
 TestResults/
 coverage/
+lcov.info
 *.tmp
 
 # Qoder / AI coding-agent metadata (hook state, finding ledger, run history);
