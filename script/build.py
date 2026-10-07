@@ -187,6 +187,8 @@ def run_ffi_smoke() -> int:
                  "test_ct2_sidecar.py", "test_bench_flores.py",
                  "test_bench_domain_av.py", "test_domain_pack_loader.py",
                  "test_install_glossary_pack.py",
+                 "test_score_comet.py",
+                 "test_run_av_baseline.py",
                  "test_xaml_lint.py",
                  "test_pre_commit_hook.py",
                  "test_glossary_hygiene.py",

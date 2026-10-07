@@ -84,6 +84,8 @@ jobs:
           python tests/test_bench_domain_av.py
           python tests/test_domain_pack_loader.py
           python tests/test_install_glossary_pack.py
+          python tests/test_score_comet.py
+          python tests/test_run_av_baseline.py
           python tests/test_xaml_lint.py
           python tests/test_pre_commit_hook.py
           python tests/test_glossary_hygiene.py
