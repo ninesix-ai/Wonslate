@@ -110,15 +110,11 @@ identifiers are stable anchors, the detail lives in the ledgers:
   client abandoned keeps decoding server-side, and there is no batch limit or reload.
 - `REQ-B2` — undecided scope: does the no-silent-degradation invariant cover the
   sidecar's public HTTP channel, or only the Rust pipeline?
-- `S12` — the Ollama-tier rerun is done and the quality-gain claim did not survive it; T2 (more
-  pairs) and T4 (larger corpus) remain, and a pack's value must not be judged by COMET alone.
-- `D32` — half closed. Injected terms are a confidence-sorted prefix, and because nearly every seed
-  row ties, that tie used to break on a freshly seeded hash order **per call** — same store, same
-  query, different window each request. Four store listings now carry a deterministic tie-break, so
-  the injected set is reproducible and `docs/sdk.md` promises an order callers may rely on. It is
-  still not input-relevant, and the fixed window covers fewer of a row's own terms than the random
-  one did, so a domain comparison cannot yet say what a pack is worth. Remaining fix: select the
-  terms actually present in the source text — `glossary.rs::build_context` already receives it.
+- `S12` — the Ollama-tier rerun is done and the quality-gain claim did not survive it, **but that
+  run predates D32**: its scoped arm injected a fixed pack prefix (0.09 relevant terms per row on
+  average), not the terms each sentence actually uses. Repeating it is worth doing now that
+  injection is input-aware. T2 (more pairs) and T4 (larger corpus) remain, and a pack's value must
+  not be judged by COMET alone.
 - `N-10` — microphone capture is missing; the voice chain runs on files only.
 - `F4` — cross-platform has not started; the client is Windows-only today.
 - `REQ-F5` — MCP covers the stdio server; SDK, Resources and authentication are open.
