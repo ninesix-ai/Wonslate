@@ -181,7 +181,13 @@ impl TmStore {
         let idx = self.tm_index.read()
             .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
         let mut v: Vec<&TmRecord> = idx.values().filter(|r| !r.flagged).collect();
-        v.sort_by_key(|r| std::cmp::Reverse(r.entry.hit_count));
+        // D32: a tie must not be settled by HashMap iteration, which restarts from a
+        // fresh random seed on every call. Hit counts repeat by the thousand on real
+        // memory, so without this the warmup set is drawn rather than chosen. The
+        // source text is unique per language pair but not across pairs, hence the hash.
+        v.sort_by(|a, b| b.entry.hit_count.cmp(&a.entry.hit_count)
+            .then_with(|| a.entry.source_text.cmp(&b.entry.source_text))
+            .then_with(|| a.source_hash.cmp(&b.source_hash)));
         Ok(v.into_iter().take(top_n).map(|r| r.entry.clone()).collect())
     }
 
@@ -198,7 +204,11 @@ impl TmStore {
                 && r.entry.source_text.to_lowercase().contains(&kw_lower))
             .collect();
         results.sort_by(|a, b| b.entry.quality.partial_cmp(&a.entry.quality)
-            .unwrap_or(std::cmp::Ordering::Equal));
+            .unwrap_or(std::cmp::Ordering::Equal)
+            // D32: distilled rows pile up on a handful of quality scores, so these
+            // few-shot rows -- which go straight into the prompt -- were being picked
+            // by iteration order. Distinct source texts are unique within a pair.
+            .then_with(|| a.entry.source_text.cmp(&b.entry.source_text)));
         Ok(results.into_iter().take(limit).map(|r| r.entry.clone()).collect())
     }
 
@@ -215,7 +225,11 @@ impl TmStore {
                 && r.entry.source_lang == source_lang
                 && r.entry.target_lang == target_lang)
             .collect();
-        v.sort_by_key(|r| std::cmp::Reverse(r.entry.hit_count));
+        // D32: same tie rule as `tm_top_by_hit` -- the UI manager's list must not
+        // reorder itself between refreshes while the user is working through it.
+        v.sort_by(|a, b| b.entry.hit_count.cmp(&a.entry.hit_count)
+            .then_with(|| a.entry.source_text.cmp(&b.entry.source_text))
+            .then_with(|| a.source_hash.cmp(&b.source_hash)));
         Ok(v.into_iter().take(limit).map(|r| r.entry.clone()).collect())
     }
 
@@ -259,10 +273,16 @@ impl TmStore {
             };
             if take { chosen.insert(key, r); }
         }
-        let mut v: Vec<&GlossaryRecord> = chosen.into_values().collect();
-        v.sort_by(|a, b| b.entry.confidence.partial_cmp(&a.entry.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal));
-        Ok(v.into_iter().take(limit).map(|r| r.entry.clone()).collect())
+        // D32: `chosen` is keyed by the lowercased source term, so carrying the key
+        // through the sort gives the tie a total order that does not depend on HashMap
+        // iteration. This is the one that mattered most: the pipeline asks for 20 rows
+        // and the shipped AV pack holds 264 of its 266 at one confidence, so which 20
+        // reached the prompt used to be redrawn on every single call.
+        let mut v: Vec<(String, &GlossaryRecord)> = chosen.into_iter().collect();
+        v.sort_by(|a, b| b.1.entry.confidence.partial_cmp(&a.1.entry.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0)));
+        Ok(v.into_iter().take(limit).map(|(_, r)| r.entry.clone()).collect())
     }
 
     pub fn glossary_upsert(&self, entry: &GlossaryEntry) -> Result<(), EngineError> {
