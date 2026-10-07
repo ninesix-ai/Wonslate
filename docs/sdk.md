@@ -201,16 +201,16 @@ int main(void) {
 | `tt_tm_lookup` | `char* tt_tm_lookup(text, source_lang, target_lang)` | 只查历史、绝不触发翻译：命中返回 **TmEntry JSON**，未命中返回字符串 `"null"` |
 | `tt_tm_put` | `char* tt_tm_put(const char* entry_json)` | 写入一条记忆对（§5.3），返回 Ack |
 | `tt_tm_flag_bad` | `char* tt_tm_flag_bad(text, source_lang, target_lang)` | 软删除（标坏）：不再命中、不再出现在列表，记录仍在磁盘；未知条目为无害空操作 |
-| `tt_tm_list` | `char* tt_tm_list(source_lang, target_lang, uint32_t limit)` | 返回 JSON 数组（按命中次数降序）；`limit` 会被夹到 1–1000 |
+| `tt_tm_list` | `char* tt_tm_list(source_lang, target_lang, uint32_t limit)` | 返回 JSON 数组（按命中次数降序，同次数按原文字典序，故同一库反复调用返回顺序一致）；`limit` 会被夹到 1–1000 |
 
 ### 4.4 术语表
 
 | 函数 | 原型 | 说明 |
 |---|---|---|
-| `tt_glossary_list` | `char* tt_glossary_list(source_lang, target_lang)` | 返回 JSON 数组（最多 500 条，按置信度降序） |
+| `tt_glossary_list` | `char* tt_glossary_list(source_lang, target_lang)` | 返回 JSON 数组（最多 500 条，按置信度降序、同置信度按术语字典序） |
 | `tt_glossary_upsert` | `char* tt_glossary_upsert(const char* entry_json)` | 新增 / 更新（§5.4）；`confidence` 以调用方为准，`source` 被强制标记为 `manual` |
 | `tt_glossary_delete` | `char* tt_glossary_delete(source_term, source_lang, target_lang)` | 按键删除，返回 Ack |
-| `tt_glossary_list_with_domain` | `char* tt_glossary_list_with_domain(source_lang, target_lang, domain, uint32_t limit)` | S11：按领域取术语行；`domain` 为空串等同只取泛域行（`tt_glossary_list` 即其 limit=500 的便捷形态） |
+| `tt_glossary_list_with_domain` | `char* tt_glossary_list_with_domain(source_lang, target_lang, domain, uint32_t limit)` | S11：按领域取术语行，排序与 `tt_glossary_list` 一致（置信度降序 → 术语字典序）；`domain` 为空串等同只取泛域行（`tt_glossary_list` 即其 limit=500 的便捷形态） |
 | `tt_glossary_import_pack` | `char* tt_glossary_import_pack(const char* pack_json)` | 导入领域术语包，返回 `{"ok":true,"imported":N}`；该路径**不经过**蒸馏的源语言守卫，故错标行仍能入库，由 `tests/test_glossary_hygiene.py` 兜 |
 
 ## 5. JSON 数据契约
