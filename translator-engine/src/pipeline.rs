@@ -37,6 +37,37 @@ fn with_domain_note(
     with_refusal(refused, with_refusal(domain, message))
 }
 
+/// Whether the requested domain shaped the reply, judged against **the engine that is
+/// about to serve it**.
+///
+/// D33: this judgement used to be taken once, from the local engine, and then re-used by
+/// the AI exit -- so a full-mode request that the model answered was reported as
+/// "engine 'madlad' does not accept term context; domain could not be applied" while the
+/// domain's terms were in fact sitting in the prompt that produced the text. A note about
+/// an engine that never ran is not a note about this response (REQ-B2), which is why every
+/// exit path asks for its own.
+fn scope_note_for(
+    req: &TranslateRequest,
+    plan: &router::RoutePlan,
+    engine_name: &str,
+    engine_accepts_terms: bool,
+    ctx: &glossary::GlossaryContext,
+) -> Option<String> {
+    if req.domain.is_empty() || !plan.use_glossary || !config::get().glossary_enabled {
+        return None;
+    }
+    // The row census behind the note is only taken for scoped requests, so an unscoped
+    // translate pays nothing for it.
+    glossary::scoped_note(
+        engine_name,
+        engine_accepts_terms,
+        &req.domain,
+        glossary::domain_has_rows(&req.source_lang, &req.target_lang, &req.domain)
+            .unwrap_or(false),
+        ctx,
+    )
+}
+
 /// Full-featured translation (TM + routing + distillation; recommended entry).
 pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, EngineError> {
     let t0 = Instant::now();
@@ -164,28 +195,16 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         glossary::GlossaryContext::empty()
     };
 
-    // S11 (REQ-B2): a caller that asked for a specific domain must be able to tell,
-    // from the response alone, whether that domain actually shaped the output. Three
-    // honest outcomes stay distinct: an engine that cannot act on term context is a
-    // capability gap, a domain with no rows of its own is a data gap, and a domain
-    // whose rows this sentence never mentions is neither of those (defect D32). The
-    // judgement lives in `glossary::scoped_note`, a pure function, so all three are
-    // reachable without a running engine. The row census behind it is only taken for
-    // scoped requests, so an unscoped translate pays nothing for it.
-    let domain_note: Option<String> = if !req.domain.is_empty()
-        && plan.use_glossary && config::get().glossary_enabled
-    {
-        glossary::scoped_note(
-            local_engine.name(),
-            local_engine.accepts_term_context(),
-            &req.domain,
-            glossary::domain_has_rows(&req.source_lang, &req.target_lang, &req.domain)
-                .unwrap_or(false),
-            &glossary_ctx,
-        )
-    } else {
-        None
-    };
+    // S11 (REQ-B2): a caller that asked for a specific domain must be able to tell, from
+    // the response alone, whether that domain actually shaped the output. Three honest
+    // outcomes stay distinct: an engine that cannot act on term context is a capability
+    // gap, a domain with no rows of its own is a data gap, and a domain whose rows this
+    // sentence never mentions is neither of those (defect D32). The judgement lives in
+    // `glossary::scoped_note`, a pure function, so all three are reachable without a
+    // running engine. This is the local exit's copy; the AI exit takes its own (D33).
+    let domain_note: Option<String> = scope_note_for(
+        &req, &plan, local_engine.name(), local_engine.accepts_term_context(), &glossary_ctx,
+    );
 
     let local_output = local_engine.translate_with_context(
         &req.input, &req.source_lang, &req.target_lang, &glossary_ctx,
@@ -308,6 +327,12 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         );
 
         if let Some(output) = ai_output {
+            // D33: the note is taken from this engine and the context actually sent to
+            // it (few-shot rows included), never from the local engine that escalated
+            // past. `domain_note` above still describes the local exit.
+            let ai_note = scope_note_for(
+                &req, &plan, ai_engine.name(), ai_engine.accepts_term_context(), &ai_ctx,
+            );
             let resp = TranslateResponse {
                 ok: true,
                 engine: ai_engine.name().into(),
@@ -319,7 +344,7 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
                 latency_ms: t0.elapsed().as_millis() as u64,
                 confidence: confidence::AI_UPGRADE_CONFIDENCE,
                 error: None,
-                message: with_domain_note(&refused_cache, &domain_note, None),
+                message: with_domain_note(&refused_cache, &ai_note, None),
             };
             // write to the TM
             if req.use_tm {
@@ -373,6 +398,12 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
             demo.translate_with_context(&req.input, &req.source_lang, &req.target_lang, &glossary_ctx)
         {
             let conf = confidence::estimate(&out, &req.input, "demo", 0.0, &req.target_lang);
+            // D33, second exit of it: demo is what answered, so demo is what the note has
+            // to describe. Re-using the local engine's judgement here blamed 'madlad' for
+            // a term context that 'demo' was handed and dropped on the floor.
+            let demo_note = scope_note_for(
+                &req, &plan, "demo", demo.accepts_term_context(), &glossary_ctx,
+            );
             return Ok(TranslateResponse {
                 ok: true,
                 engine: "demo".into(),
@@ -384,7 +415,7 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
                 latency_ms: t0.elapsed().as_millis() as u64,
                 confidence: conf,
                 error: None,
-                message: with_domain_note(&refused_cache, &domain_note, Some(format!(
+                message: with_domain_note(&refused_cache, &demo_note, Some(format!(
                     "engine '{}' produced no result, fell back to local demo",
                     plan.local_engine_id
                 ))),
