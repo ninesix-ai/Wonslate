@@ -62,6 +62,12 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    native library, `script/build.py` reports the suites that cross the FFI boundary as
    SKIP instead of FAIL, because the block is an environment condition and not a
    product defect. Say which suites skipped. Never call that run green.
+6. **`pipeline::translate_full` has several exits, and each must state its own facts.**
+   The domain note and the fallback note describe *the engine that answered*, so an exit
+   that re-uses a note computed for another engine is lying: that was D33, present on two
+   of the four returns, surviving the S11 wiring and every Rust test until the AI success
+   path got its first end-to-end case. If you add an exit, take its notes from the engine
+   named in that response's `engine` field, and add a case that reads them back.
 
 ## 4. Conventions and invariants
 
