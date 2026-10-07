@@ -47,6 +47,7 @@ import datetime
 import json
 import os
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -187,6 +188,10 @@ def build_arg_parser():
                              "noise (temperature 0.3, no seed)")
     parser.add_argument("--list", action="store_true",
                         help="print known pairs and how many lines each side has")
+    parser.add_argument("--glossary-pack", default=None,
+                        help="seed pack to grade terminology against (default: the "
+                             "in-repo pack for this direction). Reporting only -- it "
+                             "does not change what the engine injects")
     return parser
 
 
@@ -264,6 +269,73 @@ def _translate_row(engine_id, src_lang, tgt_lang, text, domain, attempts=2):
     return "", reason
 
 
+_ASCII_TERM = re.compile(r"^[\x00-\x7f]+$")
+
+
+def _term_used(text, term):
+    """Whether a hypothesis actually renders `term`.
+
+    English terms must appear as whole words: "segment" inside "segmentation" is a
+    different word, and counting it would flatter the engine and hide a real miss.
+    Non-ASCII terms keep substring semantics, since CJK has no word boundaries.
+    Case is ignored: packs list lowercase terms while sentences capitalise them.
+    """
+    if not term:
+        return False
+    low, needle = (text or "").lower(), term.lower()
+    if _ASCII_TERM.match(term.strip()):
+        return re.search(r"(?<![a-z0-9])" + re.escape(needle) + r"(?![a-z0-9])", low) is not None
+    return needle in low
+
+
+def measure_adherence(samples, pairs):
+    """How often a listed term was rendered as the term the pack prescribes.
+
+    Why this exists next to COMET: COMET grades overall quality, while a seed pack
+    promises one thing -- that a given source term comes out as a given target term.
+    Reporting only COMET makes "no measurable gain" and "the terminology never
+    arrived" look identical, and the 2026-10-07 audit had to reconstruct both from
+    throwaway scripts outside the repository (defect D31's tail; the window that
+    limits which terms can arrive at all is tracked separately).
+
+    `rate` is None when no row mentioned a pack term: "nothing to grade" must not
+    read as "0% adherent", the same discipline /languages uses for `supported`.
+    """
+    rows = opportunities = hits = 0
+    for sample in samples:
+        prescribed = [target for source, target in pairs
+                      if source and source in (sample.get("source") or "")]
+        if not prescribed:
+            continue
+        rows += 1
+        for target in prescribed:
+            opportunities += 1
+            hits += 1 if _term_used(sample.get("hypothesis"), target) else 0
+    return {"terms_in_pack": len(list(pairs)), "rows_with_terms": rows,
+            "opportunities": opportunities, "hits": hits,
+            "rate": (round(hits / opportunities, 6) if opportunities else None)}
+
+
+def load_pack_pairs(direction, pack_path=None):
+    """Read (source_term, target_term) pairs from a seed pack, for reporting only.
+
+    The engine's own injection is untouched by this. Default is the in-repo pack
+    shipped for the direction; an explicit path is how one measures a narrower set
+    (e.g. the rows that could actually reach a prompt) without editing the corpus.
+    A missing pack yields [] rather than an error: adherence is a report column, and
+    its absence must not abort a measurement run that is otherwise working.
+    """
+    path = pathlib.Path(pack_path) if pack_path else \
+        ROOT / "docs" / "glossary-packs" / "av-{}.json".format(direction)
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [(e.get("source_term"), e.get("target_term"))
+            for e in record.get("entries") or []
+            if e.get("source_term") and e.get("target_term")]
+
+
 # Reuse the CDLL loader without duplicating the argtypes dance: the shared
 # library is opened once per process and cached here so a whole corpus run
 # does not repeatedly dlopen.
@@ -328,7 +400,7 @@ def _run_one(engine_id, direction, src, tgt, domain=""):
 
 
 def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, domain="",
-                    failures=None, run_index=1):
+                    failures=None, run_index=1, adherence=None):
     """Persist one engine's run so a later COMET pass or diff report can
     pick it up. Layout mirrors docs/evidence/flores-benchmark-*.json.
 
@@ -356,6 +428,9 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
         "evaluated": answered,
         "scored": answered,
         "failed": list(failures or []),
+        # Terminology adherence over the whole pack for this direction, or None when
+        # no pack was readable. COMET alone cannot tell "no gain" from "never applied".
+        "term_adherence": adherence,
         "metrics": metrics,
         "samples": [
             {"id": i, "source": s, "reference": r, "hypothesis": h}
@@ -398,9 +473,14 @@ def main(argv=None):
         src, tgt = src[:args.n], tgt[:args.n]
     hypotheses, metrics, failures = _run_one(args.engine, args.direction, src, tgt,
                                     args.domain)
+    samples = [{"id": i, "source": s, "hypothesis": h}
+               for i, (s, h) in enumerate(zip(src, hypotheses))]
+    pairs = load_pack_pairs(args.direction, args.glossary_pack)
+    adherence = measure_adherence(samples, pairs) if pairs else None
     out = _write_evidence(args.engine, args.direction, src, tgt,
                           hypotheses, metrics, args.n, args.domain,
-                          failures=failures, run_index=args.run_index)
+                          failures=failures, run_index=args.run_index,
+                          adherence=adherence)
     print("wrote", out)
     if failures:
         # Loud on purpose (D31): these rows are out of the denominators, so this run
@@ -409,6 +489,19 @@ def main(argv=None):
               "metrics; ids=%s reasons=%s"
               % (len(failures), len(src), [f["id"] for f in failures][:20],
                  sorted({f["reason"] for f in failures})), file=sys.stderr)
+    if adherence is None:
+        # Terminology is the promise a seed pack makes, so say plainly when the run
+        # could not check it instead of leaving an empty column in the report.
+        print("  terminology not graded: no readable pack for %s "
+              "(--glossary-pack to point at one)" % (args.direction,), file=sys.stderr)
+    elif not adherence["opportunities"]:
+        print("  terminology: no pack term appeared in these sentences; rate is null, "
+              "not zero", file=sys.stderr)
+    else:
+        print("  terminology: %d/%d prescribed renderings over %d rows (pack %d terms) = %.3f"
+              % (adherence["hits"], adherence["opportunities"],
+                 adherence["rows_with_terms"], adherence["terms_in_pack"],
+                 adherence["rate"]))
     return 0
 
 

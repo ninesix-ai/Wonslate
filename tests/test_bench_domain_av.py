@@ -32,6 +32,7 @@ from bench_domain_av import (  # noqa: E402
     DEFAULT_AV_SUBDIR,
     AvDataNotFound,
     find_pair_dir,
+    measure_adherence,
     resolve_av_root,
 )
 
@@ -398,6 +399,100 @@ class EvidenceFailureFieldsTests(unittest.TestCase):
         record = self._read()
         self.assertEqual(len(record["runs"]), 1)
         self.assertEqual(record["runs"][0]["samples"][0]["hypothesis"], "x")
+
+
+class TermAdherenceTests(unittest.TestCase):
+    """D31's tail: a glossary must be graded on terminology, not only on COMET.
+
+    COMET measures overall quality; what a seed pack promises is that a specific
+    source term comes out as the specific target term. The 2026-10-07 audit found
+    COMET Delta=+0.0001 while term adherence sat at +0.000 on the rows where a term
+    could actually be injected -- a distinction that only exists if the harness
+    reports adherence at all. Until this ran, that number came from throwaway
+    scripts outside the repo, which is how a claim gets published that nobody can
+    re-measure (REQ-F3 keeps a standing note about exactly that).
+
+    Hermetic: pairs and hypotheses are literals; no DLL, no network, no model.
+    """
+
+    PAIRS = [("\u8bed\u97f3\u6d3b\u52a8\u68c0\u6d4b", "voice activity detection"),
+             ("\u6d41\u5f0f\u5408\u6210", "streaming synthesis"),
+             ("\u8bed\u6bb5", "segment")]
+
+    def test_counts_opportunities_and_hits_over_rows_that_mention_a_term(self):
+        samples = [
+            {"id": 0, "source": "\u542f\u7528\u8bed\u97f3\u6d3b\u52a8\u68c0\u6d4b\u3002",
+             "hypothesis": "Enable voice activity detection."},
+            {"id": 1, "source": "\u542f\u7528\u6d41\u5f0f\u5408\u6210\u3002",
+             "hypothesis": "Turn on streaming synthesis."},
+            {"id": 2, "source": "\u8fd9\u6bb5\u6ca1\u6709\u88ab\u6536\u5f55\u7684\u672f\u8bed\u3002",
+             "hypothesis": "This sentence has no listed term."},
+        ]
+        stats = measure_adherence(samples, self.PAIRS)
+        self.assertEqual(stats["rows_with_terms"], 2, "the third row mentions no pack term")
+        self.assertEqual(stats["opportunities"], 2)
+        self.assertEqual(stats["hits"], 2)
+        self.assertAlmostEqual(stats["rate"], 1.0, places=6)
+
+    def test_a_missing_target_term_is_a_miss_not_an_absence(self):
+        samples = [{"id": 0, "source": "\u542f\u7528\u6d41\u5f0f\u5408\u6210\u3002",
+                    "hypothesis": "Turn on continuous synthesis."}]
+        stats = measure_adherence(samples, self.PAIRS)
+        self.assertEqual(stats["opportunities"], 1)
+        self.assertEqual(stats["hits"], 0)
+        self.assertEqual(stats["rate"], 0.0)
+
+    def test_english_terms_match_as_words_not_as_substrings(self):
+        # "segment" inside "segmentation" must not count as using the prescribed
+        # translation, or the metric would flatter the engine and hide a real miss.
+        samples = [{"id": 0, "source": "\u8bed\u6bb5\u5207\u5f97\u592a\u788e\u3002",
+                    "hypothesis": "The segmentation is too fine."}]
+        stats = measure_adherence(samples, self.PAIRS)
+        self.assertEqual((stats["opportunities"], stats["hits"]), (1, 0))
+
+    def test_case_differences_do_not_count_against_terminology(self):
+        samples = [{"id": 0, "source": "\u542f\u7528\u8bed\u97f3\u6d3b\u52a8\u68c0\u6d4b\u3002",
+                    "hypothesis": "Enable Voice Activity Detection."}]
+        self.assertEqual(measure_adherence(samples, self.PAIRS)["hits"], 1)
+
+    def test_empty_hypothesis_still_counts_as_an_opportunity_missed(self):
+        # Rows the engine failed to translate (defect D31) must show up in this
+        # denominator as misses, not silently vanish: "no output" is the worst
+        # possible terminology adherence, and the counts say so either way.
+        samples = [{"id": 0, "source": "\u542f\u7528\u6d41\u5f0f\u5408\u6210\u3002",
+                    "hypothesis": ""}]
+        stats = measure_adherence(samples, self.PAIRS)
+        self.assertEqual((stats["opportunities"], stats["hits"], stats["rate"]), (1, 0, 0.0))
+
+    def test_no_pack_loaded_yields_zeroes_rather_than_a_fabricated_rate(self):
+        stats = measure_adherence([{"id": 0, "source": "x", "hypothesis": "y"}], [])
+        self.assertEqual(stats["opportunities"], 0)
+        self.assertIsNone(stats["rate"], "no opportunities is not 0% adherence")
+
+    def test_the_evidence_file_carries_the_block(self):
+        # The evidence file is what the report reads, so the block has to live there
+        # rather than only in stdout.
+        import bench_domain_av
+        import json
+        orig_dir = bench_domain_av.EVIDENCE_DIR
+        with tempfile.TemporaryDirectory() as d:
+            bench_domain_av.EVIDENCE_DIR = pathlib.Path(d)
+            try:
+                samples = [{"id": 0, "source": "启用流式合成。",
+                            "hypothesis": "streaming synthesis"}]
+                bench_domain_av._write_evidence(
+                    "argos", "zh-en", ["启用流式合成。"], ["Enable streaming synthesis."],
+                    ["streaming synthesis"], {"chrF": 1.0, "BLEU": 2.0}, None, "",
+                    adherence=measure_adherence(samples, self.PAIRS))
+                path = pathlib.Path(d) / "av-domain-argos.json"
+                rec = json.loads(path.read_text(encoding="utf-8"))
+            finally:
+                bench_domain_av.EVIDENCE_DIR = orig_dir
+        block = rec["runs"][0]["term_adherence"]
+        self.assertEqual(block["opportunities"], 1)
+        self.assertEqual(block["hits"], 1)
+        self.assertEqual(block["rate"], 1.0)
+        self.assertEqual(block["terms_in_pack"], len(self.PAIRS))
 
 
 if __name__ == "__main__":
