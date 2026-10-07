@@ -16,6 +16,11 @@ pub struct Config {
     pub tm_warmup_n: usize,
     pub tm_min_quality: f32,
     pub glossary_enabled: bool,
+    /// Budget for the terms injected into one translation. It is applied by
+    /// `glossary::build_context` *after* the pack is filtered down to the terms this
+    /// source text actually contains, so it is the only ceiling on that path: engines
+    /// consume whatever the context hands them. There used to be a second, hard-coded
+    /// limit of 20 inside the engines, which made any larger value here a no-op.
     pub glossary_max_terms: usize,
     pub distill_enabled: bool,
     /// Score an extracted term pair needs to be persisted as a glossary term (N-08).

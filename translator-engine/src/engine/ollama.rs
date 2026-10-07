@@ -250,7 +250,11 @@ impl OllamaTranslator {
         );
         if !glossary.is_empty() {
             prompt.push_str("\n\nUse these consistent term translations:");
-            for e in glossary.top_terms(20) {
+            // Every row the context carries, without a second ceiling here: the budget
+            // is `config.glossary_max_terms`, already applied by `build_context` after it
+            // filtered down to the terms this text actually uses. Cutting to a hard 20 on
+            // top of that made any larger setting silently do nothing (leftover of D32).
+            for e in &glossary.entries {
                 prompt.push_str(&format!("\n  {} → {}", e.source_term, e.target_term));
             }
             prompt.push_str("\n\nMaintain terminology consistency with the above.");
@@ -273,5 +277,30 @@ mod tests {
     fn clean_output_strips_fence() {
         let e = OllamaTranslator::default();
         assert_eq!(e.clean_output("```\nhello\n```"), "hello");
+    }
+
+    /// The engine must not impose its own smaller ceiling on top of the context it was
+    /// handed. `config.glossary_max_terms` is the budget, and `build_context` already
+    /// cuts to it; a second, hard-coded 20 here made any setting above 20 silently do
+    /// nothing -- the leftover after D32's first two fixes (same defect number).
+    #[test]
+    fn system_prompt_carries_every_term_it_was_given() {
+        use crate::types::GlossaryEntry;
+        let e = OllamaTranslator::default();
+        let ctx = GlossaryContext {
+            entries: (0..25).map(|i| GlossaryEntry {
+                source_term: format!("shu语{}", i), source_lang: "zh".into(),
+                target_term: format!("term{}", i), target_lang: "en".into(),
+                confidence: 0.9, frequency: 1, domain: "av".into(), source: "seed:av".into(),
+            }).collect(),
+        };
+        let prompt = e.build_system_prompt("Chinese to English", &ctx);
+        assert_eq!(25, ctx.entries.len(), "the fixture must really exceed 20 rows");
+        for i in 0..25 {
+            assert!(prompt.contains(&format!("term{}", i)),
+                "row {} never reached the prompt: the engine re-truncates the context, \
+                 so raising glossary_max_terms above its hard-coded limit does nothing",
+                i);
+        }
     }
 }

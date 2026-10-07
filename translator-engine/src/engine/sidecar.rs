@@ -67,7 +67,11 @@ impl SidecarTranslator {
             "text": text, "source": source, "target": target,
         });
         if !glossary.is_empty() {
-            let terms: Vec<_> = glossary.top_terms(20).iter().map(|e| {
+            // Pass the whole context through. The budget was applied upstream by
+            // `build_context`; a second hard-coded 20 here meant a larger
+            // `glossary_max_terms` never reached the service (leftover of D32). These
+            // backends ignore the array today, so the fix is about not lying on the wire.
+            let terms: Vec<_> = glossary.entries.iter().map(|e| {
                 serde_json::json!({ "src": e.source_term, "tgt": e.target_term })
             }).collect();
             payload["glossary"] = serde_json::Value::Array(terms);
@@ -189,5 +193,78 @@ mod tests {
         let url = spawn_mock_once("{\"unexpected\":\"field\"}");
         let t = e(url);
         assert_eq!(t.translate("hello", "en", "zh"), None, "无 text 字段应视为失败");
+    }
+
+    /// One-shot listener that hands the request body back to the test, so a case can
+    /// assert on what actually went over the wire; the mock above only drains it.
+    fn spawn_body_capture() -> (String, std::sync::mpsc::Receiver<String>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf: Vec<u8> = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    match stream.read(&mut chunk) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            buf.extend_from_slice(&chunk[..n]);
+                            let text = String::from_utf8_lossy(&buf).to_string();
+                            let head = match text.find("\r\n\r\n") {
+                                Some(h) => h,
+                                None => continue,
+                            };
+                            let want = text[..head].to_lowercase().lines()
+                                .find_map(|l| l.strip_prefix("content-length:")
+                                    .and_then(|v| v.trim().parse::<usize>().ok()))
+                                .unwrap_or(0);
+                            if text.len() - head - 4 >= want { break }
+                        }
+                    }
+                }
+                let body = String::from_utf8_lossy(&buf)
+                    .split_once("\r\n\r\n")
+                    .map(|(_, b)| b.to_string())
+                    .unwrap_or_default();
+                let _ = tx.send(body);
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 15\r\n\r\n{\"text\":\"done\"}");
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://127.0.0.1:{}", port), rx)
+    }
+
+    /// The sidecar leg had the same hard ceiling as the ollama one: `request` re-cut the
+    /// context with `top_terms(20)`, so a configured budget above 20 never reached the
+    /// service. Asserted on the wire rather than on a helper, because the truncation lived
+    /// in the serialisation step itself (defect D32, leftover of its first two fixes).
+    #[test]
+    fn translate_request_carries_every_term_in_the_context() {
+        use crate::types::GlossaryEntry;
+        let (url, rx) = spawn_body_capture();
+        let t = e(url);
+        let ctx = GlossaryContext {
+            entries: (0..25).map(|i| GlossaryEntry {
+                source_term: format!("yuan文{}", i), source_lang: "zh".into(),
+                target_term: format!("pair{}", i), target_lang: "en".into(),
+                confidence: 0.9, frequency: 1, domain: "av".into(), source: "seed:av".into(),
+            }).collect(),
+        };
+        assert_eq!(t.request("yuan文0", "zh", "en", &ctx).as_deref(), Some("done"),
+            "the mock must answer, or the body assertion below proves nothing");
+        let body = rx.recv_timeout(Duration::from_secs(5))
+            .expect("the server must read a request body");
+        let json: serde_json::Value = serde_json::from_str(&body)
+            .unwrap_or_else(|e| panic!("body must be JSON, got {:?}: {}", body, e));
+        let terms = json["glossary"].as_array()
+            .unwrap_or_else(|| panic!("no glossary array in {:?}", body));
+        assert_eq!(25, terms.len(),
+            "only {} of the 25 terms reached the sidecar: the engine re-truncates the \
+             context it was handed, so a budget above that hard limit does nothing",
+            terms.len());
+        assert_eq!(Some("pair24"), terms[24]["tgt"].as_str(),
+            "the rows that survive must be the ones the context held");
     }
 }

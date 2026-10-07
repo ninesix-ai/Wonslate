@@ -20,9 +20,10 @@ impl GlossaryContext {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
-    pub fn top_terms(&self, n: usize) -> &[GlossaryEntry] {
-        &self.entries[..n.min(self.entries.len())]
-    }
+
+    // Note: there is deliberately no `top_terms(n)` here any more. Truncation belongs to
+    // `build_context` (one budget, applied after filtering by the text); a second limit
+    // that engines could reach for is what made `glossary_max_terms` a no-op above 20.
 
     /// Share of glossary entries covered by text (0.0~1.0)
     pub fn coverage(&self, text: &str) -> f32 {
@@ -170,7 +171,7 @@ mod tests {
     fn empty_context_defaults() {
         let ctx = GlossaryContext::empty();
         assert!(ctx.is_empty());
-        assert_eq!(ctx.top_terms(10).len(), 0);
+        assert!(ctx.entries.is_empty());
         assert_eq!(ctx.coverage("任何文本"), 0.0);
     }
 
@@ -191,14 +192,6 @@ mod tests {
     fn coverage_is_case_insensitive_on_source_term() {
         let ctx = GlossaryContext { entries: vec![entry("hello world", "x", 0.9)] };
         assert!(ctx.coverage("HELLO WORLD is great") > 0.9);
-    }
-
-    #[test]
-    fn top_terms_truncates_to_n() {
-        let ctx = GlossaryContext { entries: (0..30).map(|i|
-            entry(&format!("t{}", i), &format!("e{}", i), 0.9)).collect() };
-        assert_eq!(ctx.top_terms(5).len(), 5);
-        assert_eq!(ctx.top_terms(100).len(), 30);   // asking for more than exists returns all
     }
 
     #[test]
