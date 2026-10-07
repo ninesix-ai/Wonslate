@@ -56,26 +56,95 @@ impl GlossaryContext {
     }
 }
 
-/// Fetch the most frequent / highest-confidence terms for the active pair and build this translation's context
+/// Fetch the terms this request actually needs and build its translation context.
 ///
-/// S11: `domain` now actually reaches the store. A non-empty request domain
-/// returns generic ∪ specific; an empty one returns only generic. This is the
-/// wiring that was missing before -- the field was parsed, stored and echoed
-/// back but never consumed on the read path.
+/// S11: `domain` reaches the store -- a non-empty request domain returns generic
+/// rows plus that domain's rows, an empty one returns only generic rows.
+/// D32: `text` is now read as well. Both halves of the seam were missing at first:
+/// the field was parsed, stored and echoed back but never consumed, and even after
+/// S11 wired the domain the injected set stayed a pack prefix that had nothing to
+/// do with the sentence being translated.
 pub fn build_context(
-    _text: &str,
+    text: &str,
     source_lang: &str,
     target_lang: &str,
     domain: &str,
     max_terms: usize,
 ) -> Result<GlossaryContext, EngineError> {
-    let entries = tm::glossary_list(source_lang, target_lang, domain, max_terms)?;
-    Ok(GlossaryContext { entries })
+    // Take the whole candidate set, keep only the rows this request mentions, and
+    // close the window last. Truncating first picks survivors out of a list built
+    // without ever reading the sentence: measured on the shipped AV pack, a fixed
+    // 20-of-266 prefix delivered at least one term of a sentence on just 25 of 300
+    // rows (0.09 terms per row, against 2.22 the pack really holds).
+    //
+    // Matching is substring on the lowercased source term, the same rule
+    // `coverage()` already uses, so a term written inside a longer compound still
+    // counts as present. A sentence matching nothing gets nothing: an unrelated but
+    // plausible list is what this fix exists to remove.
+    let pool = tm::glossary_list(source_lang, target_lang, domain, usize::MAX)?;
+    let lower = text.to_lowercase();
+    // The store already orders rows by confidence descending with a deterministic
+    // tie-break, and filtering preserves that order, so the truncation below keeps
+    // the strongest matches rather than the most conveniently stored ones.
+    let hits: Vec<GlossaryEntry> = pool.into_iter().filter(|e| {
+        let term = e.source_term.to_lowercase();
+        !term.is_empty() && lower.contains(&term)
+    }).collect();
+    Ok(GlossaryContext { entries: hits.into_iter().take(max_terms).collect() })
 }
 
 /// Upsert a term pair from distillation or manually
 pub fn upsert(entry: &GlossaryEntry) -> Result<(), EngineError> {
     tm::glossary_upsert(entry)
+}
+
+/// Whether this language pair holds any row of `domain` at all, whatever the current
+/// request says. The pipeline needs this to keep two honest states apart: a pack
+/// nobody ever imported, versus a pack from which this particular sentence matches
+/// nothing. Before D32 they shared one message, so a full domain could be reported
+/// as missing (defect D32, rule REQ-B2).
+pub fn domain_has_rows(
+    source_lang: &str, target_lang: &str, domain: &str,
+) -> Result<bool, EngineError> {
+    if domain.is_empty() {
+        return Ok(false);
+    }
+    // The whole candidate set, not a window: asking whether a domain has rows must
+    // not itself depend on which rows a limit happens to keep.
+    Ok(tm::glossary_list(source_lang, target_lang, domain, usize::MAX)?
+        .iter().any(|e| e.domain == domain))
+}
+
+/// The annotation a scoped request carries, as a pure function so every branch is
+/// reachable without a running engine. Three outcomes stay distinct: an engine that
+/// cannot use term context at all, a domain holding no rows, and a domain whose rows
+/// this sentence never mentions. The capability check comes first because it stays
+/// true even after rows are loaded.
+pub fn scoped_note(
+    engine_name: &str,
+    engine_accepts_terms: bool,
+    domain: &str,
+    pack_has_domain_rows: bool,
+    ctx: &GlossaryContext,
+) -> Option<String> {
+    if !engine_accepts_terms {
+        return Some(format!(
+            "engine '{}' does not accept term context; domain '{}' could not be applied",
+            engine_name, domain))
+    }
+    if !pack_has_domain_rows {
+        return Some(format!(
+            "domain '{}' has no specific terms loaded; served generic only", domain))
+    }
+    // A populated domain whose rows this sentence never mentions is neither of the
+    // above: nothing is missing from the pack and the engine can use terms, yet no
+    // scoped term was applied here. Calling that a missing pack would be a lie.
+    if !ctx.entries.iter().any(|e| e.domain == domain) {
+        return Some(format!(
+            "domain '{}' holds terms, but none of them occurs in this text; no scoped \
+             term applied", domain))
+    }
+    None
 }
 
 /// User-removed term pair

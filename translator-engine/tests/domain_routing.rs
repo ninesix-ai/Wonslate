@@ -270,4 +270,97 @@ fn import_pack_materialises_domain_entries() {
         "imported rows must carry source=seed:av so a reviewer can spot them");
 }
 
+// ---- D32: which terms reach the prompt, and what the reply says about it ----------
+//
+// These author the second half of defect D32. The store listing was made
+// deterministic first (see `listing_order.rs`); what stayed broken is that the
+// injected set ignored the text, so a request could carry a domain and still be
+// handed the top of a pack that this sentence never mentions. Each case uses its
+// own domain, so no row from another test can join a window and decide an assert.
+
+/// The injected set must be the terms this sentence actually uses, not the top of
+/// the pack: that is the difference between the pack being consulted at all and
+/// being consulted for this request.
+#[test]
+fn build_context_keeps_only_the_terms_this_sentence_uses() {
+    ensure_init();
+    tm::glossary_upsert(&entry("显存", "VRAM", "used")).unwrap();
+    tm::glossary_upsert(&entry("字幕", "subtitle", "used")).unwrap();
+
+    let ctx = glossary::build_context("请调整字幕", "zh", "en", "used", 10).unwrap();
+    let terms: Vec<&str> = ctx.entries.iter().map(|e| e.target_term.as_str()).collect();
+    assert!(terms.contains(&"subtitle"), "a term the text uses must be injected");
+    assert!(!terms.contains(&"VRAM"),
+        "a term the text never mentions must not ride along just because it sorts \
+         first in the pack: {:?}", terms);
+}
+
+/// Filtering has to happen before the window closes. Ask for fewer rows than the
+/// sentence matches and an implementation that truncates first then filters loses
+/// terms the request actually asked for -- the inverse of the bug being fixed.
+#[test]
+fn build_context_filters_before_it_truncates() {
+    ensure_init();
+    for (term, trans) in [("甲", "A"), ("乙", "B"), ("丙", "C"), ("丁", "D"), ("戊", "E")] {
+        tm::glossary_upsert(&entry(term, trans, "wide")).unwrap();
+    }
+    let ctx = glossary::build_context("甲乙丙丁戊", "zh", "en", "wide", 2).unwrap();
+    assert_eq!(2, ctx.entries.len(),
+        "the window must still truncate, but only out of the rows that matched");
+    assert!(ctx.entries.iter().all(|e| "甲乙丙丁戊".contains(e.source_term.as_str())),
+        "every injected row must be one this text contains: {:?}",
+        ctx.entries.iter().map(|e| e.source_term.as_str()).collect::<Vec<_>>());
+}
+
+/// A sentence that uses nothing from the pack gets nothing, rather than a
+/// plausible-looking unrelated list. Option 1C was chosen over falling back to a
+/// generic prefix, because that prefix is the noise this fix exists to remove.
+#[test]
+fn build_context_serves_nothing_when_the_sentence_uses_no_pack_term() {
+    ensure_init();
+    tm::glossary_upsert(&entry("时延", "latency", "none")).unwrap();
+    // Nonsense vowels: no real term can be a substring of them, so an empty result
+    // here can only mean "filtered", never "the pack happened to be empty".
+    let ctx = glossary::build_context("呜哇呀哟嘿", "zh", "en", "none", 10).unwrap();
+    assert!(ctx.entries.is_empty(),
+        "no term of this pack occurs in the text, so nothing may be injected: {:?}",
+        ctx.entries.iter().map(|e| e.source_term.as_str()).collect::<Vec<_>>());
+}
+
+/// An empty result means two different things and REQ-B2 refuses to merge them: the
+/// domain holds no rows at all, versus the domain has rows and this sentence matches
+/// none of them. Only the first is a data gap.
+#[test]
+fn domain_pack_rows_separate_an_empty_domain_from_an_unmatched_sentence() {
+    ensure_init();
+    tm::glossary_upsert(&entry("键程", "key travel", "filled")).unwrap();
+    assert!(glossary::domain_has_rows("zh", "en", "filled").unwrap(),
+        "a domain that holds a row must report as populated");
+    assert!(!glossary::domain_has_rows("zh", "en", "nobody-imported-this").unwrap(),
+        "a domain nobody ever imported must report as empty");
+}
+
+/// The three honest outcomes a scoped request can end in, asserted as data instead
+/// of through a running ollama. Order matters: a capability gap has to stay visible
+/// even after rows are loaded, which is why it is checked before either data case.
+#[test]
+fn scoped_note_names_the_capability_data_and_match_gaps_apart() {
+    let empty = glossary::GlossaryContext::empty();
+    let mut scoped = glossary::GlossaryContext::empty();
+    scoped.entries.push(entry("字幕", "subtitle", "av"));
+
+    assert!(glossary::scoped_note("demo", false, "av", true, &scoped).unwrap()
+        .contains("does not accept term context"),
+        "an engine that cannot use terms must be blamed before the data is");
+    assert!(glossary::scoped_note("ollama-qwen", true, "av", false, &empty).unwrap()
+        .contains("has no specific terms loaded"),
+        "a domain nobody imported is a data gap, and must keep the existing wording");
+    let note = glossary::scoped_note("ollama-qwen", true, "av", true, &empty).unwrap();
+    assert!(note.contains("occurs in this text"),
+        "a populated domain that this sentence matches none of is a third, distinct \
+         case, not a missing pack: {}", note);
+    assert!(glossary::scoped_note("ollama-qwen", true, "av", true, &scoped).is_none(),
+        "when the domain really did shape this reply, nothing is annotated");
+}
+
 

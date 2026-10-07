@@ -165,25 +165,24 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
     };
 
     // S11 (REQ-B2): a caller that asked for a specific domain must be able to tell,
-    // from the response alone, whether that domain actually shaped the output. Two
-    // honest outcomes stay distinct: a domain with no rows of its own is a data
-    // gap - legitimate on a fresh install - while an engine that cannot act on term
-    // context is a capability gap. The capability check comes first because it stays
-    // true even after rows are loaded.
+    // from the response alone, whether that domain actually shaped the output. Three
+    // honest outcomes stay distinct: an engine that cannot act on term context is a
+    // capability gap, a domain with no rows of its own is a data gap, and a domain
+    // whose rows this sentence never mentions is neither of those (defect D32). The
+    // judgement lives in `glossary::scoped_note`, a pure function, so all three are
+    // reachable without a running engine. The row census behind it is only taken for
+    // scoped requests, so an unscoped translate pays nothing for it.
     let domain_note: Option<String> = if !req.domain.is_empty()
         && plan.use_glossary && config::get().glossary_enabled
     {
-        if !local_engine.accepts_term_context() {
-            Some(format!(
-                "engine '{}' does not accept term context; domain '{}' could not be applied",
-                local_engine.name(), req.domain))
-        } else if !glossary_ctx.entries.iter().any(|e| e.domain == req.domain) {
-            Some(format!(
-                "domain '{}' has no specific terms loaded; served generic only",
-                req.domain))
-        } else {
-            None
-        }
+        glossary::scoped_note(
+            local_engine.name(),
+            local_engine.accepts_term_context(),
+            &req.domain,
+            glossary::domain_has_rows(&req.source_lang, &req.target_lang, &req.domain)
+                .unwrap_or(false),
+            &glossary_ctx,
+        )
     } else {
         None
     };
