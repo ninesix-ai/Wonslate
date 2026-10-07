@@ -112,8 +112,9 @@ identifiers are stable anchors, the detail lives in the ledgers:
   sidecar's public HTTP channel, or only the Rust pipeline?
 - `S12` — the Ollama-tier rerun is done and the quality-gain claim did not survive it; T2 (more
   pairs) and T4 (larger corpus) remain, and a pack's value must not be judged by COMET alone.
-- `D32` — only a fixed prefix of a domain pack can reach the prompt, chosen by storage order and
-  not by the terms a sentence contains, so most of a large pack is inert.
+- `D32` — the terms injected into a prompt are a confidence-sorted prefix, and nearly every
+  seed row ties on confidence, so the tie breaks on per-process hash order: which terms
+  arrive is neither input-relevant nor reproducible, and a domain comparison inherits that.
 - `N-10` — microphone capture is missing; the voice chain runs on files only.
 - `F4` — cross-platform has not started; the client is Windows-only today.
 - `REQ-F5` — MCP covers the stdio server; SDK, Resources and authentication are open.
