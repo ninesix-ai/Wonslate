@@ -63,6 +63,43 @@ def _fetch_checkpoint(model_name):
     return str(ckpt)
 
 
+def score_run(run, predict):
+    """Add COMET fields to one evidence run, scoring only the rows that got translated.
+
+    Defect D31: this pass used to hand every sample to the model, including rows
+    where the engine returned nothing. Those score near zero, so an arm that lost 19
+    of 300 sentences to transient endpoint failures read as a worse *translation*:
+    the published ollama delta of +0.0330 was five sixths that artifact (the paired
+    delta over the 281 rows both arms answered was +0.0058).
+
+    `predict(data)` takes a list of {src, mt, ref} dicts and returns one score per
+    input row, mirroring comet's `model.predict(...).scores` -- which is also what
+    lets the aggregation be tested with no model and no GPU.
+
+    `comet_scores_per_sample` keeps one slot per sample and puts None where a row was
+    not graded, so the two arms stay addressable by id. A run with nothing to grade
+    gets comet = None rather than 0.0: "no evidence" and "worst possible evidence"
+    must not share a value (the same discipline /languages applies to `supported`).
+    """
+    samples = run.get("samples") or []
+    answered = [i for i, s in enumerate(samples) if (s.get("hypothesis") or "").strip()]
+    per_sample = [None] * len(samples)
+    if answered:
+        data = [{"src": samples[i]["source"], "mt": samples[i]["hypothesis"],
+                 "ref": samples[i]["reference"]} for i in answered]
+        scores = list(predict(data))
+        if len(scores) != len(answered):
+            raise SystemExit("predict returned %d scores for %d rows"
+                             % (len(scores), len(answered)))
+        for pos, i in enumerate(answered):
+            per_sample[i] = round(float(scores[pos]), 4)
+    values = [v for v in per_sample if v is not None]
+    run["comet"] = round(statistics.mean(values), 4) if values else None
+    run["comet_scores_per_sample"] = per_sample
+    run["comet_scored"] = len(values)
+    return run
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Score COMET on evidence JSONs")
     parser.add_argument("evidence", nargs="+", help="evidence JSON file(s)")
@@ -89,17 +126,14 @@ def main(argv=None):
             samples = run.get("samples") or []
             if not samples:
                 continue
-            data = [{"src": s["source"], "mt": s["hypothesis"], "ref": s["reference"]}
-                    for s in samples]
-            result = model.predict(data, batch_size=args.batch_size, gpus=gpus,
-                                   progress_bar=False)
-            scores = result.scores
-            run["comet"] = round(statistics.mean(scores), 4)
-            run["comet_scores_per_sample"] = [round(s, 4) for s in scores]
+            score_run(run, lambda data: model.predict(
+                data, batch_size=args.batch_size, gpus=gpus,
+                progress_bar=False).scores)
             scored_directions += 1
-            print("[comet] {} {}  COMET={:.4f}  n={}".format(
+            print("[comet] {} {}  COMET={}  n={}".format(
                 run.get("engine", "?"), run.get("direction", "?"),
-                run["comet"], len(scores)), flush=True)
+                "n/a (nothing answered)" if run["comet"] is None else "%.4f" % run["comet"],
+                run.get("comet_scored", 0)), flush=True)
         record["comet_model"] = args.model
         # Reuse the atomic writer from bench_translation for the in-place update.
         from bench_translation import write_json
