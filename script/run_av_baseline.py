@@ -183,10 +183,11 @@ def install_pack() -> None:
 
 
 def run_bench(engine: str, direction: str, domain: str, n: int | None,
-              av_root: pathlib.Path | None = None) -> pathlib.Path:
+              av_root: pathlib.Path | None = None,
+              run_index: int = 1) -> pathlib.Path:
     """Invoke bench_domain_av once; return the evidence path it wrote."""
     cmd = [sys.executable, str(BENCH_PY), "--engine", engine,
-           "--direction", direction]
+           "--direction", direction, "--run-index", str(run_index)]
     if domain:
         cmd += ["--domain", domain]
     if n:
@@ -203,23 +204,27 @@ def run_bench(engine: str, direction: str, domain: str, n: int | None,
     return expected
 
 
-def run_bench_with_retry(engine, direction, domain, n, av_root, procs):
+def run_bench_with_retry(engine, direction, domain, n, av_root, procs, run_index=1):
     """Run bench_domain_av; if the sidecar crashed mid-bench, restart it and retry.
 
     madlad's 3B CT2 model can OOM on a 6 GB laptop GPU, especially when
     COMET loads its own model concurrently. By restarting the sidecar
     once on failure, the runner is robust to that transient condition
     without silently losing a whole engine's results.
+
+    A row-level failure is not this path's business: bench_domain_av retries such a
+    row itself and records what is left in `failed` (defect D31). Restarting the whole
+    arm for one flaky sentence would hide the very signal this runner needs.
     """
     try:
-        return run_bench(engine, direction, domain, n, av_root)
+        return run_bench(engine, direction, domain, n, av_root, run_index)
     except subprocess.CalledProcessError:
         port = SIDECAR_PORTS.get(engine)
         if port and not _sidecar_running(port):
             print(f"  [retry] {engine} sidecar died (port {port} gone); "
                   f"restarting and retrying bench...", flush=True)
             procs.append(_start_sidecar(engine, port))
-            return run_bench(engine, direction, domain, n, av_root)
+            return run_bench(engine, direction, domain, n, av_root, run_index)
         # sidecar is up but bench still failed -- re-raise
         raise
 
@@ -259,7 +264,8 @@ def _load_ranges() -> list[dict]:
     return data["ranges"]
 
 
-def _per_domain_means(run: dict | None, ranges: list[dict], key: str) -> list[float]:
+def _per_domain_means(run: dict | None, ranges: list[dict], key: str,
+                      allowed=None) -> list[float]:
     """Return per-range value of `key` (chrF / BLEU / comet).
 
     For `comet` we mean the parallel `comet_scores_per_sample` array that
@@ -267,6 +273,11 @@ def _per_domain_means(run: dict | None, ranges: list[dict], key: str) -> list[fl
     bench_translation.score on the range's slice so we get a real
     corpus-level number over ~25 sentences rather than an average of
     per-sample scores (which sacrebleu does not natively expose).
+
+    `allowed` is the set of row ids both arms translated (defect D31): without it the
+    two columns of one row are means over different row sets, and the sub-domain
+    table shows the same kind of artifact the headline once did. Rows the COMET pass
+    skipped are None and stay out of the mean.
 
     Missing evidence or a slice too short for BLEU returns NaN, which the
     renderer shows as `_无数据_`."""
@@ -282,7 +293,9 @@ def _per_domain_means(run: dict | None, ranges: list[dict], key: str) -> list[fl
         for rng in ranges:
             vals = [scores[s["id"]] for s in samples
                     if rng["start"] <= s.get("id", -1) + 1 <= rng["end"]
-                    and s.get("id", -1) < len(scores)]
+                    and s.get("id", -1) < len(scores)
+                    and (allowed is None or s.get("id") in allowed)]
+            vals = [v for v in vals if v is not None]
             out.append(statistics.fmean(vals) if vals else float("nan"))
         return out
     try:
@@ -292,7 +305,8 @@ def _per_domain_means(run: dict | None, ranges: list[dict], key: str) -> list[fl
     out = []
     for rng in ranges:
         subset = [s for s in samples
-                  if rng["start"] <= s.get("id", -1) + 1 <= rng["end"]]
+                  if rng["start"] <= s.get("id", -1) + 1 <= rng["end"]
+                  and (allowed is None or s.get("id") in allowed)]
         if not subset:
             out.append(float("nan"))
             continue
@@ -328,6 +342,123 @@ def _aggregate(path: pathlib.Path | None) -> dict | None:
     return runs[0]
 
 
+def _run_list(path: pathlib.Path) -> list:
+    """Every run inside one evidence file, in repeat order.
+
+    `runs` is an array on purpose: bench_domain_av writes repeat slots into it
+    (--run-index), so a second run of the same arm becomes a noise control instead of
+    overwriting the first. The pre-`runs` shape (a bare run at the top level) still
+    reads, and an unreadable file reads as "no evidence" rather than crashing the
+    report."""
+    if path is None or not path.exists():
+        return []
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return []
+    runs = record.get("runs")
+    if runs:
+        return list(runs)
+    if record.get("samples") or record.get("metrics"):
+        return [record]
+    return []
+
+
+def _answered(run, index) -> bool:
+    """Whether row `index` of a run actually produced a translation (defect D31)."""
+    samples = run.get("samples") or []
+    if index >= len(samples):
+        return False
+    return bool((samples[index].get("hypothesis") or "").strip())
+
+
+def _mean_of(runs, pick):
+    vals = [v for v in (pick(r) for r in runs) if v is not None]
+    return (sum(vals) / len(vals)) if vals else None
+
+
+def _spread(runs):
+    """Within-arm drift across repeats -- the noise floor for any delta."""
+    vals = [r.get("comet") for r in runs if r.get("comet") is not None]
+    return (max(vals) - min(vals)) if len(vals) >= 2 else None
+
+
+def _status(has_base, has_scope, failed_rows, delta, noise_floor) -> str:
+    """The verdict column, and the only place allowed to write 完整.
+
+    D31: this used to read `has_base and has_scope` -- two files exist -- and printed
+    ✅ 完整 for a run in which 19 of 300 rows had never been translated at all.
+    """
+    if not (has_base and has_scope):
+        return "⚠️ 缺臂（另一轮无证据）"
+    head = "✅ 完整" if failed_rows == 0 else \
+        "⚠️ %d 行未译出（已从指标剔除）" % failed_rows
+    if noise_floor is None:
+        tail = "；未复采，无噪声地板"
+    elif delta is None:
+        tail = "；Δ 未测（COMET 尚未打分）"
+    elif abs(delta) <= noise_floor:
+        tail = "；Δ 在噪声地板 ±%.4f 内，不足以归因" % noise_floor
+    else:
+        tail = "；Δ 超噪声地板 ±%.4f" % noise_floor
+    return head + tail
+
+
+def summarize_engine(engine, base_runs, scope_runs) -> dict:
+    """Compare one engine's two arms on the rows both of them translated.
+
+    Why paired (defect D31): the two arms' aggregates used to be subtracted directly,
+    so an arm that lost rows to transient engine failures had its mean taken over a
+    different -- and harder -- set of rows, and the gap between the two means was read
+    as a terminology effect. On 2026-10-05 that published COMET +0.0330 where the
+    paired difference over the 281 rows both arms answered was +0.0058.
+
+    Repeats pair up by index (repeat 1 against repeat 1) and the within-arm spread
+    across repeats becomes the noise floor: ollama runs at temperature 0.3 with no
+    seed, so a |Δ| inside that floor is not a result.
+    """
+    has_base, has_scope = bool(base_runs), bool(scope_runs)
+    base_comet = _mean_of(base_runs, lambda r: r.get("comet"))
+    scope_comet = _mean_of(scope_runs, lambda r: r.get("comet"))
+    base_chrf = _mean_of(base_runs, lambda r: (r.get("metrics") or {}).get("chrF"))
+    scope_chrf = _mean_of(scope_runs, lambda r: (r.get("metrics") or {}).get("chrF"))
+    failed_rows = sum(len(r.get("failed") or []) for r in base_runs + scope_runs)
+    floors = [f for f in (_spread(base_runs), _spread(scope_runs)) if f is not None]
+    noise_floor = max(floors) if floors else None
+
+    per_pair, paired_n = [], None
+    for b, s in zip(base_runs, scope_runs):
+        ids = [i for i in range(len(b.get("samples") or []))
+               if _answered(b, i) and _answered(s, i)]
+        if paired_n is None:
+            paired_n = len(ids)
+        sb = b.get("comet_scores_per_sample")
+        ss = s.get("comet_scores_per_sample")
+        if sb and ss:
+            diffs = [ss[i] - sb[i] for i in ids
+                     if i < len(sb) and i < len(ss)
+                     and sb[i] is not None and ss[i] is not None]
+            if diffs:
+                per_pair.append(sum(diffs) / len(diffs))
+    if per_pair:
+        delta = sum(per_pair) / len(per_pair)
+    elif base_comet is not None and scope_comet is not None:
+        delta = scope_comet - base_comet        # no per-sample scores yet
+    else:
+        delta = None
+    return {
+        "engine": engine,
+        "has_base": has_base, "has_scope": has_scope,
+        "base_comet": base_comet, "scope_comet": scope_comet,
+        "base_chrF": base_chrf, "scope_chrF": scope_chrf,
+        "delta_comet": delta, "paired_n": paired_n,
+        "failed_rows": failed_rows, "noise_floor": noise_floor,
+        "delta_paired": bool(per_pair),
+        "repeats": max(len(base_runs), len(scope_runs)),
+        "status": _status(has_base, has_scope, failed_rows, delta, noise_floor),
+    }
+
+
 def _metric(run, key):
     if not run:
         return None
@@ -348,8 +479,11 @@ def generate_report(args):
     uses that as a signal to exit non-zero in --report-only mode."""
     ranges = _load_ranges()
     engines = list(args.engines)
-    baselines = {e: _aggregate(EVIDENCE_DIR / f"av-domain-{e}.json") for e in engines}
-    scoped = {e: _aggregate(EVIDENCE_DIR / f"av-domain-{e}-av.json") for e in engines}
+    baseline_runs = {e: _run_list(EVIDENCE_DIR / f"av-domain-{e}.json") for e in engines}
+    scoped_runs = {e: _run_list(EVIDENCE_DIR / f"av-domain-{e}-av.json") for e in engines}
+    # The sub-domain tables read repeat 1 of each arm; the TL;DR averages every repeat.
+    baselines = {e: (baseline_runs[e][0] if baseline_runs[e] else None) for e in engines}
+    scoped = {e: (scoped_runs[e][0] if scoped_runs[e] else None) for e in engines}
     if not any(baselines.values()) and not any(scoped.values()):
         # Nothing measured yet -- refuse to overwrite the hand-authored
         # skeleton (which carries the four hypotheses, reproduction
@@ -365,19 +499,7 @@ def generate_report(args):
                   "with an empty table.")
             return []
 
-    summary = []
-    for e in engines:
-        base, scope = baselines[e], scoped[e]
-        b_comet, s_comet = _metric(base, "comet"), _metric(scope, "comet")
-        b_chrf, s_chrf = _metric(base, "chrF"), _metric(scope, "chrF")
-        delta = (s_comet - b_comet) if (b_comet is not None and s_comet is not None) else None
-        summary.append({
-            "engine": e,
-            "has_base": bool(base), "has_scope": bool(scope),
-            "base_comet": b_comet, "scope_comet": s_comet,
-            "base_chrF": b_chrf, "scope_chrF": s_chrf,
-            "delta_comet": delta,
-        })
+    summary = [summarize_engine(e, baseline_runs[e], scoped_runs[e]) for e in engines]
     args._evidence_note = _compute_evidence_note(baselines, scoped)
     _write_report(ranges, baselines, scoped, summary, args)
     return summary
@@ -396,11 +518,18 @@ def _fmt_pct(v):
 
 
 def _subdomain_rows(base: dict | None, scope: dict | None, ranges: list[dict]) -> list:
-    """Return (name, count, base_chrF, scope_chrF, base_comet, scope_comet) per range."""
-    b_ch = _per_domain_means(base, ranges, "chrF")
-    s_ch = _per_domain_means(scope, ranges, "chrF")
-    b_co = _per_domain_means(base, ranges, "comet")
-    s_co = _per_domain_means(scope, ranges, "comet")
+    """Return (name, count, base_chrF, scope_chrF, base_comet, scope_comet) per range.
+
+    Both columns of a row are restricted to the sentences both arms translated
+    (defect D31); with only one arm present there is nothing to pair against."""
+    allowed = None
+    if base and scope:
+        allowed = {i for i in range(len(base.get("samples") or []))
+                   if _answered(base, i) and _answered(scope, i)}
+    b_ch = _per_domain_means(base, ranges, "chrF", allowed)
+    s_ch = _per_domain_means(scope, ranges, "chrF", allowed)
+    b_co = _per_domain_means(base, ranges, "comet", allowed)
+    s_co = _per_domain_means(scope, ranges, "comet", allowed)
     rows = []
     for i, rng in enumerate(ranges):
         count = rng["end"] - rng["start"] + 1
@@ -422,15 +551,30 @@ def _write_report(ranges, baselines, scoped, summary, args) -> None:
         "",
         "## TL;DR",
         "",
-        "| 引擎 | 未接线 COMET | 接线 COMET (`--domain av`) | Δ | 未接线 chrF | 接线 chrF | 状态 |",
-        "|---|---|---|---|---|---|---|",
+        "| 引擎 | 未接线 COMET | 接线 COMET (`--domain av`) | Δ COMET | 配对 n | Δ chrF | 噪声地板 | 状态 |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for s in summary:
-        status = "✅ 完整" if (s["has_base"] and s["has_scope"]) else "⚠️ 部分"
+        chrf_delta = (s["scope_chrF"] - s["base_chrF"]
+                      if s["base_chrF"] is not None and s["scope_chrF"] is not None
+                      else None)
+        paired_n = "_无_" if s["paired_n"] is None else str(s["paired_n"])
+        floor = "_单次_" if s["noise_floor"] is None else "±%.4f" % s["noise_floor"]
         lines.append(f"| {s['engine']} | {_fmt(s['base_comet'])} | {_fmt(s['scope_comet'])} | "
-                     f"{_fmt_pct(s['delta_comet'])} | {_fmt(s['base_chrF'], 1, 2)} | "
-                     f"{_fmt(s['scope_chrF'], 1, 2)} | {status} |")
-    lines += ["", "## 分引擎逐子领域", ""]
+                     f"{_fmt_pct(s['delta_comet'])} | {paired_n} | "
+                     f"{_fmt_pct(chrf_delta)} | {floor} | {s['status']} |")
+    lines += [
+        "",
+        "> **Δ COMET 是配对差**：只取两臂都译出了该句的行逐句相减再取均值（defect D31——两臂各求"
+        "均值再相减，会把一臂的引擎失败算成另一臂的质量损失）。尚无逐句 COMET 分时退回两轮均值之差。",
+        "> **Δ chrF 是聚合差**（各自已译出行上的 corpus 值相减），非逐句配对，只作目测，不作披露口径。",
+        "> **噪声地板** = 同臂两次复采间的 COMET 均值差；|Δ| 落在地板内即不足以归因到术语。"
+        "`--repeats 1` 时无地板（状态列写“未复采”）。",
+        "> 子领域表读每臂**第 1 次复采**，且只统计两臂都译出的行。",
+        "",
+        "## 分引擎逐子领域",
+        "",
+    ]
     for e in engines:
         lines += [
             f"### {e}",
@@ -555,6 +699,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="first 20 pairs, skip COMET (smoke)")
     p.add_argument("--n", type=int, default=None,
                    help="limit to first N pairs per run (overrides --quick)")
+    p.add_argument("--repeats", type=int, default=1,
+                   help="run each arm this many times into the same evidence file. "
+                        "ollama answers at temperature 0.3 with no seed, so a single "
+                        "run per arm cannot separate a terminology effect from "
+                        "sampling noise: repeats give the noise floor (defect D31)")
     p.add_argument("--preflight-only", action="store_true",
                    help="check environment, then exit")
     p.add_argument("--report-only", action="store_true",
@@ -708,13 +857,14 @@ def _run_all(argv=None) -> int:
         evidence_files = []
         for engine in args.engines:
             for direction in DIRECTIONS:
-                base = run_bench_with_retry(
-                    engine, direction, "", n, av_root, procs)
-                evidence_files.append(base)
-                if not args.only_baseline:
-                    scoped = run_bench_with_retry(
-                        engine, direction, "av", n, av_root, procs)
-                    evidence_files.append(scoped)
+                for rep in range(1, max(1, args.repeats) + 1):
+                    base = run_bench_with_retry(
+                        engine, direction, "", n, av_root, procs, rep)
+                    evidence_files.append(base)
+                    if not args.only_baseline:
+                        scoped = run_bench_with_retry(
+                            engine, direction, "av", n, av_root, procs, rep)
+                        evidence_files.append(scoped)
         # Phase 2: kill sidecars to free GPU before COMET loads.
         for proc in procs:
             proc.terminate()
@@ -724,9 +874,10 @@ def _run_all(argv=None) -> int:
             except subprocess.TimeoutExpired:
                 proc.kill()
         procs.clear()
-        # Phase 3: COMET scoring (needs GPU, now free).
+        # Phase 3: COMET scoring (needs GPU, now free). Repeats live inside the same
+        # file, so score each artifact once -- score_comet.py walks `runs` itself.
         if not (args.skip_comet or args.quick):
-            for ev in evidence_files:
+            for ev in dict.fromkeys(evidence_files):
                 score_comet(ev)
         # Phase 4: report.
         summary = generate_report(args)
@@ -753,7 +904,10 @@ def _run_all(argv=None) -> int:
     for s in summary:
         print(f"  {s['engine']:<12s}  baseline COMET={_fmt(s['base_comet'])}"
               f"  scoped COMET={_fmt(s['scope_comet'])}"
-              f"  delta={_fmt_pct(s['delta_comet'])}")
+              f"  delta={_fmt_pct(s['delta_comet'])}"
+              f"  paired n={s['paired_n']}  repeats={s['repeats']}"
+              f"  failed rows={s['failed_rows']}")
+        print(f"  {'':<12s}  {s['status']}")
     print()
     print(f"report: {REPORT_PATH.relative_to(REPO.parent)}")
     print("review + commit:")
