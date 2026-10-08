@@ -135,7 +135,29 @@ fn ensure_init() -> Arc<Mutex<Vec<String>>> {
         std::env::set_var("LT_ARGOS_URL", "http://127.0.0.1:1");
         std::env::set_var("LT_MADLAD_URL", "http://127.0.0.1:1");
 
+        // The chain above only looks hermetic; it is not. Resolution order is
+        // `LT_*` > `WONSLATE_*` > bare, so a host that exports `LT_OLLAMA_URL` -- which is
+        // exactly how a developer points the engine at their own model server -- outranks
+        // the stub and every assertion below starts describing that machine instead of
+        // this one: on such a host the three cases here failed with `got: Fallback`,
+        // looking like a product regression in the AI upgrade path (defect D36). So pin all
+        // three spellings, and check below that the pin is what the engine really reads.
+        for (name, value) in [("LT_OLLAMA_URL", url.as_str()), ("OLLAMA_URL", url.as_str()),
+                              ("LT_DATA_DIR", dir.to_str().unwrap_or("")),
+                              ("DATA_DIR", dir.to_str().unwrap_or("")),
+                              ("LT_OLLAMA_TIMEOUT_MS", "3000"), ("OLLAMA_TIMEOUT_MS", "3000")] {
+            std::env::set_var(name, value);
+        }
+
         config::load();
+        // The guard is the part that makes this fail loudly here rather than as a
+        // confusing red suite somewhere else: if any ambient name still wins, say so now.
+        let cfg = config::get();
+        assert_eq!(cfg.ollama_url, url,
+            "this suite must dial its own stub; an ambient endpoint is in front of it");
+        assert_eq!(config::data_dir(), dir,
+            "the config must resolve inside the temp dir, or a deployment routes file \
+             decides the routing these cases assume");
         tm::init(&dir, 100, 10).expect("TM init failed");
         log
     }))
