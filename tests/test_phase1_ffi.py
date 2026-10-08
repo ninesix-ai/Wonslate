@@ -24,6 +24,7 @@ import ctypes
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -56,11 +57,63 @@ def _find_dll() -> pathlib.Path:
     )
 
 
+class _Export:
+    """One native function, seen through the call recorder.
+
+    Attribute access must not count as coverage: ``Engine.__init__`` declares
+    argtypes / restype for every export it knows about whether or not a case ever
+    calls it, so a recorder that logged declarations would report a full surface for
+    a run that only configured pointers. The name is recorded in ``__call__``; the
+    declaration writes are forwarded to the real function object untouched.
+    """
+
+    def __init__(self, name, fn, reached):
+        object.__setattr__(self, "_name", name)
+        object.__setattr__(self, "_fn", fn)
+        object.__setattr__(self, "_reached", reached)
+
+    def __call__(self, *args):
+        self._reached.add(self._name)
+        return self._fn(*args)
+
+    def __getattr__(self, item):
+        return getattr(self._fn, item)
+
+    def __setattr__(self, key, value):
+        if key.startswith("_"):
+            object.__setattr__(self, key, value)
+        else:
+            setattr(self._fn, key, value)
+
+
+class _Surface:
+    """The ctypes handle, handing out recorded wrappers for every ``tt_*`` name.
+
+    ``reached`` feeds the FFI-surface census at the end of the run, so the claim
+    "every export has a cross-language caller" comes out of this execution instead
+    of being asserted from a list maintained next to the tests.
+    """
+
+    def __init__(self, lib):
+        object.__setattr__(self, "_lib", lib)
+        object.__setattr__(self, "_reached", set())
+
+    @property
+    def reached(self):
+        return self._reached
+
+    def __getattr__(self, name):
+        fn = getattr(self._lib, name)          # a typo still raises AttributeError
+        if not name.startswith("tt_"):
+            return fn
+        return _Export(name, fn, self._reached)
+
+
 class Engine:
     """ctypes call wrapper; returned strings are freed automatically."""
 
     def __init__(self, dll_path: pathlib.Path):
-        self.lib = ctypes.cdll.LoadLibrary(str(dll_path))
+        self.lib = _Surface(ctypes.cdll.LoadLibrary(str(dll_path)))
         # declare every pointer return as c_void_p, otherwise ctypes bytes-izes it and the pointer is lost
         self.lib.tt_version.argtypes = []
         self.lib.tt_version.restype = ctypes.c_void_p
@@ -94,6 +147,19 @@ class Engine:
         self.lib.tt_engines.restype = ctypes.c_void_p
         self.lib.tt_health.argtypes = []
         self.lib.tt_health.restype = ctypes.c_void_p
+        # S11's two newest exports. They had a .NET caller and a dedicated loader
+        # suite, so nothing shipped broken -- but this file is the one the CI job
+        # names as the FFI smoke test while reaching 16 of the 18 exports.
+        self.lib.tt_glossary_list_with_domain.argtypes = [
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        self.lib.tt_glossary_list_with_domain.restype = ctypes.c_void_p
+        self.lib.tt_glossary_import_pack.argtypes = [ctypes.c_char_p]
+        self.lib.tt_glossary_import_pack.restype = ctypes.c_void_p
+
+    @property
+    def reached(self) -> set:
+        """Which exports this run has actually called, filled in as it goes."""
+        return self.lib.reached
 
     def _take(self, ptr) -> str:
         """Read the string from a c_void_p and free it; a null pointer returns empty."""
@@ -171,6 +237,20 @@ class Engine:
 
     def health(self) -> dict:
         return json.loads(self._take(self.lib.tt_health()) or "{}")
+
+    def glossary_list_with_domain(self, src: str, tgt: str, domain: str,
+                                  limit: int = 100) -> list:
+        raw = self._take(self.lib.tt_glossary_list_with_domain(
+            src.encode("utf-8"), tgt.encode("utf-8"), domain.encode("utf-8"), limit
+        ))
+        parsed = json.loads(raw or "[]")
+        return parsed if isinstance(parsed, list) else []
+
+    def glossary_import_pack(self, pack: dict) -> dict:
+        return json.loads(self._take(
+            self.lib.tt_glossary_import_pack(
+                json.dumps(pack, ensure_ascii=False).encode("utf-8"))
+        ) or "{}")
 
 
 # ---------- Assertion helpers ----------
@@ -378,6 +458,54 @@ def test_malformed_glossary_payload_is_structured(eng: Engine, ck: Checker):
         ck.ok(f"malformed glossary payload returned a structured error: {r['error']}")
     else:
         ck.fail("malformed glossary payload must report an error", f"got {r}")
+
+
+def test_domain_scoped_reads_and_pack_import(eng: Engine, ck: Checker):
+    """S11's two newest exports over the same boundary an agent would use.
+
+    A non-empty domain returns generic rows plus that domain's rows and nothing else,
+    and an untagged pack is refused -- the refusal is what stops a seed file from
+    quietly becoming the user's global glossary.
+    """
+    src, tgt = "zhs11", "ens11"          # own language pair: other checks write zh/en
+    pack = {
+        "domain": "av", "source_lang": src, "target_lang": tgt,
+        "entries": [
+            {"source_term": "混音器", "target_term": "mixer"},
+            {"source_term": "采样率", "target_term": "sample rate"},
+        ],
+    }
+
+    ack = eng.glossary_import_pack(pack)
+    if not (ack.get("ok") and ack.get("imported") == 2):
+        ck.fail("tt_glossary_import_pack", f"ack={ack}")
+        return
+    ck.ok("tt_glossary_import_pack imported both rows of a tagged pack")
+
+    scoped = eng.glossary_list_with_domain(src, tgt, "av", 100)
+    generic = eng.glossary_list_with_domain(src, tgt, "", 100)
+    terms = sorted(e.get("source_term") for e in scoped)
+    if terms != sorted(p["source_term"] for p in pack["entries"]):
+        ck.fail("tt_glossary_list_with_domain", f"scoped read returned {terms}")
+        return
+    if generic:
+        ck.fail("domain rows must stay out of a generic read", f"got {generic}")
+        return
+    ck.ok("a scoped read sees the pack, a generic read does not")
+
+    stamped = [e for e in scoped if e.get("source") == "seed:av"]
+    if len(stamped) == len(scoped):
+        ck.ok("imported rows carry source=seed:av so a reviewer can spot them")
+    else:
+        ck.fail("pack provenance", f"{len(stamped)}/{len(scoped)} stamped: {scoped}")
+
+    untagged = dict(pack)
+    untagged["domain"] = ""
+    bad = eng.glossary_import_pack(untagged)
+    if bad.get("ok") is False and bad.get("error"):
+        ck.ok(f"an untagged pack is refused with a reason: {bad['error']}")
+    else:
+        ck.fail("untagged pack must be refused", f"got {bad}")
 
 
 def test_config_json_shape(eng: Engine, ck: Checker):
@@ -736,6 +864,44 @@ def test_bad_input_handled(eng: Engine, ck: Checker):
         ck.fail("malformed input must report an error", f"got {r}")
 
 
+# ---------- FFI surface census ----------
+
+def test_every_export_is_reached_across_the_abi(eng: Engine, ck: Checker):
+    """The claim REQ-F3 used to write as a coverage number, `lib.rs FFI >=80%`.
+
+    No measurement can move that number. llvm-cov instruments the binary `cargo test`
+    builds, while lib.rs is exercised by Python ctypes and .NET P/Invoke loading the
+    compiled cdylib -- outside the instrumented process -- so the file reports 0.00%
+    however much of it the cross-language suites actually cover. A target no tool can
+    measure is not a target. This is the decidable version of the same intent: every
+    `#[no_mangle] extern "C"` export in lib.rs must have been called by this run.
+
+    Stated limit: it proves each export is reachable across the ABI and answered, not
+    that the deepest branch inside it ran -- that stays the job of the Rust suites.
+    """
+    lib_rs = (pathlib.Path(__file__).resolve().parents[1]
+              / "translator-engine" / "src" / "lib.rs")
+    try:
+        source = lib_rs.read_text(encoding="utf-8")
+    except OSError as e:
+        ck.fail("ffi surface census", f"cannot read {lib_rs}: {e}")
+        return
+
+    exports = set(re.findall(r'pub extern "C" fn (tt_\w+)', source))
+    if not exports:
+        ck.fail("ffi surface census",
+                f"no exports parsed out of {lib_rs} -- the census regex and lib.rs "
+                "have drifted apart, which would make this check vacuous")
+        return
+
+    unreached = sorted(exports - eng.reached)
+    if unreached:
+        ck.fail("every export has a cross-language caller",
+                f"{len(unreached)} of {len(exports)} never called in this run: {unreached}")
+    else:
+        ck.ok(f"all {len(exports)} exports were called across the C ABI in this run")
+
+
 # ---------- Main flow ----------
 
 def main() -> int:
@@ -786,6 +952,7 @@ def main() -> int:
         test_tm_write_list_flag_bad_cycle(eng, ck)
         test_glossary_upsert_list_delete_cycle(eng, ck)
         test_malformed_glossary_payload_is_structured(eng, ck)
+        test_domain_scoped_reads_and_pack_import(eng, ck)
 
         _p("")
         _p("== settings / routing configuration (D15) ==")
@@ -798,6 +965,10 @@ def main() -> int:
         store.cleanup()
         _p("")
         _p("[tt_shutdown called]")
+
+    # Last, so the census sees the whole run including the shutdown above. A suite
+    # that declares an export but never calls it must not be allowed to count.
+    test_every_export_is_reached_across_the_abi(eng, ck)
 
     return ck.summary()
 
