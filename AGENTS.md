@@ -61,7 +61,11 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    the suite asked for. Never hand-write a `set_var` chain again, and never leave the data
    directory unpinned -- an unpinned `DATA_DIR` reads the developer's `routes.json`, which
    decides routing for you. Assert positions relative to the test file, and resolve both
-   sides of the comparison.
+   sides of the comparison. The cost of leaving a slot unpinned is not only a flaky test: it
+   moves the coverage number too, and it can move it *up* -- a file measured against a live
+   engine covers branches that no test reaches deterministically, so the flattering figure is
+   describing the machine. The measured before/after and the uncovered path this exposed live
+   in `REQ-F3`'s coverage rows and `REQ-A2`'s open item.
 4. **Glossary seed packs bypass the Rust source-language guard.** Import arrives
    through `tt_glossary_import_pack` and never passes `distill/term_extractor.rs`, so
    a mis-labelled row can still enter the store and the extractor's check will not
