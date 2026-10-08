@@ -22,6 +22,8 @@
 use std::sync::OnceLock;
 use translator_engine::{config, tm, types::*};
 
+mod hermetic;
+
 /// Isolated temp dir, same shape as `domain_routing.rs::ensure_init`. The tests
 /// below use their own language pairs so nothing from other suites can join a
 /// window and make a truncation assertion depend on test execution order.
@@ -33,10 +35,14 @@ fn ensure_init() {
         std::fs::create_dir_all(&dir).ok();
         let _ = std::fs::remove_file(dir.join("translator_tm.json"));
         let _ = std::fs::remove_file(dir.join("glossary.json"));
-        std::env::set_var("LT_ARGOS_URL", "http://127.0.0.1:1");
-        std::env::set_var("LT_MADLAD_URL", "http://127.0.0.1:1");
+        // This file is about the store's ordering rules, so nothing here may be decided
+        // by the machine: own data directory, every engine slot unreachable, every tuning
+        // knob at the shipped default (`tests/hermetic/mod.rs`, defect D36).
+        let spec = hermetic::Spec::new(&dir);
+        spec.apply();
         config::load();
         tm::init(&dir, 100, 10).expect("TM init failed");
+        spec.verify();
     });
 }
 

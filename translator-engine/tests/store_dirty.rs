@@ -21,6 +21,8 @@
 use std::sync::{Mutex, OnceLock};
 use translator_engine::{config, tm, types::*};
 
+mod hermetic;
+
 /// Serialize the cases: they share one counter and one index, so the second writer
 /// would move the number the first is asserting. A lock keeps each measurement alone
 /// without dictating an execution order.
@@ -34,12 +36,15 @@ fn store_dir() -> &'static std::path::PathBuf {
         std::fs::create_dir_all(&dir).expect("create temp dir");
         let _ = std::fs::remove_file(dir.join("translator_tm.json"));
         let _ = std::fs::remove_file(dir.join("glossary.json"));
-        std::env::set_var("WONSLATE_DATA_DIR", &dir);
-        std::env::set_var("LT_ARGOS_URL", "http://127.0.0.1:1");
-        std::env::set_var("LT_MADLAD_URL", "http://127.0.0.1:1");
-        std::env::set_var("LT_OLLAMA_URL", "http://127.0.0.1:1");
+        // Both counters under test here are process-global, and both are durability
+        // promises: the dirty threshold is what gets a session's writes onto disk without
+        // a clean shutdown. Nothing about that may depend on the machine, so the whole
+        // environment is pinned and then asserted (`tests/hermetic/mod.rs`, defect D36).
+        let spec = hermetic::Spec::new(&dir);
+        spec.apply();
         config::load();
         tm::init(&dir, 500, 10).expect("TM init failed");
+        spec.verify();
         dir
     })
 }

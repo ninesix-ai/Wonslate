@@ -19,6 +19,8 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use translator_engine::{config, pipeline, tm, types::*};
 
+mod hermetic;
+
 fn ensure_init() {
     static INIT: OnceLock<PathBuf> = OnceLock::new();
     INIT.get_or_init(|| {
@@ -29,35 +31,20 @@ fn ensure_init() {
         let _ = std::fs::remove_file(dir.join("glossary.json"));
 
         // Every engine that could take this request is unreachable, so the demo fallback
-        // is the only thing that can answer. A closed port fails the connect immediately,
-        // which keeps the case fast instead of waiting out three timeouts.
-        std::env::set_var("WONSLATE_DATA_DIR", &dir);
-        std::env::set_var("WONSLATE_OLLAMA_URL", "http://127.0.0.1:1");
-        std::env::set_var("WONSLATE_OLLAMA_TIMEOUT_MS", "500");
-        std::env::set_var("LT_ARGOS_URL", "http://127.0.0.1:1");
-        std::env::set_var("LT_MADLAD_URL", "http://127.0.0.1:1");
-
+        // is the only thing that can answer -- the whole subject of this file. A closed
+        // port fails the connect immediately, which keeps the case fast instead of waiting
+        // out three timeouts.
+        //
         // Same trap as `ai_upgrade_e2e` (defect D36): `LT_*` beats `WONSLATE_*`, so on a
-        // host that exports its own AI endpoint the "nothing is reachable" premise above
-        // silently stops being true and demo never gets the request -- this suite's whole
-        // subject. Pin every spelling, then assert the engine actually reads the dead one.
-        let dead = "http://127.0.0.1:1";
-        for name in ["LT_OLLAMA_URL", "OLLAMA_URL"] {
-            std::env::set_var(name, dead);
-        }
-        for name in ["LT_DATA_DIR", "DATA_DIR"] {
-            std::env::set_var(name, dir.to_str().unwrap_or(""));
-        }
-        for name in ["LT_OLLAMA_TIMEOUT_MS", "OLLAMA_TIMEOUT_MS"] {
-            std::env::set_var(name, "500");
-        }
+        // host that exports its own AI endpoint the premise above silently stopped being
+        // true and demo never got the request. `Spec` pins every spelling, clears every
+        // knob this suite does not name, and `verify()` fails by name if the host wins.
+        let spec = hermetic::Spec::new(&dir);
+        spec.apply();
 
         config::load();
-        assert_eq!(config::get().ollama_url, dead,
-            "an ambient AI endpoint must not sit in front of the dead pin");
-        assert_eq!(config::data_dir(), dir,
-            "the routing these cases assume must come from the temp dir");
         tm::init(&dir, 100, 10).expect("TM init failed");
+        spec.verify();
         dir
     });
 }

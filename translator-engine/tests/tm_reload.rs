@@ -25,6 +25,8 @@ use std::sync::OnceLock;
 use serde_json::{json, Value};
 use translator_engine::{config, tm, types::*};
 
+mod hermetic;
+
 /// One fixture TM row, written the way a previous process would have written it.
 fn tm_record(text: &str, src: &str, tgt: &str, target: &str, quality: f32,
              hits: u32, domain: &str, flagged: bool) -> Value {
@@ -65,8 +67,11 @@ fn seeded_store() -> &'static PathBuf {
         let _ = std::fs::remove_file(dir.join("glossary.json"));
 
         // No engine can be reached from here: the store is under test, not the routing.
-        std::env::set_var("LT_ARGOS_URL", "http://127.0.0.1:1");
-        std::env::set_var("LT_MADLAD_URL", "http://127.0.0.1:1");
+        // The data directory is pinned too, because "what survives a reload" is a question
+        // about *this* fixture -- a host that exported a data directory would have the
+        // suite read someone else's memory (defect D36, `tests/hermetic/mod.rs`).
+        let spec = hermetic::Spec::new(&dir);
+        spec.apply();
 
         // One language pair per concern below, so a case cannot be decided by another
         // case's writes -- these tests run on parallel threads inside one store.
@@ -111,6 +116,7 @@ fn seeded_store() -> &'static PathBuf {
 
         config::load();
         tm::init(&dir, 100, 2).expect("TM init failed");
+        spec.verify();
         dir
     })
 }

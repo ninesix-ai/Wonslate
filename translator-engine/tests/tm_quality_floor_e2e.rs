@@ -23,6 +23,8 @@
 use std::sync::OnceLock;
 use translator_engine::{config, pipeline, tm, types::*};
 
+mod hermetic;
+
 const LOCAL_QUALITY: f32 = 0.88;
 const AI_QUALITY: f32 = 0.95;
 
@@ -53,15 +55,43 @@ fn ensure_init() {
 
         // Quality-first, expressed the way a settings file would express it. Read at
         // load time, which is why this test binary owns its own process.
-        std::env::set_var("WONSLATE_QUALITY_PREFERENCE", "quality_first");
-        // ...and an upgrade engine that is reachable, or the floor must not be enforced.
+        //
+        // Every other spelling of every other knob is pinned or cleared here, and the
+        // file's own premise is then asserted: this suite needs an upgrade engine that is
+        // *reachable but silent* (the stub below). Pinning only `WONSLATE_OLLAMA_URL` did
+        // not deliver that -- a host `LT_OLLAMA_URL` outranks it and the refusal branch
+        // stops being reachable at all (defect D36, second sighting: ambient shell 5
+        // passed / 1.35 s, hostile shell 1 failed / 0.21 s, i.e. a different code path).
+        // The sidecar slots are pinned dead too, because on a development box argos and
+        // madlad are usually running and would answer as the "local" engine, which is not
+        // the machine CI runs this on.
         let port = spawn_stub_upgrade_engine();
-        std::env::set_var("WONSLATE_OLLAMA_URL", format!("http://127.0.0.1:{port}"));
-        // The stub never answers a request, so keep a failure fast even if it is reached.
-        std::env::set_var("WONSLATE_OLLAMA_TIMEOUT_MS", "500");
+        let url = format!("http://127.0.0.1:{}", port);
+        let spec = hermetic::Spec::new(&dir)
+            .quality_first()
+            .ai_at(&url);
+        spec.apply();
 
         config::load();
         tm::init(&dir, 100, 10).expect("TM init failed");
+        spec.verify();
+        // The stub never answers a request, so a reached engine must fail fast: the 500 ms
+        // the Spec pins beats the shipped 120 s, and the resolved value is what matters.
+        assert_eq!(
+            config::get().ollama_timeout_ms, 500,
+            "a suite whose stub never answers must not wait out the shipped timeout"
+        );
+        assert_eq!(
+            config::get().routing.full.tm_quality_floor, AI_QUALITY,
+            "the floor this suite studies must be the one quality_first maps to, \
+             not a host override of it"
+        );
+        assert_eq!(
+            config::get().routing.full.upgrade_threshold,
+            config::Config::default().routing.full.upgrade_threshold,
+            "the upgrade threshold has to stay at the shipped value, or the refusal \
+             asserted below is a different decision"
+        );
     });
 }
 

@@ -14,6 +14,8 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use serde_json::{json, Value};
 
+mod hermetic;
+
 struct Server {
     child: Child,
     stdin: ChildStdin,
@@ -32,16 +34,21 @@ impl Server {
         let _ = std::fs::remove_file(dir.join("data/translator_tm.json"));
         let _ = std::fs::remove_file(dir.join("data/glossary.json"));
 
-        let mut child = Command::new(env!("CARGO_BIN_EXE_wonslate-mcp"))
-            // Pin every routing outcome the same way tests/pipeline_e2e.rs does:
-            // dead sidecar/AI endpoints so a developer running Ollama or a
-            // sidecar locally cannot flip assertions, and the low_confidence
-            // upgrade policy so full mode cannot wander onto the network.
-            .env("WONSLATE_DATA_DIR", &dir)
-            .env("WONSLATE_FULL_UPGRADE_POLICY", "low_confidence")
-            .env("LT_OLLAMA_URL", "http://127.0.0.1:1")
-            .env("LT_ARGOS_URL", "http://127.0.0.1:1")
-            .env("LT_MADLAD_URL", "http://127.0.0.1:1")
+        let mut command = Command::new(env!("CARGO_BIN_EXE_wonslate-mcp"));
+        // Pin every routing outcome the same way tests/pipeline_e2e.rs does: dead
+        // sidecar/AI endpoints so a developer running Ollama or a sidecar locally cannot
+        // flip assertions, and the low_confidence upgrade policy so full mode cannot
+        // wander onto the network.
+        //
+        // The child inherits this process's environment, so naming four variables was not
+        // enough: a host `LT_DATA_DIR` outranks `WONSLATE_DATA_DIR` here exactly as it did
+        // in `ai_upgrade_e2e` (defect D36), and the quality preference, the TM floor and
+        // the model name were not named at all. `apply_to` writes every spelling it pins
+        // and deletes every spelling it does not.
+        hermetic::Spec::new(&dir)
+            .low_confidence_upgrade()
+            .apply_to(&mut command);
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

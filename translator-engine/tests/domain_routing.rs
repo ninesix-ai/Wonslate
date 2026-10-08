@@ -17,6 +17,8 @@
 use std::sync::OnceLock;
 use translator_engine::{config, distill, glossary, pipeline, tm, types::*};
 
+mod hermetic;
+
 /// Bootstrap the global singletons against a per-run temp dir so the tests
 /// neither read nor write real user data. Mirrors `pipeline_e2e.rs::ensure_init`.
 fn ensure_init() {
@@ -28,12 +30,17 @@ fn ensure_init() {
         let _ = std::fs::remove_file(dir.join("translator_tm.json"));
         let _ = std::fs::remove_file(dir.join("glossary.json"));
         // Deterministic, offline-only: pin the routes so the AI leg never runs.
-        std::env::set_var("WONSLATE_FULL_UPGRADE_POLICY", "low_confidence");
-        std::env::set_var("LT_ARGOS_URL", "http://127.0.0.1:1");
-        std::env::set_var("LT_MADLAD_URL", "http://127.0.0.1:1");
+        //
+        // This used to be three `set_var` lines, which left every other knob to the host:
+        // the data directory (so a routes.json the developer saved could retune the
+        // routing), the AI endpoint and model, the quality preference, the TM floor and
+        // the distill bar. See `tests/hermetic/mod.rs` (defect D36).
+        let spec = hermetic::Spec::new(&dir).low_confidence_upgrade();
+        spec.apply();
         config::load();
         tm::init(&dir, 100, 10).expect("TM init failed");
         distill::init();
+        spec.verify();
     });
 }
 

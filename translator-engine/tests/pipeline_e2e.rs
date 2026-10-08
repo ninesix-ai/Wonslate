@@ -17,6 +17,8 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use translator_engine::{pipeline, tm, types::*};
 
+mod hermetic;
+
 /// Initialize the global state (TM singleton + config) exactly once, shared by all tests.
 fn ensure_init() {
     static INIT: OnceLock<()> = OnceLock::new();
@@ -40,22 +42,21 @@ fn ensure_init() {
         // "always" path is covered at the decision level in router.rs (the table is
         // data there, so it needs no global config), the reachability primitive in
         // engine::http::tests, and the combination end to end by script/bench_tm.py.
-        std::env::set_var("WONSLATE_FULL_UPGRADE_POLICY", "low_confidence");
-
-        // Pin the sidecar endpoints to a dead loopback port for the same reason:
-        // several tests assert the "sidecar absent -> falls back to demo with a
-        // note" path, and a developer running a real sidecar (argos 11435 /
-        // madlad 11436) would silently flip those outcomes to real translations.
-        // The "sidecar answers" path is covered by sidecar.rs's own mock-server
-        // unit tests, which dial explicit URLs.
-        std::env::set_var("LT_ARGOS_URL", "http://127.0.0.1:1");
-        std::env::set_var("LT_MADLAD_URL", "http://127.0.0.1:1");
+        //
+        // Pinning that one knob used to be three `set_var` calls and left the rest of the
+        // environment to the host -- including the data directory, so the comment above
+        // ("avoid polluting real user data") only held for the store this file opens, not
+        // for the routes and settings files `config` reads. `Spec` pins every spelling of
+        // what the suite needs and clears what it does not (defect D36).
+        let spec = hermetic::Spec::new(&dir).low_confidence_upgrade();
+        spec.apply();
 
         // Load default config (TM enabled; distillation off to avoid side effects).
         translator_engine::config::load();
 
         tm::init(&dir, 100, 10)
             .expect("TM init failed");
+        spec.verify();
     });
 }
 

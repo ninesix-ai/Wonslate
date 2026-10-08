@@ -27,6 +27,8 @@ use std::net::TcpListener;
 use std::sync::{Arc, Mutex, OnceLock};
 use translator_engine::{confidence, config, pipeline, tm, types::*};
 
+mod hermetic;
+
 /// Text the stub returns. Deliberately free of every token the cases assert on, so a
 /// passing assertion cannot be satisfied by the stub's own answer.
 const MODEL_ANSWER: &str = "MODEL-OUTPUT-OK";
@@ -121,44 +123,26 @@ fn ensure_init() -> Arc<Mutex<Vec<String>>> {
         let _ = std::fs::remove_file(dir.join("translator_tm.json"));
         let _ = std::fs::remove_file(dir.join("glossary.json"));
 
-        // Hermetic configuration: point the data dir at the temp directory so neither a
-        // deployment routes file nor a developer's settings.json can change the routing
-        // these cases assume. Full mode is left at its shipped default -- policy
-        // "always", floor 0.0 -- because that default is the thing under test.
-        std::env::set_var("WONSLATE_DATA_DIR", &dir);
-        std::env::set_var("WONSLATE_OLLAMA_URL", &url);
-        // A failure must be quick and visible: if the stub ever stops answering, the case
-        // should say "not AiUpgraded" within seconds rather than wait out 120 s.
-        std::env::set_var("WONSLATE_OLLAMA_TIMEOUT_MS", "3000");
-        // Pin the sidecars to a dead port so the local slot falls back to demo the same
-        // way on every machine (same reasoning as `pipeline_e2e`).
-        std::env::set_var("LT_ARGOS_URL", "http://127.0.0.1:1");
-        std::env::set_var("LT_MADLAD_URL", "http://127.0.0.1:1");
-
-        // The chain above only looks hermetic; it is not. Resolution order is
-        // `LT_*` > `WONSLATE_*` > bare, so a host that exports `LT_OLLAMA_URL` -- which is
-        // exactly how a developer points the engine at their own model server -- outranks
-        // the stub and every assertion below starts describing that machine instead of
-        // this one: on such a host the three cases here failed with `got: Fallback`,
-        // looking like a product regression in the AI upgrade path (defect D36). So pin all
-        // three spellings, and check below that the pin is what the engine really reads.
-        for (name, value) in [("LT_OLLAMA_URL", url.as_str()), ("OLLAMA_URL", url.as_str()),
-                              ("LT_DATA_DIR", dir.to_str().unwrap_or("")),
-                              ("DATA_DIR", dir.to_str().unwrap_or("")),
-                              ("LT_OLLAMA_TIMEOUT_MS", "3000"), ("OLLAMA_TIMEOUT_MS", "3000")] {
-            std::env::set_var(name, value);
-        }
+        // Hermetic configuration, and the guard is the part that makes a lost pin fail
+        // here by name instead of as a confusing red assertion further down: resolution is
+        // `LT_*` > `WONSLATE_*` > bare, so a host that exports `LT_OLLAMA_URL` -- exactly
+        // how a developer points the engine at their own model server -- outranked the
+        // stub and all three cases below failed with `got: Fallback`, looking like a
+        // product regression in the AI upgrade path (defect D36).
+        //
+        // Full mode is left at its shipped default -- policy "always", floor 0.0 --
+        // because that default is the thing under test; `Spec::new` clears the knobs that
+        // would move it, so no ambient setting can. The 3 s AI timeout is the one
+        // deviation: if the stub ever stops answering, the case should say "not
+        // AiUpgraded" within seconds rather than wait out the shipped 120 s.
+        let spec = hermetic::Spec::new(&dir)
+            .ai_at(&url)
+            .ai_timeout_ms("3000");
+        spec.apply();
 
         config::load();
-        // The guard is the part that makes this fail loudly here rather than as a
-        // confusing red suite somewhere else: if any ambient name still wins, say so now.
-        let cfg = config::get();
-        assert_eq!(cfg.ollama_url, url,
-            "this suite must dial its own stub; an ambient endpoint is in front of it");
-        assert_eq!(config::data_dir(), dir,
-            "the config must resolve inside the temp dir, or a deployment routes file \
-             decides the routing these cases assume");
         tm::init(&dir, 100, 10).expect("TM init failed");
+        spec.verify();
         log
     }))
 }
