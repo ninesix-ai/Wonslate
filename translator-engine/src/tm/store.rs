@@ -471,13 +471,37 @@ trait FromValue: Sized { fn from_value(v: &Value) -> Self; }
 impl FromValue for TmRecord       { fn from_value(v: &Value) -> Self { TmRecord::from_value(v) } }
 impl FromValue for GlossaryRecord { fn from_value(v: &Value) -> Self { GlossaryRecord::from_value(v) } }
 
-/// Atomic write: write .tmp then rename, so a mid-write crash cannot corrupt the original
+/// Atomic write: write a staging file then rename, so a mid-write crash cannot corrupt
+/// the original, and a reader only ever sees a complete document.
+///
+/// The staging name is unique per call (defect D39). It used to be `path` with its
+/// extension swapped for `.tmp` -- one shared name per file -- while the store legitimately
+/// flushes from several threads: a request thread through the dirty counter or
+/// `tt_shutdown`, and the distillation worker through every term it upserts. Two writers
+/// then renamed each other's staging file: the loser reported "The system cannot find the
+/// file specified (os error 2)" for a save that really happened upstream, and a rename
+/// that won while the other writer was still filling the staging file moved a half-written
+/// document into place, destroying the very thing this dance is for. The pid and a counter
+/// keep the name unique across processes too, because the desktop app and an MCP server
+/// can hold the same store files open at once.
+static WRITE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn write_records(path: &Path, records: &[Value]) -> Result<(), EngineError> {
-    let tmp = path.with_extension("tmp");
+    let seq = WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let stem = path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "store".to_string());
+    let tmp = path.with_file_name(format!("{}.{}.{}.tmp", stem, std::process::id(), seq));
     let body = json!({ "version": 1, "records": records });
     let s = serde_json::to_string(&body)?;
     std::fs::write(&tmp, s)?;
-    std::fs::rename(&tmp, path)?;
+    let renamed = std::fs::rename(&tmp, path);
+    if renamed.is_err() {
+        // A failed rename must not strand a staging file in the data directory: the
+        // next reader of that directory would meet a file nothing owns.
+        let _ = std::fs::remove_file(&tmp);
+    }
+    renamed?;
     Ok(())
 }
 
@@ -565,5 +589,66 @@ mod tests {
         assert!(p.exists());
         assert!(!p.with_extension("tmp").exists(),
             ".tmp 应被 rename 移走");
+    }
+
+    /// The store flushes from more than one thread: a request thread reaches
+    /// `write_records` through the dirty counter (`FLUSH_THRESHOLD` writes) or through
+    /// `tt_shutdown`, and the distillation worker reaches it through every term it
+    /// upserts. Those two can land on the same file at the same moment.
+    ///
+    /// With one shared temp name per file that is not a benign race: the writer whose
+    /// rename loses the race gets "The system cannot find the file specified (os error
+    /// 2)", so a save that the user was told succeeded reports an error at random -- and
+    /// a rename that wins while the other writer is still filling the file moves a
+    /// half-written document into place, which is the exact corruption the write-then-
+    /// rename dance exists to prevent. This is how defect D39 surfaced: twice under
+    /// `cargo llvm-cov` in `tests/tm_reload.rs`, where two cases call `flush_all()` on
+    /// parallel threads, and never under a plain `cargo test` because nothing slowed the
+    /// window down. Reproduced here instead of relying on that timing.
+    #[test]
+    fn concurrent_writers_of_one_file_never_lose_a_save_or_a_torn_one() {
+        use std::thread;
+
+        let dir = temp_dir("concurrent-writers");
+        let p = dir.join("store.json");
+        let rounds = 6;
+        let writers = 8;
+
+        for round in 0..rounds {
+            let rows: Vec<Value> = (0..writers)
+                .map(|i| json!({ "source_hash": format!("r{}w{}", round, i) }))
+                .collect();
+            let mut handles = Vec::new();
+            for _ in 0..writers {
+                let path = p.clone();
+                let rows = rows.clone();
+                handles.push(thread::spawn(move || write_records(&path, &rows)));
+            }
+            for handle in handles {
+                let result = handle.join().expect("a writer thread panicked");
+                result.unwrap_or_else(|e| {
+                    panic!("round {}: a concurrent save must not fail: {}", round, e)
+                });
+            }
+
+            // Whatever interleaved, the file on disk is a document and not a fragment:
+            // a reader must always parse it, and it must carry a whole records array.
+            let raw = std::fs::read_to_string(&p)
+                .unwrap_or_else(|e| panic!("round {}: the store file is unreadable: {}", round, e));
+            let parsed: Value = serde_json::from_str(&raw)
+                .unwrap_or_else(|e| panic!("round {}: torn write reached the store: {} -- {} bytes",
+                                          round, e, raw.len()));
+            assert!(parsed["records"].is_array(), "round {}: no records array on disk",
+                    round);
+
+            let leftovers: Vec<String> = std::fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|name| name.ends_with(".tmp"))
+                .collect();
+            assert!(leftovers.is_empty(),
+                "round {}: temp files were left behind: {:?}", round, leftovers);
+        }
     }
 }
