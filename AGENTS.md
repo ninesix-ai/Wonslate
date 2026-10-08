@@ -52,7 +52,13 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    exactly this: fixtures that read host state (D12, now sealed), and a repo-root
    assertion that matched the *checkout directory name*, so every worktree and every
    renamed checkout went red on it (D19). Assert positions relative to the test file,
-   and resolve both sides of the comparison.
+   and resolve both sides of the comparison. Watch the environment chain in particular:
+   resolution is `LT_*` > `WONSLATE_*` > bare name, so pinning only `WONSLATE_OLLAMA_URL`
+   still loses to a host that exports `LT_OLLAMA_URL` -- the suite then drives the
+   developer's model server instead of its own stub, which is how D36 broke the AI
+   upgrade cases on a clean checkout. Pin every spelling, then assert the resolved
+   config really points where the test thinks it does; that guard turns a confusing red
+   suite into a named precondition failure.
 4. **Glossary seed packs bypass the Rust source-language guard.** Import arrives
    through `tt_glossary_import_pack` and never passes `distill/term_extractor.rs`, so
    a mis-labelled row can still enter the store and the extractor's check will not
