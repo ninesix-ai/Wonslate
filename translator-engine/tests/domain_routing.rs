@@ -270,25 +270,23 @@ fn import_pack_materialises_domain_entries() {
         "imported rows must carry source=seed:av so a reviewer can spot them");
 }
 
-/// ⑬ D34 -- pinned as it behaves, not as it is meant to behave.
+/// ⑬ D34, fixed: a pack row that omits `confidence` is stamped 1.0, and that is what
+/// lets a seed pack displace the distilled rows it was written to override.
 ///
-/// `glossary_import_pack` stamps a missing confidence with `if entry.confidence <=
-/// 0.0 { 1.0 }`, but `GlossaryEntry::from_json` has already filled the absent key with
-/// 0.9 by then, so no shipped pack can reach that branch. All twelve files under
-/// `docs/glossary-packs/` omit `confidence` on every row (266 in the AV pack, 14 in
-/// each of the eleven others), which is where the "nearly every seed row ties at
-/// 0.90" condition behind D32 comes from.
-///
-/// The consequence is user-visible: an import replaces a row only when it is strictly
-/// higher, so a seed row arriving at 0.90 cannot displace a distilled row at 0.90 --
-/// the pack applies to nothing, without an error. If D34 gets fixed, this is the case
-/// that has to be changed on purpose, and the S12 comparison re-run.
+/// The importer used to fall back with `if entry.confidence <= 0.0 { 1.0 }`, but
+/// `GlossaryEntry::from_json` had already filled the absent key with 0.9, so the branch
+/// was unreachable and every shipped pack entered at 0.90 -- all twelve files under
+/// `docs/glossary-packs/` omit the key on every row (266 in the AV pack, 14 in each of
+/// the eleven others). Since import replaces a row only when its confidence is strictly
+/// higher, a seed row at 0.90 displaced nothing and the call still reported success.
+/// The rule is now presence, not sentinel: no key means 1.0, an explicit value is the
+/// pack author's choice and is left alone.
 ///
 /// Own language pair as well as own domain: a scoped read returns generic rows too, and
 /// the window is confidence-sorted, so rows other cases leave under zh->en could push
 /// this one out and make the lookup fail for an unrelated reason.
 #[test]
-fn a_pack_row_without_confidence_cannot_replace_an_equal_one() {
+fn a_pack_row_without_confidence_stamps_one_and_displaces_a_distilled_row() {
     ensure_init();
     tm::glossary_upsert(&GlossaryEntry {
         source_term: "无声调".into(), source_lang: "zhx".into(),
@@ -310,15 +308,108 @@ fn a_pack_row_without_confidence_cannot_replace_an_equal_one() {
         .into_iter().find(|e| e.source_term == "无声调")
         .expect("the imported row must be listed");
     assert!(
-        (row.confidence - 0.9).abs() < 1e-6,
-        "D34: the importer's 1.0 fallback is unreachable because from_json defaults the \
-         missing key to 0.9; stored confidence was {}", row.confidence
+        (row.confidence - 1.0).abs() < 1e-6,
+        "an absent confidence key must mean 1.0 for a seed pack; from_json's 0.9 default used to pre-empt that and made the fallback unreachable (D34). Got {}",
+        row.confidence
     );
     assert_eq!(
-        "already agreed", row.target_term,
-        "and so the import did not apply: a seed row at the same confidence as an \
-         existing row loses the strictly-greater test, silently"
+        "from the pack", row.target_term,
+        "and the pack must therefore displace the equal-or-lower distilled row it was written to override"
     );
+}
+
+/// The other half of the same rule: presence-based stamping must not turn into "a pack
+/// always wins". A pack that declares a low confidence is a deliberate statement, and a
+/// declared 0.4 must still lose to an existing 0.9 rather than be silently lifted.
+#[test]
+fn a_pack_that_declares_its_confidence_keeps_what_it_declared() {
+    ensure_init();
+    tm::glossary_upsert(&GlossaryEntry {
+        source_term: "低置信".into(), source_lang: "zhy".into(),
+        target_term: "already agreed".into(), target_lang: "eny".into(),
+        confidence: 0.9, frequency: 1, domain: "declared".into(),
+        source: "distill".into(),
+    }).unwrap();
+
+    let pack_json = r#"{
+        "domain": "declared",
+        "source_lang": "zhy",
+        "target_lang": "eny",
+        "entries": [{"source_term":"低置信","target_term":"from the pack","confidence":0.4}]
+    }"#;
+    translator_engine::tm::glossary_import_pack(pack_json).expect("pack must import");
+
+    let row = tm::glossary_list("zhy", "eny", "declared", 20).unwrap()
+        .into_iter().find(|e| e.source_term == "低置信")
+        .expect("the row must be listed");
+    assert!(
+        (row.confidence - 0.9).abs() < 1e-6 && row.target_term == "already agreed",
+        "a declared confidence must be honoured, not lifted to the missing-key default: got {:?} at {}",
+        row.target_term, row.confidence
+    );
+}
+
+/// ⑭ A pack must be refused as a whole or accepted as a whole -- not half applied.
+///
+/// `glossary_import_pack` validates entries inside the same loop that imports them, so
+/// the entry that trips the check aborts after its predecessors were already upserted:
+/// the caller gets `ok:false` and the store keeps part of the file. That is the exact
+/// shape the refusal exists to prevent -- a bad pack landing terms in the user's table
+/// while reporting failure (D38).
+#[test]
+fn a_refused_pack_leaves_nothing_behind() {
+    ensure_init();
+    let pack_json = r#"{
+        "domain": "atomic",
+        "source_lang": "zha2",
+        "target_lang": "ena2",
+        "entries": [
+            {"source_term":"first ok","target_term":"kept"},
+            {"source_term":"","target_term":"malformed"}
+        ]
+    }"#;
+    let err = translator_engine::tm::glossary_import_pack(pack_json)
+        .expect_err("an entry without a source_term must refuse the pack");
+    assert!(err.to_string().contains("source_term"),
+        "the refusal has to say what was missing, got {err}");
+
+    let rows = tm::glossary_list("zha2", "ena2", "atomic", 20).unwrap();
+    assert!(rows.iter().all(|e| e.source_term != "first ok"),
+        "a rejected pack must not leave its earlier rows in the store, got {:?}",
+        rows.iter().map(|e| e.source_term.clone()).collect::<Vec<_>>());
+}
+
+/// ⑮ The two pack-level refusals, and that neither wrote anything: an untagged file must
+/// not be able to seed the generic table through the domain-scoped endpoint, and a file
+/// with no language pair would have its terms stamped into whichever pair is asked about
+/// next.
+#[test]
+fn a_pack_without_a_domain_or_a_language_pair_is_refused_before_anything_is_read() {
+    ensure_init();
+    let untagged = r#"{
+        "domain": "",
+        "source_lang": "zhb2",
+        "target_lang": "enb2",
+        "entries": [{"source_term":"tagless","target_term":"u"}]
+    }"#;
+    let err = translator_engine::tm::glossary_import_pack(untagged)
+        .expect_err("an untagged pack must be refused");
+    assert!(err.to_string().contains("pack.domain"), "got {err}");
+
+    let pairless = r#"{
+        "domain": "nodir",
+        "source_lang": "",
+        "target_lang": "",
+        "entries": [{"source_term":"orphan","target_term":"u"}]
+    }"#;
+    let err = translator_engine::tm::glossary_import_pack(pairless)
+        .expect_err("a pack with no language pair must be refused");
+    assert!(err.to_string().contains("source_lang"), "got {err}");
+
+    assert!(tm::glossary_list("zhb2", "enb2", "", 20).unwrap().is_empty(),
+        "the untagged pack must be refused before touching the generic table");
+    assert!(tm::glossary_list("zhb2", "enb2", "nodir", 20).unwrap().is_empty(),
+        "and the pairless one must not have landed rows anywhere");
 }
 
 // ---- D32: which terms reach the prompt, and what the reply says about it ----------

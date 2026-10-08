@@ -407,3 +407,42 @@ fn deleting_the_generic_row_leaves_the_domain_row_alone() {
     assert!(gloss("zhk", "enk", "av").iter().any(|e| e.source_term == "deleteme"),
         "the av row must survive: the UI delete is documented as generic-only");
 }
+
+// ---- re-writing one row: the TM's learning rule, and who it tells -----------------
+
+/// Re-writing the same source text is how the memory learns, and the rule is upward
+/// only: `tm_upsert` bumps the sighting count and replaces the stored translation when
+/// the new row is better. What that branch had never been asked is whether the two
+/// copies of the truth agree. `tm_upsert` writes the decision into the store and then
+/// hands the *incoming* row to the LRU cache regardless of it, so a worse candidate for
+/// a known text leaves the file and the running session disagreeing about the
+/// translation -- and a restart changes the answer back, with no error anywhere (D37).
+///
+/// Own language pair, and nothing but this case's own text is read back, so the case
+/// stays deterministic while the others run concurrently against the same store.
+#[test]
+fn a_worse_candidate_must_not_persuade_the_session_away_from_the_stored_row() {
+    let _dir = seeded_store();
+    let row = |target: &str, quality: f32| TmEntry {
+        source_text: "learn only upward".into(), source_lang: "zhl".into(),
+        target_text: target.into(), target_lang: "enl".into(),
+        engine: "demo".into(), quality, hit_count: 1, domain: String::new(),
+    };
+
+    tm::put(&row("the better output", 0.9)).unwrap();
+    tm::put(&row("a worse candidate", 0.4)).unwrap();
+
+    let hash = tm::compute_hash("learn only upward", "zhl", "enl");
+    let stored = tm::TmStore::instance().unwrap().tm_get(&hash).unwrap()
+        .expect("the row must be in the store");
+    assert_eq!("the better output", stored.target_text,
+        "replacement is strictly upward, so the store must still hold the better row");
+    assert_eq!(2, stored.hit_count,
+        "two writes of one text are two sightings of one row, not two rows");
+
+    let served = tm::lookup("learn only upward", "zhl", "enl").unwrap()
+        .expect("and the text must still be answered from memory");
+    assert_eq!(stored.target_text, served.target_text,
+        "the LRU cache and the store must agree about which translation answers this text: store={:?} served={:?}",
+        stored.target_text, served.target_text);
+}

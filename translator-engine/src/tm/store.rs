@@ -120,7 +120,13 @@ impl TmStore {
         let hash = crate::tm::compute_hash(
             &entry.source_text, &entry.source_lang, &entry.target_lang,
         );
-        {
+        // D37: the cache has to be handed the row the store *kept*, not the one the
+        // caller passed in. It used to receive the incoming row unconditionally, so a
+        // worse candidate for a known text left the two disagreeing -- the file kept the
+        // better translation, this session answered with the worse one, and restarting
+        // the process changed the answer back with nothing reported anywhere. Returning
+        // `settled` makes the quality rule the single source of both copies.
+        let settled = {
             let mut idx = self.tm_index.write()
                 .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
             match idx.get_mut(&hash) {
@@ -129,6 +135,7 @@ impl TmStore {
                     if entry.quality > existing.entry.quality {
                         existing.entry = entry.clone();
                     }
+                    existing.entry.clone()
                 }
                 _ => {
                     idx.insert(hash.clone(), TmRecord {
@@ -136,12 +143,13 @@ impl TmStore {
                         entry: entry.clone(),
                         flagged: false,
                     });
+                    entry.clone()
                 }
             }
-        }
+        };
         self.bump_tm_dirty()?;
         if let Some(c) = crate::tm::cache::TM_CACHE.get() {
-            c.put(hash, entry.clone());
+            c.put(hash, settled);
         }
         Ok(())
     }
@@ -248,7 +256,17 @@ impl TmStore {
         // generic rows survive. When `domain` is non-empty, generic rows are
         // still visible (they never contradict a specific request) and specific
         // rows from other domains are filtered out. Per source_term we keep the
-        // more specific row, breaking further ties by higher confidence.
+        // more specific row.
+        //
+        // The confidence comparison below is the tie-break for two candidates of
+        // equal specificity -- which the primary key makes impossible today: a
+        // generic row is keyed by `term|src|tgt|""` and a `domain=X` row by
+        // `term|src|tgt|X`, so two rows with the same lowercased term and the same
+        // specificity are the same index entry. It is deliberately kept: if the key
+        // ever gains a segment that lets such a pair exist, the winner should be the
+        // better-attested term rather than HashMap order (the D32 lesson). Coverage
+        // tools report this line as unreachable; that is the key rule talking, not a
+        // missing test.
         let idx = self.gl_index.read()
             .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
         let mut chosen: HashMap<String, &GlossaryRecord> = HashMap::new();
@@ -350,7 +368,11 @@ impl TmStore {
         }
         let entries = v.get("entries").and_then(|x| x.as_array())
             .ok_or_else(|| EngineError::InvalidInput("pack.entries must be an array".into()))?;
-        let mut imported = 0u32;
+        // D38: stage the whole pack, then write. The loop used to validate and import in
+        // one pass, so the entry that failed the check aborted after its predecessors had
+        // already been upserted -- the caller got `ok:false` while the store kept part of
+        // the file, which is the half-applied state the validation exists to prevent.
+        let mut staged: Vec<GlossaryEntry> = Vec::with_capacity(entries.len());
         for raw in entries {
             let mut entry = GlossaryEntry::from_json(raw);
             entry.domain = domain.to_string();
@@ -361,8 +383,19 @@ impl TmStore {
                     "every pack entry must carry source_term and target_term".into()));
             }
             entry.source = format!("seed:{}", domain);
-            if entry.confidence <= 0.0 { entry.confidence = 1.0; }
-            self.glossary_upsert(&entry)?;
+            // D34: stamp on key *presence*, never on a sentinel value. This line used to
+            // read `if entry.confidence <= 0.0`, but `GlossaryEntry::from_json` had
+            // already filled an absent key with 0.9, so it could not fire and every
+            // shipped pack -- all twelve of them omit `confidence` on every row -- entered
+            // the store at 0.90. Import replaces a row only on a strictly higher
+            // confidence, so a seed pack displaced nothing while still answering
+            // `imported: N`. A declared value is left alone: it is the pack author's call.
+            if raw.get("confidence").is_none() { entry.confidence = 1.0; }
+            staged.push(entry);
+        }
+        let mut imported = 0u32;
+        for entry in &staged {
+            self.glossary_upsert(entry)?;
             imported += 1;
         }
         Ok(imported)
