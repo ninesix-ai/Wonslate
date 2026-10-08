@@ -270,6 +270,57 @@ fn import_pack_materialises_domain_entries() {
         "imported rows must carry source=seed:av so a reviewer can spot them");
 }
 
+/// ⑬ D34 -- pinned as it behaves, not as it is meant to behave.
+///
+/// `glossary_import_pack` stamps a missing confidence with `if entry.confidence <=
+/// 0.0 { 1.0 }`, but `GlossaryEntry::from_json` has already filled the absent key with
+/// 0.9 by then, so no shipped pack can reach that branch. All twelve files under
+/// `docs/glossary-packs/` omit `confidence` on every row (266 in the AV pack, 14 in
+/// each of the eleven others), which is where the "nearly every seed row ties at
+/// 0.90" condition behind D32 comes from.
+///
+/// The consequence is user-visible: an import replaces a row only when it is strictly
+/// higher, so a seed row arriving at 0.90 cannot displace a distilled row at 0.90 --
+/// the pack applies to nothing, without an error. If D34 gets fixed, this is the case
+/// that has to be changed on purpose, and the S12 comparison re-run.
+///
+/// Own language pair as well as own domain: a scoped read returns generic rows too, and
+/// the window is confidence-sorted, so rows other cases leave under zh->en could push
+/// this one out and make the lookup fail for an unrelated reason.
+#[test]
+fn a_pack_row_without_confidence_cannot_replace_an_equal_one() {
+    ensure_init();
+    tm::glossary_upsert(&GlossaryEntry {
+        source_term: "无声调".into(), source_lang: "zhx".into(),
+        target_term: "already agreed".into(), target_lang: "enx".into(),
+        confidence: 0.9, frequency: 1, domain: "noconf".into(),
+        source: "distill".into(),
+    }).unwrap();
+
+    let pack_json = r#"{
+        "domain": "noconf",
+        "source_lang": "zhx",
+        "target_lang": "enx",
+        "entries": [{"source_term":"无声调","target_term":"from the pack"}]
+    }"#;
+    translator_engine::tm::glossary_import_pack(pack_json)
+        .expect("a pack omitting confidence must still import");
+
+    let row = tm::glossary_list("zhx", "enx", "noconf", 20).unwrap()
+        .into_iter().find(|e| e.source_term == "无声调")
+        .expect("the imported row must be listed");
+    assert!(
+        (row.confidence - 0.9).abs() < 1e-6,
+        "D34: the importer's 1.0 fallback is unreachable because from_json defaults the \
+         missing key to 0.9; stored confidence was {}", row.confidence
+    );
+    assert_eq!(
+        "already agreed", row.target_term,
+        "and so the import did not apply: a seed row at the same confidence as an \
+         existing row loses the strictly-greater test, silently"
+    );
+}
+
 // ---- D32: which terms reach the prompt, and what the reply says about it ----------
 //
 // These author the second half of defect D32. The store listing was made
