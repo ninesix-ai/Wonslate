@@ -48,17 +48,20 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    `script/build.py` and the `python-ffi` job in `.github/workflows/ci.yml`. This is
    not `unittest discover`: a new `tests/test_*.py` that is not registered in **both**
    silently never runs, locally and in CI.
-3. **A test may not depend on the developer's machine.** Two defects were fixed on
-   exactly this: fixtures that read host state (D12, now sealed), and a repo-root
-   assertion that matched the *checkout directory name*, so every worktree and every
-   renamed checkout went red on it (D19). Assert positions relative to the test file,
-   and resolve both sides of the comparison. Watch the environment chain in particular:
-   resolution is `LT_*` > `WONSLATE_*` > bare name, so pinning only `WONSLATE_OLLAMA_URL`
-   still loses to a host that exports `LT_OLLAMA_URL` -- the suite then drives the
-   developer's model server instead of its own stub, which is how D36 broke the AI
-   upgrade cases on a clean checkout. Pin every spelling, then assert the resolved
-   config really points where the test thinks it does; that guard turns a confusing red
-   suite into a named precondition failure.
+3. **A test may not depend on the developer's machine.** Three defects were fixed on
+   exactly this: fixtures that read host state (D12, now sealed), a repo-root assertion
+   that matched the *checkout directory name*, so every worktree and every renamed
+   checkout went red on it (D19), and a suite that pinned one spelling of one variable
+   (D36). Resolution is `LT_*` > `WONSLATE_*` > bare name, so pinning only
+   `WONSLATE_OLLAMA_URL` still loses to a host that exports `LT_OLLAMA_URL` -- the suite
+   then drives the developer's model server instead of its own stub. Building a Rust
+   integration suite, use `tests/hermetic/mod.rs`: `Spec::new(dir)` pins every spelling of
+   every knob it names and *clears* the rest, `apply()` (or `apply_to(cmd)` for a child
+   process) writes them, and `verify()` fails by name when the resolved config is not what
+   the suite asked for. Never hand-write a `set_var` chain again, and never leave the data
+   directory unpinned -- an unpinned `DATA_DIR` reads the developer's `routes.json`, which
+   decides routing for you. Assert positions relative to the test file, and resolve both
+   sides of the comparison.
 4. **Glossary seed packs bypass the Rust source-language guard.** Import arrives
    through `tt_glossary_import_pack` and never passes `distill/term_extractor.rs`, so
    a mis-labelled row can still enter the store and the extractor's check will not
@@ -95,6 +98,15 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    `init`. That is why `tests/tm_reload.rs` exists. Anything asserting what survives a reboot
    belongs in a target of its own; added to an initialised suite it would be testing the
    in-memory index instead, and it would pass.
+11. **Write-then-rename is atomic only if the staging name is unique.** The store flushes
+   from several threads at once -- a request thread through the dirty counter or
+   `tt_shutdown`, the distillation worker through every term it upserts -- and the writer
+   used one shared `<file>.tmp` per target, so two flushes renamed each other's staging
+   file away: the loser reported a spurious "file not found" for a save the caller had
+   already been told about, and a rename winning over a still-writing peer could publish a
+   half-written document (defect D39). The name now carries the pid and a counter. Any new
+   atomic-write helper must do the same, and must delete its staging file when the rename
+   fails.
 
 ## 4. Conventions and invariants
 
