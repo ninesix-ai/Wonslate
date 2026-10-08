@@ -74,13 +74,23 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    of the four returns, surviving the S11 wiring and every Rust test until the AI success
    path got its first end-to-end case. If you add an exit, take its notes from the engine
    named in that response's `engine` field, and add a case that reads them back.
-7. **A new FFI export must be called from `tests/test_phase1_ffi.py`.** That suite records
+7. **When the store keeps two copies of one row, one decision must feed both.** `tm_upsert`
+   decides whether a better translation replaces the stored one, and used to hand the
+   *incoming* row to the LRU cache regardless of that decision -- a worse candidate for a known
+   text therefore left the file and the running session disagreeing, with a restart quietly
+   changing the answer back and nothing reported (defect D37, found by chasing a coverage gap
+   rather than by a failing test). Any write path must publish what actually settled.
+8. **Refuse before writing, not halfway through.** `glossary_import_pack` validated entries
+   inside the loop that imported them, so an invalid entry aborted the run *after* its
+   predecessors had been upserted: the caller saw `ok:false` and the store kept part of the
+   pack (defect D38). A validator that can reject the whole document must stage first.
+9. **A new FFI export must be called from `tests/test_phase1_ffi.py`.** That suite records
    which exports it really reached and compares the set against `lib.rs`; a difference fails
    the run. Coverage cannot answer this question -- llvm-cov instruments the binary
    `cargo test` builds, while `lib.rs` is exercised by Python and .NET loading the compiled
    cdylib, so the file reads 0% no matter how much of it is covered. Declaring an export in
    `Engine.__init__` does not count as reaching it; only calling it does.
-8. **A restart test needs its own binary.** `TmStore::open` fills a `OnceLock`, so a process
+10. **A restart test needs its own binary.** `TmStore::open` fills a `OnceLock`, so a process
    loads a store exactly once, and every other suite deletes the two JSON files before
    `init`. That is why `tests/tm_reload.rs` exists. Anything asserting what survives a reboot
    belongs in a target of its own; added to an initialised suite it would be testing the
@@ -131,12 +141,12 @@ identifiers are stable anchors, the detail lives in the ledgers:
 - `D30` — half closed. `/health` now reports `requests_served`, a bounded latency window
   and `rss_bytes`, so degradation is observable; what is still open is that a request the
   client abandoned keeps decoding server-side, and there is no batch limit or reload.
-- `D34` — open. A seed pack that omits `confidence` is stored at the reader's default of 0.90,
-  because the importer's "missing means 1.0" fallback tests `<= 0.0` and can never fire. An
-  import replaces a row only on a strictly higher confidence, so those packs silently fail to
-  displace distilled rows and report success. Pinned as-is by
-  `a_pack_row_without_confidence_cannot_replace_an_equal_one`; fixing it changes which terms
-  reach a prompt, so the AV comparison has to be re-run together with the fix.
+- `D34` — closed 2026-10-08. A pack row that omitted `confidence` entered at the reader's
+  0.90 default rather than the intended 1.0, so a seed pack could not displace the distilled
+  rows it was written to override while still reporting `imported: N`. The stamp is now
+  presence-based. Rows already in a user's store keep their old value until the pack is
+  re-imported; the AV comparison was re-run after that re-import and moved only inside the
+  repeat-to-repeat spread, so the published conclusion is unchanged.
 - `D35` — open. `user_locked` is honoured by the store and restored faithfully on load, but no
   UI control or FFI field can set it. The documented "a locked term is not overwritten by
   distillation" therefore holds only for a `glossary.json` hand-edited while the engine is
