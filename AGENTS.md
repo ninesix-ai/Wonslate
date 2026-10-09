@@ -124,6 +124,21 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    and let the production constructor read the *same* candidate list the test asserts
    on -- a `#[cfg(test)]` copy of a key list proves nothing about the list the product
    actually reads.
+13. **Invisible characters must not leave the sidecar -- but some of them are the text.**
+   External audit item 009 measured a Lao translation arriving as `LAO LAO U+200B LAO ...`:
+   nothing on screen changes, and every string comparison downstream (dedup, search, cache
+   keys, localisation checks, diff scripts) breaks silently. Deleting *all* zero-width
+   codepoints is the other bug, and the reporter warned about it from their own false
+   positive: the Persian half-space **is** U+200C, Khmer and Myanmar segment words with
+   U+200B, and an emoji family sequence carries a real ZWJ. `ct2_sidecar.sanitize_output`
+   therefore keeps a mark when the caller's own source text had that codepoint or the
+   target script writes with it, and drops everything else -- including bidi controls, a
+   soft hyphen, BOM and C0/C1, while keeping `\t\n\r` because line structure is data some
+   callers still depend on. It is applied at the HTTP response, not inside each
+   `_detokenize`, so every backend and the Rust pipeline (which reads the same bytes
+   through `sidecar.rs`) get one answer from one place. Do not "simplify" the whitelist:
+   `OutputSanitizationTests` pins both directions, and a mutation of each clause goes red
+   on the assertion that needs it.
 
 ## 4. Conventions and invariants
 
