@@ -941,13 +941,41 @@ mod tests {
         assert_eq!(routing.full.tm_quality_floor, 0.0);
     }
 
+    /// What `effective_routing` owes its caller is that the snapshot *renders the
+    /// effective routing*, not that the routing matches a particular environment. The
+    /// difference matters: this test used to assert the shipped defaults (`always`, floor
+    /// `0.0`) against the process-global config, which `load()` builds from the ambient
+    /// environment -- so a developer exporting `LT_QUALITY_PREFERENCE=cost_first`, exactly
+    /// how one opts out of AI cost, made `cargo test` fail with `left: "low_confidence"`
+    /// while describing nothing but their machine (defect D36's shape, this time inside
+    /// `src`, where the integration suites' shared hermetic `Spec` cannot reach).
+    ///
+    /// So the two facts are now separated by the only routes that can state them honestly:
+    /// the shipped default comes from the pure builder with an empty environment, and the
+    /// snapshot is checked against the config it claims to render.
     #[test]
     fn effective_routing_reports_the_effective_values() {
-        let snapshot = effective_routing();
+        // The shipped defaults, established without touching the ambient environment.
+        let fresh = build_config(&only(&[]), None, None);
+        assert_eq!(fresh.routing.full.upgrade_policy, UpgradePolicy::Always);
+        assert_eq!(fresh.routing.full.tm_quality_floor, 0.0);
 
-        assert_eq!(snapshot["routing"]["full"]["upgrade_policy"], "always");
-        assert_eq!(snapshot["routing"]["full"]["tm_quality_floor"], 0.0);
-        assert!(snapshot["settings_file"].as_str().unwrap().ends_with("settings.json"));
+        let snapshot = effective_routing();
+        let cfg = get();
+        assert_eq!(
+            snapshot["routing"]["full"]["upgrade_policy"],
+            cfg.routing.full.upgrade_policy.as_str(),
+            "the settings page must show the policy in force, not the one that ships"
+        );
+        assert_eq!(
+            snapshot["routing"]["full"]["tm_quality_floor"], cfg.routing.full.tm_quality_floor,
+            "a floor the caller cannot see is a floor the caller cannot be billed for"
+        );
+
+        // Basename rather than the full path: a host `LT_SETTINGS_FILE` is as legitimate as
+        // any other override and must not decide this assertion either.
+        let settings = snapshot["settings_file"].as_str().unwrap_or_default();
+        assert!(settings.ends_with(".json"), "expected a json settings path, got {settings:?}");
         assert!(snapshot["env_pinned"].is_array());
     }
 
