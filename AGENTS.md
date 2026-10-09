@@ -33,6 +33,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | XAML static lint + window-appears smoke | `verify.bat` / `verify.sh` |
 | Self-sign output so local smokes repeat | `sign.bat` |
 | Measure what a long batch actually costs (D24/D30 probes; `--help` for the four modes) | `python script/diag_sidecar_batch.py <mode>` |
+| Check an output for invisible characters, on either or both engine tiers (D42) | `python script/diag_invisible_chars.py both` |
 
 ## 3. Traps that have already cost someone a session
 
