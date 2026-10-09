@@ -150,6 +150,19 @@ impl Spec {
         self
     }
 
+    /// Point both sidecar slots at a stub this binary owns.
+    ///
+    /// Both, not just the one the routing currently selects: a suite that says "the local
+    /// engine answered" has to mean it whatever the router decides, and leaving the other
+    /// slot at the shipped default would silently hand the developer's own argos or madlad
+    /// service the request (that is how a coverage number came to describe a machine).
+    /// Assertions still name which engine served, so this cannot hide a routing change.
+    pub fn sidecar_at(mut self, url: &str) -> Self {
+        self.pinned.insert("ARGOS_URL", url.to_string());
+        self.pinned.insert("MADLAD_URL", url.to_string());
+        self
+    }
+
     /// The preference the settings page would write; it maps onto the full-mode policy
     /// and TM quality floor, which is why it belongs in the pinned set.
     pub fn quality_first(mut self) -> Self {
