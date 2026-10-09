@@ -140,6 +140,15 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    `OutputSanitizationTests` pins both directions, and a mutation of each clause goes red
    on the assertion that needs it.
 
+   Re-measure before you argue about it: `python script/diag_invisible_chars.py both`
+   compares what a backend emitted against what left the HTTP port, and asks the ollama tier
+   with the product's own prompt. It reports codepoints rather than rendered text -- a Lao or
+   Khmer string shows as garbage in most terminals, which is precisely where this class of
+   defect hides. Nothing sanitises the model output in Rust today, and that is a measured
+   position rather than an oversight: run the tool before adding a second implementation, and
+   if it does report noise, reuse the two-rule shape -- a blanket strip repeats the mistake
+   item 009's own reporter had already made.
+
 ## 4. Conventions and invariants
 
 **This file is not the source of truth for either.** `CONTRIBUTING.md` is: comment
