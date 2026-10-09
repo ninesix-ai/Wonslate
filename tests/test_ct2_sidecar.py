@@ -1249,5 +1249,158 @@ class ConcurrentColdStartTests(unittest.TestCase):
             self.assertTrue(payload.get("text"), "a client got an empty translation")
 
 
+# ---- Output sanitisation (external item 009) ----------------------------------
+
+class OutputSanitizationTests(unittest.TestCase):
+    """An invisible codepoint in a translation silently poisons everything downstream
+    (dedup, search, cache keys, audit scripts) -- but some of those codepoints *are* the
+    orthography of the language we were asked to write, so a blanket wipe is its own bug.
+
+    The rule under test: a zero-width or formatting mark survives if the caller's own
+    source text carried that codepoint, or if the target script needs it; everything
+    else goes. Presence-based rather than counting, because a script may legitimately
+    double a separator and guessing the count would delete real text.
+    """
+
+    ZWSP = "\u200b"
+    ZWNJ = "\u200c"
+    ZWJ = "\u200d"
+    WJ = "\u2060"
+    BOM = "\ufeff"
+    SHY = "\u00ad"
+    RLO = "\u202e"
+    LRI = "\u2066"
+
+    def test_the_reported_lao_case_loses_its_zwsp(self):
+        # 009 verbatim, codepoint evidence rather than console rendering: target='lo',
+        # "Hello" -> LAO LAO ZERO LAO LAO LAO LAO LAO. Reproduced with no concurrency,
+        # so the model emits it; it is not decoder crosstalk.
+        self.assertEqual(
+            "\u0e82\u0ecd\u0e82\u0ead\u0e9a\u0ec3\u0e88",
+            ct2_sidecar.sanitize_output("\u0e82\u0ecd" + self.ZWSP + "\u0e82\u0ead\u0e9a\u0ec3\u0e88",
+                                        "lo", "Hello"))
+
+    def test_ordinary_text_comes_back_byte_for_byte(self):
+        for target, text in (("zh", "\u4f60\u597d\uff0c\u4e16\u754c\u3002"),
+                             ("en", "Hello, world!"),
+                             ("ja", "\u304a\u306f\u3088\u3046\u3054\u3056\u3044\u307e\u3059"),
+                             ("ru", "\u041f\u0440\u0438\u0432\u0435\u0442, \u043c\u0438\u0440!"),
+                             ("ar", "\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645"),
+                             ("de", "Stra\u00dfe \u2013 Auto")):
+            self.assertEqual(text, ct2_sidecar.sanitize_output(text, target, "Hello, world!"),
+                             "%s: sanitising must not rewrite anything visible" % target)
+
+    def test_the_wipe_list_goes_for_every_language(self):
+        dirty = "a" + self.BOM + self.WJ + self.SHY + self.RLO + self.LRI + "b"
+        for target in ("en", "lo", "fa", "km", "ml"):
+            self.assertEqual("ab", ct2_sidecar.sanitize_output(dirty, target, "ab"),
+                             "%s: BOM, word joiner, soft hyphen and bidi marks carry no"
+                             " text in any script" % target)
+
+    def test_control_characters_go_but_line_structure_stays(self):
+        # Item 007 is still open: callers do send multi-line text, and the sanitiser must
+        # not quietly become the thing that flattens it.
+        self.assertEqual("ab\tc\nd", ct2_sidecar.sanitize_output(
+            "a\u0001b\tc\nd\u009f", "zh", "a\u0001b\tc\nd\u009f"))
+
+    def test_the_persian_half_space_survives_because_the_script_needs_it(self):
+        # 009's own warning, and it holds even when the source had no ZWNJ at all:
+        # deleting U+200C from fa/ps/ckb/ug is an orthographic error, not a cleanup.
+        text = "\u06a9\u062a\u0627\u0628" + self.ZWNJ + "\u062e\u0627\u0646\u0647"
+        for target in ("fa", "ps", "ckb", "ug"):
+            self.assertEqual(text, ct2_sidecar.sanitize_output(text, target, "library office"),
+                             "%s: the zero-width non-joiner IS the half-space" % target)
+
+    def test_khmer_and_myanmar_word_separators_survive(self):
+        # "Strip every ZWSP" is exactly what 009 proposes, and for these two scripts it
+        # would write them wrong: U+200B is their conventional word separator.
+        text = "\u1780\u17d2\u1798\u1796\u17bb\u179f\u17b6" + self.ZWSP + "\u1798\u17a1\u17b6\u1787\u17d2\u1793"
+        for target in ("km", "my"):
+            self.assertEqual(text, ct2_sidecar.sanitize_output(text, target, "Cambodia people"),
+                             "%s: ZWSP is word segmentation here" % target)
+
+    def test_a_joiner_the_source_already_had_is_data_not_noise(self):
+        # A family emoji in a UI string carries a real ZWJ, and Indic conjuncts use the
+        # same codepoint; "the caller's text has it" is what keeps both.
+        emoji = "\U0001F468" + self.ZWJ + "\U0001F469"
+        self.assertEqual(emoji, ct2_sidecar.sanitize_output(emoji, "en", emoji))
+        self.assertEqual("a" + self.ZWJ + "b" + self.ZWJ,
+                         ct2_sidecar.sanitize_output("a" + self.ZWJ + "b" + self.ZWJ, "en", "x" + self.ZWJ),
+                         "presence-based, not counting: one joiner in the source does not"
+                         " cap the output at one")
+
+    def test_a_joiner_a_script_cannot_use_is_still_dropped(self):
+        self.assertEqual("\u4f60\u597d", ct2_sidecar.sanitize_output(
+            "\u4f60" + self.ZWJ + "\u597d", "zh", "hello"))
+
+    def test_the_region_tag_is_folded_before_deciding(self):
+        # A qualifier must not turn a protected script into an unprotected one, and the
+        # handler passes the code the engine actually served anyway.
+        fa = "\u06a9\u062a\u0627\u0628" + self.ZWNJ + "\u062e\u0627\u0646\u0647"
+        self.assertEqual(fa, ct2_sidecar.sanitize_output(fa, "fa-IR", "book"))
+        self.assertEqual("ab", ct2_sidecar.sanitize_output("a" + self.ZWSP + "b", "zh-CN", "ab"))
+
+    def test_nothing_to_clean_and_nothing_to_return(self):
+        self.assertEqual("", ct2_sidecar.sanitize_output("", "en", ""))
+        self.assertEqual("", ct2_sidecar.sanitize_output("", "fa", "\u06a9\u062a\u0627\u0628"))
+
+    def test_cleaning_twice_changes_nothing(self):
+        dirty = "\u0e82\u0ecd" + self.ZWSP + "x" + self.SHY + self.BOM
+        once = ct2_sidecar.sanitize_output(dirty, "lo", "Hello")
+        self.assertEqual(once, ct2_sidecar.sanitize_output(once, "lo", "Hello"))
+
+
+class _DirtyOutputBackend:
+    """Answers with the invisible characters external item 009 measured, so the wire is
+    what gets tested and not only the helper next to it."""
+
+    name = "dirty"
+
+    def translate(self, text, source, target, glossary=None):
+        if target == "lo":
+            return "\u0e82\u0ecd\u200b\u0e82\u0ead\u0e9a\u0ec3\u0e88"
+        if target == "fa":
+            return "\u06a9\u062a\u0627\u0628\u200c\u062e\u0627\u0646\u0647"
+        if target == "km":
+            return "\u1780\u17d2\u1798\u1796\u17bb\u179f\u17b6\u200b\u1798\u17a1\u17b6\u1787\u17d2\u1793"
+        return "a\u200b\u202e\ufeffb"
+
+
+class OutputSanitizationOverHttpTests(unittest.TestCase):
+    """The batch caller's contract: nothing invisible comes back, nothing the script
+    needs goes missing -- decided at the response, so every backend is covered at once."""
+
+    def setUp(self):
+        self.server, self.port = serve_in_thread(_DirtyOutputBackend(), host="127.0.0.1", port=0)
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def _translate(self, text, target):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/translate",
+                     json.dumps({"text": text, "source": "en", "target": target}),
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        body = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return body
+
+    def test_the_wire_is_clean_for_the_reported_case(self):
+        self.assertEqual("\u0e82\u0ecd\u0e82\u0ead\u0e9a\u0ec3\u0e88", self._translate("Hello", "lo")["text"])
+
+    def test_the_wire_keeps_the_orthography_that_needs_zero_width(self):
+        self.assertEqual("\u06a9\u062a\u0627\u0628\u200c\u062e\u0627\u0646\u0647",
+                         self._translate("library", "fa")["text"])
+        self.assertEqual("\u1780\u17d2\u1798\u1796\u17bb\u179f\u17b6\u200b\u1798\u17a1\u17b6\u1787\u17d2\u1793",
+                         self._translate("Cambodia", "km")["text"])
+
+    def test_the_wipe_list_never_reaches_the_wire(self):
+        for target in ("en", "zh", "de"):
+            self.assertEqual("ab", self._translate("hello", target)["text"],
+                             "%s: ZWSP, bidi override and BOM must not ship" % target)
+
+
 if __name__ == "__main__":
     unittest.main()

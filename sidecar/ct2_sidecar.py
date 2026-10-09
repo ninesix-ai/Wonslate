@@ -682,6 +682,64 @@ def make_backend(kind, model_dir=None):
     raise ValueError("unknown backend: {!r} (available: mock / ct2 / madlad)".format(kind))
 
 
+# ---- Output sanitisation ----------------------------------------------------
+
+# External item 009 measured a Lao translation returning `LAO LAO U+200B LAO ...`: invisible
+# on screen, fatal to every string comparison downstream (dedup, search, cache keys, audit
+# scripts). Wiping *every* zero-width codepoint is the other bug, and the reporter flagged
+# it themselves -- the Persian half-space IS U+200C, and Khmer and Myanmar segment words
+# with U+200B. So a mark survives when it is data: either the caller's own source text
+# carried that codepoint, or the target script writes with it. Everything else goes.
+#
+# Keyed by primary subtag, so `fa-IR` is judged as `fa` (the handler already passes the code
+# the engine actually served, but a lookup must not be fooled by a qualifier either).
+ZERO_WIDTH_SCRIPTS = {
+    # word separator
+    "\u200b": frozenset({"km", "my"}),
+    # half-space (Persian branch) and conjunct control (Indic branch)
+    "\u200c": frozenset({"fa", "ps", "ckb", "ug", "ku", "sd",
+                        "hi", "mr", "ne", "sa", "bn", "gu", "pa", "or", "as",
+                        "kn", "ml", "te"}),
+    # explicit conjunct / Arabic ligature control / emoji sequences
+    "\u200d": frozenset({"hi", "mr", "ne", "sa", "bn", "gu", "pa", "or", "as",
+                        "kn", "ml", "te", "ar"}),
+}
+
+# No script uses any of these to write a word, and a bidi control inside delivered text can
+# change what a reader sees without changing the string's visible length.
+STRIP_ALWAYS = "\u00ad\u2060\ufeff\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+
+# Line structure is not noise: item 007 is still open, and callers who send a multi-line
+# string must not have the sanitiser flatten it for them.
+_CONTROL_KEEP = "\t\n\r"
+
+
+def sanitize_output(text, target, source=""):
+    """Return `text` with invisible characters that a translation should never ship.
+
+    Presence-based rather than counting: if the source carries a codepoint at all, the
+    output may use it freely, because a script can legitimately double a separator and
+    guessing at counts would delete real text. Never rewrites anything visible, and is
+    idempotent -- the Rust pipeline and the batch callers see the same string either way.
+    """
+    if not text:
+        return text or ""
+    base = primary_subtag(target or "")
+    source = source or ""
+    keep = {cp for cp, codes in ZERO_WIDTH_SCRIPTS.items() if base in codes or cp in source}
+    out = []
+    for ch in text:
+        if ch in keep:
+            out.append(ch)
+        elif ch in STRIP_ALWAYS or ch in ZERO_WIDTH_SCRIPTS:
+            continue                      # a mark we were not given a reason to keep
+        elif (ord(ch) < 0x20 or 0x7f <= ord(ch) < 0xa0) and ch not in _CONTROL_KEEP:
+            continue                      # C0/C1 and DEL control noise
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 # ---- HTTP service ----------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -841,7 +899,12 @@ class Handler(BaseHTTPRequestHandler):
         # exact moment the engine is failing.
         self.server.signals.record_served()
         self.server.signals.record_latency(time.perf_counter() - started)
-        body = {"text": out}
+        # Nothing invisible may leave this process. Decided here rather than inside each
+        # `_detokenize` so the two real backends, the mock and any third-party one all get
+        # the same answer from one place -- and because the identical bytes reach the Rust
+        # pipeline through sidecar.rs, this is the single choke point that covers both
+        # consumers (external item 009).
+        body = {"text": sanitize_output(out, folded_target, str(text))}
         body.update(echoes)
         self._send(200, body)
 
