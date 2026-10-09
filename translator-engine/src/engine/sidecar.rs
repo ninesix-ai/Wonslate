@@ -21,6 +21,11 @@ const DEFAULT_ARGOS_URL: &str = "http://127.0.0.1:11435";
 const DEFAULT_MADLAD_URL: &str = "http://127.0.0.1:11436";
 /// Default timeout in milliseconds; the sidecar runs locally, shorter than ollama.
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
+
+/// The prefix chain each slot reads, in precedence order. Named once and used by the
+/// constructors themselves, so a test cannot pass on a list the product does not read.
+const ARGOS_CANDIDATES: &[&str] = &["LT_ARGOS_URL", "WONSLATE_ARGOS_URL"];
+const MADLAD_CANDIDATES: &[&str] = &["LT_MADLAD_URL", "WONSLATE_MADLAD_URL"];
 /// Translation endpoint path.
 const TRANSLATE_PATH: &str = "/translate";
 
@@ -39,11 +44,23 @@ impl SidecarTranslator {
     }
 
     fn from_env(id: &'static str, url_candidates: &[&str], default_url: &str) -> Self {
-        let lookup = |k: &str| std::env::var(k).ok();
-        let url = crate::config::first_env(&lookup, url_candidates)
+        Self::from_lookup(&|k| std::env::var(k).ok(), id, url_candidates, default_url)
+    }
+
+    /// The same resolution against an arbitrary environment, so both sides of every key
+    /// (unset, so the shipped address applies; set, so the legacy prefix wins) execute in
+    /// every test run instead of only on a matching machine (defect D41, same shape as
+    /// `ollama::from_lookup`).
+    fn from_lookup(
+        lookup: &dyn Fn(&str) -> Option<String>,
+        id: &'static str,
+        url_candidates: &[&str],
+        default_url: &str,
+    ) -> Self {
+        let url = crate::config::first_env(lookup, url_candidates)
             .unwrap_or_else(|| default_url.to_string());
         let timeout_ms = crate::config::first_env(
-            &lookup, &["LT_SIDECAR_TIMEOUT_MS", "WONSLATE_SIDECAR_TIMEOUT_MS"])
+            lookup, &["LT_SIDECAR_TIMEOUT_MS", "WONSLATE_SIDECAR_TIMEOUT_MS"])
             .and_then(|v| v.trim().parse::<u64>().ok())
             .unwrap_or(DEFAULT_TIMEOUT_MS);
         Self { id, url, timeout: Duration::from_millis(timeout_ms) }
@@ -51,12 +68,12 @@ impl SidecarTranslator {
 
     /// Realtime-slot engine (Argos).
     pub fn argos() -> Self {
-        Self::from_env("argos", &["LT_ARGOS_URL", "WONSLATE_ARGOS_URL"], DEFAULT_ARGOS_URL)
+        Self::from_env("argos", ARGOS_CANDIDATES, DEFAULT_ARGOS_URL)
     }
 
     /// Rare-language fallback engine (MADLAD-400).
     pub fn madlad() -> Self {
-        Self::from_env("madlad", &["LT_MADLAD_URL", "WONSLATE_MADLAD_URL"], DEFAULT_MADLAD_URL)
+        Self::from_env("madlad", MADLAD_CANDIDATES, DEFAULT_MADLAD_URL)
     }
 
     /// POST to the sidecar's /translate and return the translation; any failure
@@ -159,6 +176,53 @@ mod tests {
 
     fn e(url: String) -> SidecarTranslator {
         SidecarTranslator::with_url("argos", url, Duration::from_millis(1500))
+    }
+
+    /// A fixed environment, so both sides of every key are exercised in every run rather
+    /// than only on a machine whose environment happens to match them (defect D41).
+    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let owned: Vec<(String, String)> = pairs.iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |k: &str| owned.iter().find(|(name, _)| name == k).map(|(_, v)| v.clone())
+    }
+
+    #[test]
+    fn an_empty_environment_gets_the_documented_sidecar_addresses() {
+        let argos = SidecarTranslator::from_lookup(
+            &env(&[]), "argos", ARGOS_CANDIDATES, DEFAULT_ARGOS_URL);
+        let madlad = SidecarTranslator::from_lookup(
+            &env(&[]), "madlad", MADLAD_CANDIDATES, DEFAULT_MADLAD_URL);
+
+        assert_eq!(argos.url, DEFAULT_ARGOS_URL);
+        assert_eq!(madlad.url, DEFAULT_MADLAD_URL);
+        assert_ne!(argos.url, madlad.url, "the two slots must not share a port");
+        assert_eq!(argos.timeout, Duration::from_millis(DEFAULT_TIMEOUT_MS));
+    }
+
+    #[test]
+    fn the_legacy_prefix_wins_and_an_unparsable_timeout_is_ignored() {
+        let both = SidecarTranslator::from_lookup(
+            &env(&[
+                ("LT_ARGOS_URL", "http://lt:1"),
+                ("WONSLATE_ARGOS_URL", "http://brand:1"),
+                ("LT_SIDECAR_TIMEOUT_MS", "not-a-number"),
+            ]),
+            "argos", ARGOS_CANDIDATES, DEFAULT_ARGOS_URL);
+        assert_eq!(both.url, "http://lt:1",
+            "the legacy prefix must keep winning, or a deployment's existing config breaks");
+        assert_eq!(both.timeout, Duration::from_millis(DEFAULT_TIMEOUT_MS),
+            "a typo in the timeout must not hand the sidecar a zero budget");
+
+        let brand_only = SidecarTranslator::from_lookup(
+            &env(&[("WONSLATE_ARGOS_URL", "http://brand:1")]),
+            "argos", ARGOS_CANDIDATES, DEFAULT_ARGOS_URL);
+        assert_eq!(brand_only.url, "http://brand:1");
+
+        let padded = SidecarTranslator::from_lookup(
+            &env(&[("WONSLATE_SIDECAR_TIMEOUT_MS", "  700  ")]),
+            "madlad", MADLAD_CANDIDATES, DEFAULT_MADLAD_URL);
+        assert_eq!(padded.timeout, Duration::from_millis(700), "padding is tolerated");
     }
 
     #[test]

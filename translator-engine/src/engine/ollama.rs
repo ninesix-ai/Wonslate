@@ -91,12 +91,22 @@ impl OllamaTranslator {
     /// Prefix chain per key (see config::first_env): legacy `LT_*` wins for
     /// backward compatibility, then `WONSLATE_*`, then the bare name.
     pub fn new() -> Self {
-        let lookup = |k: &str| std::env::var(k).ok();
-        let url = crate::config::first_env(&lookup, &["LT_OLLAMA_URL", "WONSLATE_OLLAMA_URL", "OLLAMA_URL"])
+        Self::from_lookup(&|k| std::env::var(k).ok())
+    }
+
+    /// The same resolution against an arbitrary environment.
+    ///
+    /// Split out because the interesting part of a prefix chain is *both* sides of every
+    /// key: "absent, so the shipped default applies" and "present, so it wins in this
+    /// order". Read the process environment inline and each side only executes on a
+    /// machine that happens to match -- which is why this file's region coverage used to
+    /// move with the host (defect D41). A test can now drive both branches in every run.
+    fn from_lookup(lookup: &dyn Fn(&str) -> Option<String>) -> Self {
+        let url = crate::config::first_env(lookup, &["LT_OLLAMA_URL", "WONSLATE_OLLAMA_URL", "OLLAMA_URL"])
             .unwrap_or_else(|| DEFAULT_OLLAMA_URL.to_string());
-        let model = crate::config::first_env(&lookup, &["LT_OLLAMA_MODEL", "WONSLATE_OLLAMA_MODEL", "OLLAMA_MODEL"])
+        let model = crate::config::first_env(lookup, &["LT_OLLAMA_MODEL", "WONSLATE_OLLAMA_MODEL", "OLLAMA_MODEL"])
             .unwrap_or_else(|| DEFAULT_MODEL.to_string());
-        let timeout_ms = crate::config::first_env(&lookup, &["LT_OLLAMA_TIMEOUT_MS", "WONSLATE_OLLAMA_TIMEOUT_MS", "OLLAMA_TIMEOUT_MS"])
+        let timeout_ms = crate::config::first_env(lookup, &["LT_OLLAMA_TIMEOUT_MS", "WONSLATE_OLLAMA_TIMEOUT_MS", "OLLAMA_TIMEOUT_MS"])
             .and_then(|v| v.trim().parse::<u64>().ok())
             .unwrap_or(DEFAULT_TIMEOUT_MS);
         Self {
@@ -266,6 +276,60 @@ impl OllamaTranslator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fixed environment, so the prefix chain can be asserted key by key without
+    /// touching the process -- which is what let this file's coverage number depend on the
+    /// machine before `from_lookup` existed (defect D41).
+    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let owned: Vec<(String, String)> = pairs.iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |k: &str| owned.iter().find(|(name, _)| name == k).map(|(_, v)| v.clone())
+    }
+
+    #[test]
+    fn an_empty_environment_gets_the_shipped_endpoint_model_and_timeout() {
+        let e = OllamaTranslator::from_lookup(&env(&[]));
+        assert_eq!(e.url, DEFAULT_OLLAMA_URL);
+        assert_eq!(e.model, DEFAULT_MODEL);
+        assert_eq!(e.timeout, Duration::from_millis(DEFAULT_TIMEOUT_MS));
+    }
+
+    #[test]
+    fn legacy_prefix_beats_brand_beats_bare_name() {
+        let all = OllamaTranslator::from_lookup(&env(&[
+            ("LT_OLLAMA_URL", "http://lt:1"),
+            ("WONSLATE_OLLAMA_URL", "http://brand:1"),
+            ("OLLAMA_URL", "http://bare:1"),
+            ("LT_OLLAMA_MODEL", "lt-model"),
+            ("WONSLATE_OLLAMA_MODEL", "brand-model"),
+            ("OLLAMA_MODEL", "bare-model"),
+        ]));
+        assert_eq!(all.url, "http://lt:1",
+            "`LT_*` keeps winning for backward compatibility, whatever else is exported");
+        assert_eq!(all.model, "lt-model");
+
+        let brand = OllamaTranslator::from_lookup(&env(&[
+            ("WONSLATE_OLLAMA_URL", "http://brand:1"),
+            ("OLLAMA_URL", "http://bare:1"),
+        ]));
+        assert_eq!(brand.url, "http://brand:1", "the brand spelling outranks the bare name");
+
+        let bare = OllamaTranslator::from_lookup(&env(&[("OLLAMA_URL", "http://bare:1")]));
+        assert_eq!(bare.url, "http://bare:1",
+            "a third-party server exported as OLLAMA_URL is honoured without a rename");
+    }
+
+    #[test]
+    fn a_timeout_that_is_not_a_number_keeps_the_default_instead_of_becoming_zero() {
+        let junk = OllamaTranslator::from_lookup(&env(&[("LT_OLLAMA_TIMEOUT_MS", "later")]));
+        assert_eq!(junk.timeout, Duration::from_millis(DEFAULT_TIMEOUT_MS),
+            "a typo must not cut the request budget to nothing");
+
+        let padded = OllamaTranslator::from_lookup(&env(&[("WONSLATE_OLLAMA_TIMEOUT_MS", "  4000  ")]));
+        assert_eq!(padded.timeout, Duration::from_millis(4000),
+            "padding is tolerated, since a value read out of a file often carries it");
+    }
 
     #[test]
     fn language_prompt_map() {
