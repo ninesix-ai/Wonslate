@@ -111,6 +111,19 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    half-written document (defect D39). The name now carries the pid and a counter. Any new
    atomic-write helper must do the same, and must delete its staging file when the rename
    fails.
+12. **Anything that reads the environment must resolve through an injected lookup.**
+   `OllamaTranslator::new()` and `SidecarTranslator::from_env()` used to call
+   `std::env::var` inline, and that cost more than readability: `first_env(...)
+   .unwrap_or_else(default)` only runs when the key is *absent*, and
+   `.and_then(parse)` only when it is *present*, so which of the two halves of the
+   prefix chain executed depended on the machine running the tests (defect D41). Both
+   now take `from_lookup(&dyn Fn(&str) -> Option<String>)` and the environment is passed
+   in by the caller, so a unit test can drive both directions with pure input and never
+   mutate process state. Two rules follow from that shape: cover **both sides** of every
+   key (unset must land on the shipped default, set must win in the documented order),
+   and let the production constructor read the *same* candidate list the test asserts
+   on -- a `#[cfg(test)]` copy of a key list proves nothing about the list the product
+   actually reads.
 
 ## 4. Conventions and invariants
 
