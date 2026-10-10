@@ -151,14 +151,15 @@ def iter_units(args):
         yield lines[i % len(lines)], i // len(lines)
 
 
-# The retention line, in one number, used by both pass-loaded modes.
+# The retention line: one number, three questions that mean the same thing -- did a lap of the
+# same work cost more than the lap before it (load, reload), and did a language cost more when
+# revisited (rotate). Keeping it in one place is what stops those answers drifting apart.
 #
-# It is not a new constant: 1.15 is the ratio `run_rotate` already uses to call a revisited
-# language "slower", so the two places that answer "did the same work get slower" mean the same
-# thing. What justifies it as a line is the measured noise floor -- three passes over 300 distinct
+# What justifies it as a line is the measured noise floor: three passes over 300 distinct
 # sentences came back 1.00x / 0.97x / 0.98x, so pass-to-pass variation is about 3%, and 1.15 is
-# roughly four times that: far enough not to cry wolf on a warm cache, close enough to catch the
-# 2.15x and 6.9x steps external item 004 measured. A threshold nobody can falsify is not a line.
+# roughly four times that -- far enough not to cry wolf on a warm cache, close enough to catch
+# the 2.15x and 6.9x steps external item 004 measured. A threshold nobody can falsify is
+# not a line; tests/test_diag_sidecar_batch.py feeds that ladder back in and must see a FAIL.
 RETENTION_LIMIT = 1.15
 
 
@@ -224,14 +225,26 @@ def dump_run(path, meta, records):
     A printed ratio cannot be re-examined by anyone: the pass means that produced it depend on
     the individual calls, on which ones failed, and on how many sentences each pass really
     held. Writing them out is what lets a number in the ledger be checked instead of trusted.
+
+    Two things it must never do. It must not need a directory the caller forgot to make -- an
+    hour-long run should not end on a typo in a path. And it must not raise: this is called from
+    a finally block, so an exception here would destroy the verdict and the records it is trying
+    to save, which is the opposite of why it exists.
     """
     if not path:
         return
     body = dict(meta)
     body["records"] = records
-    pathlib.Path(path).write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n",
-                                  encoding="utf-8")
-    print("  per-request records written to {} ({} calls)".format(path, len(records)))
+    try:
+        target = pathlib.Path(path)
+        if target.parent and not target.parent.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        print("  WARNING: records were NOT saved to %s (%s); the verdict above is all that is"
+              " left of this run" % (path, exc))
+        return
+    print("  per-request records written to %s (%d calls)" % (path, len(records)))
 
 
 def run_meta(args, mode):
@@ -247,17 +260,31 @@ def run_meta(args, mode):
 def run_load(args):
     backend = ct2_sidecar.make_backend(args.backend)
     srv, port = serve_in_thread(backend)
+    rss0 = th0 = hd0 = 0
+    latencies = []
+    per_pass = {}
+    records = []
+    verdict = 1
     try:
-        rss0 = th0 = hd0 = 0
-        latencies = []
-        per_pass = {}
-        records = []
         for i, (sentence, passed) in enumerate(iter_units(args), 1):
             started = time.perf_counter()
-            status, _ = post_json(port, "/translate",
-                                  {"text": sentence, "source": args.src, "target": args.tgt})
+            try:
+                status, _ = post_json(port, "/translate",
+                                      {"text": sentence, "source": args.src, "target": args.tgt})
+            except OSError as exc:
+                took = time.perf_counter() - started
+                # The service stopped answering mid-batch. That is the failure external item 004
+                # reported -- not an accident of this probe -- so it is recorded as a fact with
+                # its sequence number, and the finally below writes the curve that led up to it.
+                # Letting the traceback escape instead would throw away the one run worth having.
+                records.append({"n": i, "pass": passed + 1, "error": type(exc).__name__,
+                                "seconds": round(took, 4)})
+                print("request %d (pass %d) never came back: %s -- stopping, after saving every"
+                      " record measured up to here" % (i, passed + 1, exc))
+                return 1
             took = time.perf_counter() - started
-            records.append({"n": i, "pass": passed + 1, "status": status, "seconds": round(took, 4)})
+            records.append({"n": i, "pass": passed + 1, "status": status,
+                            "seconds": round(took, 4)})
             latencies.append(took)
             per_pass.setdefault(passed, []).append(took)
             if status != 200:
@@ -273,11 +300,11 @@ def run_load(args):
         report("load/%s %s->%s" % (args.backend, args.src, args.tgt), latencies,
                rss0, rss)
         verdict = pass_report("load/%s %s->%s" % (args.backend, args.src, args.tgt), per_pass)
-        dump_run(args.out_json, run_meta(args, "load"), records)
         print("  deltas since first sample: threads+%d handles+%d"
               % (th - th0, hd - hd0))
         return verdict
     finally:
+        dump_run(args.out_json, run_meta(args, "load"), records)
         srv.shutdown()
         srv.server_close()
 
@@ -305,7 +332,7 @@ def run_rotate(args):
             before = statistics.mean(costs[tgt])
             print("  %-4s first=%.2fs revisit=%.2fs ratio=%.2f%s"
                   % (tgt, before, again, again / before,
-                     "  <-- slower" if again > before * 1.15 else ""))
+                     "  <-- slower" if again > before * RETENTION_LIMIT else ""))
         print("  spread across scripts: %.2fs -> %.2fs (%.2fx)"
               % (min(statistics.mean(v) for v in costs.values()),
                  max(statistics.mean(v) for v in costs.values()),
@@ -341,19 +368,26 @@ def run_reload(args):
     """A long batch that resets itself, split into what drifts and what pays for the reset."""
     backend = ct2_sidecar.make_backend(args.backend)
     srv, port = serve_in_thread(backend)
+    steady = []
+    steady_by_pass = {}
+    after_reset = []
+    resets = []
+    records = []
+    rss0 = last_rss = None
+    verdict = 1
     try:
-        steady = []
-        steady_by_pass = {}
-        after_reset = []
-        resets = []
-        records = []
-        rss0 = last_rss = None
         pending = False                      # the next call inherits a cold engine
         for i, (sentence, passed) in enumerate(iter_units(args), 1):
             if args.every > 0 and i > 1 and (i - 1) % args.every == 0:
                 before = sample()[0]
                 started = time.perf_counter()
-                status, body = post_json(port, "/reload", {}, timeout=300.0)
+                try:
+                    status, body = post_json(port, "/reload", {}, timeout=300.0)
+                except OSError as exc:
+                    print("  /reload at n=%d never came back: %s -- the service died on a reset,"
+                          " which is exactly what this mode is here to test" % (i - 1, exc))
+                    records.append({"n": i - 1, "kind": "reload", "error": type(exc).__name__})
+                    return 1
                 took = time.perf_counter() - started
                 after = sample()[0]
                 if status != 200:
@@ -374,8 +408,16 @@ def run_reload(args):
                 last_rss = after
                 pending = True
             started = time.perf_counter()
-            status, _ = post_json(port, "/translate",
-                                  {"text": sentence, "source": args.src, "target": args.tgt})
+            try:
+                status, _ = post_json(port, "/translate",
+                                      {"text": sentence, "source": args.src, "target": args.tgt})
+            except OSError as exc:
+                took = time.perf_counter() - started
+                records.append({"n": i, "kind": "translate", "pass": passed + 1,
+                                "error": type(exc).__name__, "seconds": round(took, 4)})
+                print("request %d (pass %d) never came back: %s -- stopping, after saving every"
+                      " record measured up to here" % (i, passed + 1, exc))
+                return 1
             took = time.perf_counter() - started
             records.append({"n": i, "kind": "translate", "pass": passed + 1,
                             "status": status, "seconds": round(took, 4)})
@@ -410,9 +452,9 @@ def run_reload(args):
                   % (len(resets), statistics.mean(r[1] for r in resets),
                      statistics.mean(r[2] - r[3] for r in resets)))
         print("  rss across the run: %.0f -> %.0f MB" % (rss0 or 0.0, last_rss or 0.0))
-        dump_run(args.out_json, run_meta(args, "reload"), records)
         return verdict
     finally:
+        dump_run(args.out_json, run_meta(args, "reload"), records)
         srv.shutdown()
         srv.server_close()
 

@@ -184,7 +184,7 @@ def run_ffi_smoke() -> int:
         print("         FFI smoke cannot run on this host.", flush=True)
         print_app_control_hint()
     for name in ("test_phase1_ffi.py", "test_sidecar_e2e.py",
-                 "test_ct2_sidecar.py", "test_bench_flores.py",
+                 "test_ct2_sidecar.py", "test_diag_sidecar_batch.py", "test_bench_flores.py",
                  "test_bench_domain_av.py", "test_domain_pack_loader.py",
                  "test_install_glossary_pack.py",
                  "test_score_comet.py",

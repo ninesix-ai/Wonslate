@@ -80,6 +80,7 @@ jobs:
           python tests/test_phase1_ffi.py
           python tests/test_sidecar_e2e.py
           python tests/test_ct2_sidecar.py
+          python tests/test_diag_sidecar_batch.py
           python tests/test_bench_flores.py
           python tests/test_bench_domain_av.py
           python tests/test_domain_pack_loader.py
