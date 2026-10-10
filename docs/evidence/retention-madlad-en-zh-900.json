@@ -1,0 +1,42 @@
+{
+  "what": "retention-line measurement for a long single-engine batch (defect D30 item 4, external audit item 004)",
+  "measured_at": "2026-10-10T20:47 local, run finished 21:52",
+  "command": "python script/diag_sidecar_batch.py load --backend madlad --corpus script/eval-data/av-zh-en/av-zh-en.tgt --src en --tgt zh --n 900 --every 100",
+  "engine": "MADLAD-400 3B int8 via ctranslate2, CPU, one process, one client at a time",
+  "load": {
+    "corpus": "script/eval-data/av-zh-en/av-zh-en.tgt",
+    "distinct_sentences": 300,
+    "passes": 3,
+    "calls": 900,
+    "pair": "en->zh",
+    "why_this_shape": "item 004 described its symptom as the same body of work getting slower on each repeat (130 s, then 280 s, then over 900 s), so the measurement has to re-run the same sentences rather than repeat one sentence; a distinct-sentence corpus is also what the reporter's 1088 UI keys actually were."
+  },
+  "per_pass": {
+    "1": { "n": 300, "mean_s": 4.805, "p95_s": 6.289, "vs_pass1": 1.0 },
+    "2": { "n": 300, "mean_s": 4.669, "p95_s": 6.108, "vs_pass1": 0.97 },
+    "3": { "n": 300, "mean_s": 4.721, "p95_s": 6.16, "vs_pass1": 0.98 }
+  },
+  "verdict": {
+    "paired_last_against_first": 0.98,
+    "limit": 1.15,
+    "result": "PASS",
+    "limit_provenance": "1.15 is the ratio run_rotate already uses to call a revisited language slower; measured pass-to-pass variation in this run is about 3%, so the line sits roughly four times above the noise floor and would have caught the 2.15x and 6.9x steps item 004 reported."
+  },
+  "resource_trace_mb_rss": {
+    "samples_at_every_100_calls": [2931, 2934, 2932, 2935, 2937, 2778, 2783, 2778, 2781, 2781],
+    "first_to_last": "2931 -> 2782 (fell; it did not climb)",
+    "threads_delta": -2,
+    "handles_delta": 3
+  },
+  "unpaired_ratio_for_contrast": {
+    "head100_vs_tail100": 1.08,
+    "meaning": "the same run, measured with different sentences in each window, reads 8% slower while the paired measurement reads 2% faster. This is why the paired pass report is the one the line is set on, and why report() now prints UNPAIRED next to its own number."
+  },
+  "environment_precondition": "host additionally held two long-lived sidecars started 2026-10-07 21:40 (argos on 11435, madlad on 11436, about 2.7 GB resident together, idle). The 2026-10-10 reload measurements were taken in the same environment, so those two sets are directly comparable; a run taken with those processes absent is NOT comparable to this one without re-measuring.",
+  "what_this_does_not_show": [
+    "per-request latencies were not persisted by this run: the --out-json capability was added in the same change as this file, so only the aggregates the tool printed at the time are recorded here. Re-run the command above with --out-json to get the raw curve.",
+    "900 calls is fewer than the 1088-to-1500 calls per language the reporter described, and far short of their 30k total; this refutes drift at this scale, it does not exclude a failure further along.",
+    "one target language, one client, one process: no concurrency, no language rotation, no GPU contention with ollama, no memory pressure from other applications.",
+    "the reporter's hard failure (process gone or unresponsive) was not attempted: nothing here shows that a crash cannot happen, only that latency and RSS did not degrade over these 900 calls."
+  ]
+}

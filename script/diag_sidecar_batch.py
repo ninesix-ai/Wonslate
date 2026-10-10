@@ -6,6 +6,10 @@ Run from the repository root. Five modes, one variable each:
 
   load    N sequential requests against one backend, sampling the process while
           it runs. Answers "does latency or memory grow with request count?"
+          Pass `--corpus` to drive it with distinct sentences -- the shape item 004
+          measured -- and results are then also reported per pass against the first
+          pass, because a ladder is one body of work done again, not one sentence
+          repeated.
   rotate  one fixed source sentence across several target scripts, then revisits
           the first ones. Answers "is the ladder accumulation, or is it just what
           each script costs?" A revisited language that costs what it cost before
@@ -18,21 +22,25 @@ Run from the repository root. Five modes, one variable each:
           "does self-resetting hold latency at its baseline, and what does the reset
           cost?" That split is the whole point: averaging both together blames the
           reload for the seconds it buys deliberately, and the number a retention
-          line needs is the steady drift alone.
+          line needs is the steady drift alone, pass against pass.
   race    drive two revisions of the sidecar with a fake ctranslate2 and count
           how many translators a cold burst builds. Answers "was the reported
           slowdown a duplicated 2.95 GB checkpoint?" No real model is loaded, so
           it is fast and deterministic.
 
-Nothing here is a gate: it measures, it does not assert. Numbers printed by
-`load`, `rotate` and `reload` are environment-dependent by design -- the ledger's counting
-rule keeps a runtime-precondition column for exactly that reason (REQ-F3).
+Nothing here runs in CI: `load` and `reload` now state a verdict against the retention
+line (exit code 0 or 1), but they need a real model and tens of minutes, so the verdict
+is for whoever is deciding a release, not for a gate. `rotate`, `hard` and `race` only
+measure. Numbers printed by `load`, `rotate` and `reload` are environment-dependent by
+design -- the ledger's counting rule keeps a runtime-precondition column for exactly that
+reason (REQ-F3), and the environment a verdict was reached in belongs with the verdict.
 
 Dependencies: psutil (process sampling) and git (only for `race --rev`).
 """
 import argparse
 import http.client
 import json
+import math
 import os
 import pathlib
 import statistics
@@ -91,12 +99,149 @@ def sample():
 
 
 def report(tag, latencies, first_rss, last_rss):
-    """Print the ratio that a ladder would show, so its absence is also evidence."""
+    """Print the ratio that a ladder would show, so its absence is also evidence.
+
+    Marked UNPAIRED because it is easy to quote by mistake: head and tail are *different*
+    sentences unless --text repeats one, so this ratio mixes in what each sentence costs. On a
+    300-sentence corpus today it read 1.08 while the paired pass-against-pass number from the
+    same run read 0.98 -- one workload, two answers 8% apart, and only one of them measures
+    drift. pass_report is the one to cite.
+    """
     head = statistics.mean(latencies[:min(100, len(latencies))])
     tail = statistics.mean(latencies[-min(100, len(latencies)):])
-    print("%s: n=%d  head_mean=%.2fs tail_mean=%.2fs ratio=%.2f  rss %.0f->%.0f MB"
+    print("%s: n=%d  head_mean=%.2fs tail_mean=%.2fs ratio=%.2f (UNPAIRED -- different sentences"
+          " in each window; read the pass report for drift)  rss %.0f->%.0f MB"
           % (tag, len(latencies), head, tail, (tail / head if head else 0.0),
              first_rss, last_rss))
+
+
+def corpus_lines(raw):
+    """The distinct source sentences a run should be driven with, or None for "repeat --text".
+
+    Accepts a `.src`/text file, or a directory holding one (`<prefix>.src`). Reading the same
+    corpus the benchmark scores against is the point: item 004 measured its ladder over 1088
+    *distinct* UI keys, so repeating one sentence would measure a cache-warm path and call the
+    result a batch.
+    """
+    if not raw:
+        return None
+    path = pathlib.Path(raw)
+    if path.is_dir():
+        candidates = sorted(path.glob("*.src")) or sorted(path.glob("*.txt"))
+        if not candidates:
+            raise SystemExit("no .src/.txt corpus under {}".format(path))
+        path = candidates[0]
+    if not path.is_file():
+        raise SystemExit("corpus not found: {}".format(path))
+    lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    if not lines:
+        raise SystemExit("corpus {} has no non-empty lines".format(path))
+    return lines
+
+
+def iter_units(args):
+    """Yield (text, pass_number) for args.n calls, cycling the corpus one sentence at a time.
+
+    Passes are counted because that is how item 004 described the symptom: the *same* body of
+    work, re-run, took 130 s then 280 s then over 900 s. One request cannot be compared with
+    another request whose sentence happens to cost more; one pass over the same sentences can.
+    """
+    lines = corpus_lines(getattr(args, "corpus", None)) or [args.text]
+    for i in range(args.n):
+        yield lines[i % len(lines)], i // len(lines)
+
+
+# The retention line, in one number, used by both pass-loaded modes.
+#
+# It is not a new constant: 1.15 is the ratio `run_rotate` already uses to call a revisited
+# language "slower", so the two places that answer "did the same work get slower" mean the same
+# thing. What justifies it as a line is the measured noise floor -- three passes over 300 distinct
+# sentences came back 1.00x / 0.97x / 0.98x, so pass-to-pass variation is about 3%, and 1.15 is
+# roughly four times that: far enough not to cry wolf on a warm cache, close enough to catch the
+# 2.15x and 6.9x steps external item 004 measured. A threshold nobody can falsify is not a line.
+RETENTION_LIMIT = 1.15
+
+
+def pass_report(tag, per_pass):
+    """Per-pass means against the first pass -- the shape the report used.
+
+    Every number is printed with its own sample count: a later pass with fewer entries (a run
+    that ended mid-pass) is not comparable to a full one, and hiding that would make the ratio
+    look firmer than it is.
+
+    A pass of one repeated sentence is refused rather than reported: the ratio would be almost
+    perfectly flat, because the work really is identical, and a flat line measured that way is
+    the kind of number that gets quoted as "no drift over thousands of calls" when what was
+    actually shown is one sentence translated twice.
+    """
+    ordered = sorted(per_pass)
+    if not ordered:
+        print("{}: no served requests, so nothing is measured".format(tag))
+        return 1
+    widest = max(len(v) for v in per_pass.values())
+    baseline = statistics.mean(per_pass[ordered[0]])
+    print("{}: passes={}, sentences-per-pass~{}"
+          .format(tag, len(ordered), widest))
+    for p in ordered:
+        mean = statistics.mean(per_pass[p])
+        rank = max(1, math.ceil(0.95 * len(per_pass[p])))
+        print("  pass %d: n=%-4d mean=%7.3fs p95=%7.3fs vs pass1=%s"
+              % (p + 1, len(per_pass[p]), mean,
+                 sorted(per_pass[p])[min(rank, len(per_pass[p])) - 1],
+                 "{:.2f}x".format(mean / baseline) if baseline else "n/a"))
+    if widest < 2:
+        print("  REFUSING to state a line: each pass here is a single repeated sentence, so the"
+              " ratio compares the same work done again only in the narrowest sense -- pass"
+              " `--corpus` with distinct sentences to measure a batch the way item 004 did")
+        return 1
+    # Only complete passes are comparable: a run that stopped mid-sentence did a different
+    # amount of work than the passes around it, and comparing across that difference is how a
+    # measurement quietly stops meaning what its label says. No threshold is invented here --
+    # "the same sentences, all of them" is the whole condition.
+    full = [p for p in ordered if len(per_pass[p]) == widest]
+    dropped = [p for p in ordered if p not in full]
+    if dropped:
+        print("  excluded incomplete passes %s (%s sentences each, against a full pass of %d)"
+              % ("".join("pass%d " % (p + 1) for p in dropped),
+                 ", ".join(str(len(per_pass[p])) for p in dropped), widest))
+    if len(full) < 2:
+        print("  fewer than two complete passes -- a retention line needs the same body of work"
+              " done at least twice, so this run cannot decide anything")
+        return 1
+    first = statistics.mean(per_pass[full[0]])
+    last = statistics.mean(per_pass[full[-1]])
+    ratio = last / first if first else 0.0
+    verdict = "PASS" if ratio <= RETENTION_LIMIT else "FAIL"
+    print("  ** retention line (defect D30 item 4): pass {} against pass {} = {:.2f}"
+          " against a limit of {:.2f} -> {} **".format(
+              full[-1] + 1, full[0] + 1, ratio, RETENTION_LIMIT, verdict))
+    return 0 if verdict == "PASS" else 1
+
+
+def dump_run(path, meta, records):
+    """Persist every request behind a verdict, not just the verdict.
+
+    A printed ratio cannot be re-examined by anyone: the pass means that produced it depend on
+    the individual calls, on which ones failed, and on how many sentences each pass really
+    held. Writing them out is what lets a number in the ledger be checked instead of trusted.
+    """
+    if not path:
+        return
+    body = dict(meta)
+    body["records"] = records
+    pathlib.Path(path).write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n",
+                                  encoding="utf-8")
+    print("  per-request records written to {} ({} calls)".format(path, len(records)))
+
+
+def run_meta(args, mode):
+    """What a reader needs to judge whether these numbers mean anything."""
+    return {"mode": mode, "backend": args.backend, "pair": "%s->%s" % (args.src, args.tgt),
+            "corpus": args.corpus or None, "requested_calls": args.n,
+            "retention_limit": RETENTION_LIMIT,
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(args.started_at)),
+            "note": "seconds are client-side wall time around one POST, one fresh connection"
+                    " per call; the service ran in this same process"}
 
 
 def run_load(args):
@@ -105,11 +250,16 @@ def run_load(args):
     try:
         rss0 = th0 = hd0 = 0
         latencies = []
-        for i in range(1, args.n + 1):
+        per_pass = {}
+        records = []
+        for i, (sentence, passed) in enumerate(iter_units(args), 1):
             started = time.perf_counter()
             status, _ = post_json(port, "/translate",
-                                  {"text": args.text, "source": args.src, "target": args.tgt})
-            latencies.append(time.perf_counter() - started)
+                                  {"text": sentence, "source": args.src, "target": args.tgt})
+            took = time.perf_counter() - started
+            records.append({"n": i, "pass": passed + 1, "status": status, "seconds": round(took, 4)})
+            latencies.append(took)
+            per_pass.setdefault(passed, []).append(took)
             if status != 200:
                 print("request %d returned %d -- stopping the run" % (i, status))
                 break
@@ -117,13 +267,16 @@ def run_load(args):
                 rss, th, hd = sample()
                 if i == 1:
                     rss0, th0, hd0 = rss, th, hd
-                print("  n=%-5d rss=%6.0fMB threads=%-3d handles=%-4d last=%.2fs"
-                      % (i, rss, th, hd, latencies[-1]))
+                print("  n=%-5d pass=%d rss=%6.0fMB threads=%-3d handles=%-4d last=%.2fs"
+                      % (i, passed + 1, rss, th, hd, latencies[-1]))
         rss, th, hd = sample()
         report("load/%s %s->%s" % (args.backend, args.src, args.tgt), latencies,
                rss0, rss)
+        verdict = pass_report("load/%s %s->%s" % (args.backend, args.src, args.tgt), per_pass)
+        dump_run(args.out_json, run_meta(args, "load"), records)
         print("  deltas since first sample: threads+%d handles+%d"
               % (th - th0, hd - hd0))
+        return verdict
     finally:
         srv.shutdown()
         srv.server_close()
@@ -190,11 +343,13 @@ def run_reload(args):
     srv, port = serve_in_thread(backend)
     try:
         steady = []
+        steady_by_pass = {}
         after_reset = []
         resets = []
+        records = []
         rss0 = last_rss = None
         pending = False                      # the next call inherits a cold engine
-        for i in range(1, args.n + 1):
+        for i, (sentence, passed) in enumerate(iter_units(args), 1):
             if args.every > 0 and i > 1 and (i - 1) % args.every == 0:
                 before = sample()[0]
                 started = time.perf_counter()
@@ -202,10 +357,16 @@ def run_reload(args):
                 took = time.perf_counter() - started
                 after = sample()[0]
                 if status != 200:
-                    print("  /reload at n=%d returned %d: %s -- stopping"
-                          % (i - 1, status, body))
+                    print("  /reload at n=%d returned %d: %s -- stopping, because a run that never"
+                          " reset anything cannot say what a reset costs" % (i - 1, status, body))
+                    if body.get("error") == "reload_unsupported":
+                        print("      this backend holds nothing to reload (mock has no engine);"
+                              " this mode needs --backend madlad or --backend ct2")
                     break
                 resets.append((i - 1, took, before, after, len(body.get("discarded") or [])))
+                records.append({"n": i - 1, "kind": "reload", "status": status,
+                                "seconds": round(took, 4), "rss_before_mb": round(before),
+                                "rss_after_mb": round(after)})
                 print("  reset after n=%-4d rss %6.0f -> %6.0f MB (%5.0f back), endpoint %.2fs, "
                       "discarded %d"
                       % (i - 1, before, after, before - after, took,
@@ -214,12 +375,18 @@ def run_reload(args):
                 pending = True
             started = time.perf_counter()
             status, _ = post_json(port, "/translate",
-                                  {"text": args.text, "source": args.src, "target": args.tgt})
+                                  {"text": sentence, "source": args.src, "target": args.tgt})
             took = time.perf_counter() - started
+            records.append({"n": i, "kind": "translate", "pass": passed + 1,
+                            "status": status, "seconds": round(took, 4)})
             if status != 200:
                 print("request %d returned %d -- stopping the run" % (i, status))
                 break
-            (after_reset if pending else steady).append(took)
+            if pending:
+                after_reset.append(took)
+            else:
+                steady.append(took)
+                steady_by_pass.setdefault(passed, []).append(took)
             pending = False
             if rss0 is None:
                 rss0 = sample()[0]
@@ -228,17 +395,12 @@ def run_reload(args):
         print("\nreload/%s %s->%s: n=%d  steady=%d  calls right after a reset=%d"
               % (args.backend, args.src, args.tgt, len(steady) + len(after_reset),
                  len(steady), len(after_reset)))
-        if len(steady) >= 4:
-            # First half against second half, and said out loud when the run is too short for
-            # that comparison to mean anything: a retention line needs drift, and drift needs
-            # enough calls to have a second half at all.
-            half = len(steady) // 2
-            first_mean = statistics.mean(steady[:half])
-            second_mean = statistics.mean(steady[half:])
-            print("  steady drift: first_half_mean=%.3fs second_half_mean=%.3fs ratio=%.2f%s"
-                  % (first_mean, second_mean, second_mean / first_mean if first_mean else 0.0,
-                     "" if len(steady) >= 100 else "   <-- %d samples, too few for a line"
-                     % len(steady)))
+        # Passes rather than halves: the first half of a mixed stream against its second half
+        # compares different sentences as well as different times, while pass N against pass 1 is
+        # the paired comparison item 004's ladder actually describes -- the same body of work
+        # done again.
+        verdict = pass_report("reload/%s %s->%s steady by pass"
+                              % (args.backend, args.src, args.tgt), steady_by_pass)
         if after_reset:
             print("  first call after a reset: mean=%.2fs max=%.2fs "
                   "(the price of the reset, not drift)"
@@ -248,6 +410,8 @@ def run_reload(args):
                   % (len(resets), statistics.mean(r[1] for r in resets),
                      statistics.mean(r[2] - r[3] for r in resets)))
         print("  rss across the run: %.0f -> %.0f MB" % (rss0 or 0.0, last_rss or 0.0))
+        dump_run(args.out_json, run_meta(args, "reload"), records)
+        return verdict
     finally:
         srv.shutdown()
         srv.server_close()
@@ -406,9 +570,19 @@ def main():
     ap.add_argument("--rev", default="02dc2bd,HEAD", help="comma-separated revisions for race")
     ap.add_argument("--burst", type=int, default=4)
     ap.add_argument("--load-seconds", type=float, default=0.5)
+    ap.add_argument("--corpus", default=None,
+                    help="a .src/.txt file, or a directory holding one; its sentences are used"
+                         " in order and cycled, so a run measures a batch of distinct work like"
+                         " item 004 did instead of one warm sentence")
+    ap.add_argument("--out-json", default=None,
+                    help="write every per-request record here, so a verdict can be re-checked"
+                         " rather than trusted")
     args = ap.parse_args()
-    {"load": run_load, "rotate": run_rotate, "hard": run_hard,
-     "reload": run_reload, "race": run_race}[args.mode](args)
+    args.started_at = time.time()          # stamped here so a record says when the run began
+    # A verdict, not just a printout: a caller scripting a release decision needs an exit code
+    # to branch on, and modes that only measure return None, which becomes 0.
+    sys.exit({"load": run_load, "rotate": run_rotate, "hard": run_hard,
+              "reload": run_reload, "race": run_race}[args.mode](args) or 0)
 
 
 if __name__ == "__main__":
