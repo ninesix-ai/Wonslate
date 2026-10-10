@@ -12,13 +12,28 @@ tests/mock_sidecar_server.py):
                          the caller's line count (a blob makes the decoder emit repeated tokens
                          with no source content in it - external item 007). "failed_lines" names
                          the positions that came back unanswered; blank lines are structure.
-    GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>"}   (LIVENESS only)
+    GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>","requests_served",...,
+                         "requests_until_exit":N|null}   (LIVENESS only)
+                         requests_until_exit is null unless the process was started with
+                         --max-requests; it never invents a countdown it will not honour.
     GET  /readyz      -> 200 {"status":"ready","backend",...} | 503 {"status":"warming","error":"not_ready","reason":...}
                          501 {"error":"readiness_unknown"} when the backend cannot say
     GET  /languages   -> 200 {"backend","pairs","target_codes","complete","note"}
                          ?target=xx adds "supported": true | false | null (unknown)
     POST /warmup      body {"source","target"} optional -> 200 readiness report with
                          "warmed" and "load_s"; 422 unsupported_target; 501 unknown
+    POST /reload      body {} or {"warm":bool,"source","target"} -> 200 {"discarded":[...],
+                         "reloaded":bool,"status":"ready|warming","requests_served",...};
+                         422/503 keep the same meanings as /translate and still report the
+                         drop that happened; 501 {"error":"reload_unsupported"} when the
+                         backend holds nothing to drop. Dropping is the default because a
+                         reload that blocks on a model load reads as an outage to a caller
+                         with a short HTTP timeout.
+    --max-requests N  answer N requests then exit on its own, exit code 0, reason printed to
+                         stdout, and the request that spent the budget carries
+                         "shutting_down" (N=0/default means unbounded). Item 004's callers were
+                         killing the process by hand because a degrading batch never failed in a
+                         way they could act on; a budget they can predict replaces that.
 
 Region tags: BCP-47 codes are folded to their primary subtag when that is
 what the model or package can actually serve - pt-BR is served by pt, zh-Hans-CN
@@ -50,6 +65,9 @@ Design rules:
       language that no model here can ever produce raises UnsupportedTarget.
     - /health proves the port answers; it does NOT prove a request will not stall
       on a cold model load. Say that on /readyz instead.
+    - One request counter, one budget. /health's requests_served, the countdown and
+      the self-exit all read the same tally, so a refused language code cannot be
+      counted by one and ignored by another.
     - The service binds 127.0.0.1 only (privacy: translated text never leaves
       the machine).
     - Licenses: deps ctranslate2(MIT)/sentencepiece(Apache); models
@@ -72,6 +90,7 @@ The module is importable by unit tests (serve only blocks under __main__).
 """
 import argparse
 import collections
+import gc
 import json
 import math
 import os
@@ -179,17 +198,29 @@ class HealthSignals:
     slowed down, so a caller following the "restart on failure" rule had nothing
     to fire on: there never was a failure. These three numbers are what lets it
     tell fine from degraded without timing its own wall clock.
+
+    `max_requests` belongs here rather than on the server because the countdown has
+    to be read off the same counter that /health already publishes. Two tallies would
+    eventually disagree about whether a refused language code cost anything.
     """
 
-    def __init__(self, window=_LATENCY_WINDOW):
+    def __init__(self, window=_LATENCY_WINDOW, max_requests=None):
         self._lock = threading.Lock()
         self._latencies = collections.deque(maxlen=window)
         self._served = 0
+        self._max_requests = max_requests
 
     def record_served(self):
         """One /translate reached the engine, however it ended."""
         with self._lock:
             self._served += 1
+
+    def over_budget(self):
+        """Whether the request just counted was the last permitted one."""
+        with self._lock:
+            if self._max_requests is None:
+                return False
+            return self._served >= self._max_requests
 
     def record_latency(self, seconds):
         """One translation completed; failures are deliberately not sampled."""
@@ -200,11 +231,28 @@ class HealthSignals:
         with self._lock:
             served = self._served
             ordered = sorted(self._latencies)
+            remaining = (None if self._max_requests is None
+                         else max(0, self._max_requests - served))
         return {"requests_served": served,
+                "requests_until_exit": remaining,
                 "latency_samples": len(ordered),
                 "last_latency_p50": _percentile(ordered, 0.50),
                 "last_latency_p99": _percentile(ordered, 0.99),
                 "rss_bytes": process_rss_bytes()}
+
+
+def resolve_max_requests(raw):
+    """Normalise a request budget: a positive int, or None for "unbounded".
+
+    Zero and negatives mean unbounded rather than "exit after the first call", because a
+    flag left at its default must never silently shorten a batch. The caller that meant
+    `--max-requests 0` gets a process that outlives the batch, which is recoverable; one
+    that exits on the first sentence looks like a crash, which is not.
+    """
+    if raw is None:
+        return None
+    value = int(raw)
+    return value if value > 0 else None
 
 
 def primary_subtag(code):
@@ -417,6 +465,18 @@ class CT2Backend:
         base = primary_subtag(source)
         return base if base and base in sources else None
 
+    def reload(self):
+        """Release every translator this service has materialised.
+
+        Package discovery stays: it is a directory listing, not memory worth dropping. The
+        loaded pairs are translators plus their processors, and those are the resident
+        megabytes a long batch is accused of accumulating (external item 004).
+        """
+        dropped = sorted("{}->{}".format(pair[0], pair[1]) for pair in self._loaded)
+        self._loaded = {}
+        gc.collect()
+        return {"discarded": dropped}
+
     def readiness(self):
         """Ready only once a pair has actually been loaded.
 
@@ -590,6 +650,22 @@ class MadladBackend:
 
     def _engine(self):
         return self._ensure_engine()[0]
+
+    def reload(self):
+        """Drop the 3B checkpoint so the next request loads a fresh one.
+
+        Measured on this build: releasing the translator took resident memory from 2926.7 MB
+        to 79.6 MB, so this returns the megabytes rather than only reassigning a name. The
+        tokenizer stays, and so do the target codes probed into `_known_targets`: both are
+        facts about the vocabulary, which a reset must not make the service re-derive by
+        guessing. In-flight requests keep the reference they already hold, so a reload cannot
+        pull the engine out from under a sentence mid-decode; it only means the next one pays
+        the load (external item 004, defect D30).
+        """
+        dropped = ["translator"] if self._translator is not None else []
+        self._translator = None
+        gc.collect()
+        return {"discarded": dropped}
 
     def warm(self, source=None, target=None):
         """Materialise the checkpoint now instead of on the first sentence.
@@ -922,7 +998,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/translate", "/warmup"):
+        if path not in ("/translate", "/warmup", "/reload"):
             self._send(404, {"error": "not found"})
             return
         n = int(self.headers.get("Content-Length", 0) or 0)
@@ -933,6 +1009,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/warmup":
             self._warmup(req)
+            return
+        if path == "/reload":
+            self._reload(req)
             return
         entries = self._units_from_request(req)
         if entries is None:
@@ -949,18 +1028,20 @@ class Handler(BaseHTTPRequestHandler):
             # Permanent for this code, and ordered before MissingDependency
             # because it IS one. Hand back the supported set so a batch caller can
             # retire the direction instead of restarting a healthy engine.
-            self.server.signals.record_served()
-            self._send(422, {"error": "unsupported_target", "message": str(e),
-                             "supported": self._capability()})
+            spent = self.server.count_served()
+            payload = {"error": "unsupported_target", "message": str(e),
+                       "supported": self._capability()}
+            self._send(422, self._mark_exit(payload, spent))
             return
         except MissingDependency as e:
-            self.server.signals.record_served()
-            self._send(503, {"error": "backend_unavailable", "message": str(e)})
+            spent = self.server.count_served()
+            self._send(503, self._mark_exit({"error": "backend_unavailable",
+                                             "message": str(e)}, spent))
             return
         # Counted and sampled together only on this path: an error is fast, and
         # letting it into the percentile would report a healthy engine at the
         # exact moment the engine is failing.
-        self.server.signals.record_served()
+        spent = self.server.count_served()
         self.server.signals.record_latency(time.perf_counter() - started)
         # Regroup in the caller's own shape: one entry per array element, one text for a
         # plain request, and always the same number of lines the entry had.
@@ -988,7 +1069,24 @@ class Handler(BaseHTTPRequestHandler):
                             " intact and the position is named so it can be retried"
                             % (len(failed_units), "entries" if as_array else "lines"))
         body.update(echoes)
-        self._send(200, body)
+        self._send(200, self._mark_exit(body, spent))
+
+    def _mark_exit(self, body, spent_last_permit):
+        """Announce a scheduled exit inside the answer that caused it.
+
+        Item 004's callers had to discover a dying process by timing their own wall clock and
+        then taskkill it. A budget is only useful if the request that spends it says so, so the
+        caller can relaunch on its own terms; it rides on error answers too, because an exit the
+        caller cannot predict is the same silence the original report was about. Nothing is
+        claimed about memory being reclaimed -- that is a measured question, not a promise.
+        """
+        if spent_last_permit:
+            body["shutting_down"] = {"reason": "max_requests",
+                                     "requests_served":
+                                         self.server.signals.snapshot()["requests_served"],
+                                     "note": "this process has spent its request budget and is "
+                                             "exiting; relaunch to continue the batch"}
+        return body
 
     def _warmup(self, req):
         """Load on demand, then answer with the same report /readyz would give.
@@ -1035,22 +1133,147 @@ class Handler(BaseHTTPRequestHandler):
             body["error"] = "not_ready"
             self._send(503, body)
 
+    def _readiness_word(self):
+        """The same two words /readyz uses, or no word at all if the backend cannot tell.
+
+        "warming" would be a claim about a cold model that this backend never made, and that is
+        the failure mode /readyz exists to stop (defect D23).
+        """
+        fn = getattr(self.server.backend, "readiness", None)
+        if fn is None:
+            return None
+        return "ready" if fn().get("ready") else "warming"
+
+    def _reload(self, req):
+        """Drop the resident engine, and only reload it if the caller asked to pay for that.
+
+        Item 004's callers were restarting the whole process per language -- kill, wait for the
+        port, relaunch, verify with a real translation -- because that was the only way they
+        found to reset a degrading engine. This keeps the port and the process and discards the
+        engine instead. Measured on this build's MADLAD-400 checkpoint: releasing the translator
+        took resident memory from 2926.7 MB to 79.6 MB, so the drop is real rather than a report
+        written over a live engine; re-materialising it cost 4.2-5.5 s here, which is why it is
+        opt-in -- the desktop client probes this service with a 1500 ms HTTP timeout, so a
+        synchronous reload would read as an outage to exactly the callers this exists to help.
+
+        Whatever the answer says, it never claims memory came back: RSS after a drop is the
+        number above, and a promise would outlive any single measurement.
+        """
+        backend = self.server.backend
+        fn = getattr(backend, "reload", None)
+        if fn is None:
+            # 200 would claim a reset that never happened and 503 would claim an outage; this is
+            # neither, so it gets the same 501 shape as warmup (defect D23's vocabulary).
+            self._send(501, {"error": "reload_unsupported", "backend": backend.name,
+                             "note": "backend holds no reloadable engine"})
+            return
+        report = fn() or {}
+        body = {"backend": backend.name,
+                "discarded": list(report.get("discarded") or []),
+                "reloaded": False,
+                "requests_served": self.server.signals.snapshot()["requests_served"]}
+        word = self._readiness_word()
+        if word is not None:
+            body["status"] = word
+        if not req.get("warm"):
+            self._send(200, body)
+            return
+        warm_fn = getattr(backend, "warm", None)
+        if warm_fn is None:
+            # The drop really happened, so failing the call would hide it; what is missing is
+            # the reload, and that gets said as plainly as it is.
+            body["note"] = ("engine was discarded but this backend cannot warm on demand; "
+                            "the next request pays the load")
+            self._send(200, body)
+            return
+        source, target, echoes = self._fold_codes(
+            str(req.get("source") or "").strip(), str(req.get("target") or "").strip())
+        started = time.perf_counter()
+        try:
+            loaded = warm_fn(source or None, target or None)
+        except UnsupportedTarget as e:
+            # The drop already happened, so the permanent-failure answer has to carry it: a 422
+            # that hid the reset would leave the caller believing its engine was still resident.
+            body.update(echoes)
+            body.update({"error": "unsupported_target", "message": str(e),
+                         "supported": self._capability()})
+            self._send(422, body)
+            return
+        except MissingDependency as e:
+            body.update(echoes)
+            body.update({"error": "backend_unavailable", "message": str(e)})
+            self._send(503, body)
+            return
+        already = bool(loaded.get("already"))
+        # Read readiness again: the word above described the instant after the drop, and an
+        # answer that warmed the engine while still reporting "warming" would send the caller
+        # off to poll /readyz for a fact this response already changed.
+        word = self._readiness_word()
+        if word is not None:
+            body["status"] = word
+        # "reloaded" is only true if this call both did the work and left the service able to
+        # answer: Argos with no pair named warms nothing, and reporting that as a reload would
+        # teach the caller to trust a field that invents its own content.
+        body["reloaded"] = not already and word == "ready"
+        if body["reloaded"]:
+            body["load_s"] = round(time.perf_counter() - started, 3)
+        else:
+            body["load_s"] = 0.0
+        body.update(echoes)
+        self._send(200, body)
+
     def log_message(self, *_):  # silence the access log
         pass
 
 
-def build_server(backend, host="127.0.0.1", port=0):
-    srv = ThreadingHTTPServer((host, port), Handler)
+class SidecarServer(ThreadingHTTPServer):
+    """The service plus the facts a batch caller needs about the process itself.
+
+    `exit_requested` is a flag rather than a direct kill because the request that spends the
+    budget still has to answer: retiring the process is the point, losing that last answer
+    would not be.
+    """
+
+    daemon_threads = True
+
+    def count_served(self):
+        """Charge one request to the process budget; True if this was its last permit.
+
+        Both halves happen together on purpose. A permit spent on a refused language code has
+        to retire the process exactly like one spent on an answer, otherwise a batch of bad
+        codes keeps a degrading engine alive forever -- and the budget would then disagree with
+        /health, which already counted that request (defect D30, external item 004).
+        """
+        self.signals.record_served()
+        if not self.signals.over_budget():
+            return False
+        if not self.exit_requested:
+            self.exit_requested = True
+            self.exit_reason = ("max_requests: served {} of {} permitted requests; exiting "
+                                "so the next request is answered by a fresh process"
+                                .format(self.signals.snapshot()["requests_served"],
+                                        self.max_requests))
+            # Ask the listening loop to stop from another thread: calling shutdown() here would
+            # block this handler until the loop actually returns, and the response above is
+            # what the caller is waiting for.
+            threading.Thread(target=self.shutdown, daemon=True).start()
+        return True
+
+
+def build_server(backend, host="127.0.0.1", port=0, max_requests=None):
+    srv = SidecarServer((host, port), Handler)
     srv.backend = backend
-    srv.signals = HealthSignals()
+    srv.max_requests = resolve_max_requests(max_requests)
+    srv.signals = HealthSignals(max_requests=srv.max_requests)
+    srv.exit_requested = False
+    srv.exit_reason = None
     return srv
 
 
-def serve_in_thread(backend, host="127.0.0.1", port=0):
+def serve_in_thread(backend, host="127.0.0.1", port=0, max_requests=None):
     """Start the service on a background thread (for tests / embedding);
     returns (server, bound_port)."""
-    import threading
-    srv = build_server(backend, host, port)
+    srv = build_server(backend, host, port, max_requests)
     bound = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -1064,18 +1287,34 @@ def main():
     ap.add_argument("--port", type=int, default=None,
                     help="default: 11435 for mock/ct2 (argos slot), 11436 for madlad")
     ap.add_argument("--model-dir", default=None)
+    ap.add_argument("--max-requests", type=int, default=0,
+                    help="exit after serving this many requests instead of running forever "
+                         "(0, the default, means unbounded); the request that spends the "
+                         "budget is answered normally and carries shutting_down, so a batch "
+                         "caller can relaunch on schedule rather than by taskkill")
     args = ap.parse_args()
 
     if args.port is None:
         args.port = DEFAULT_MADLAD_PORT if args.backend == "madlad" else DEFAULT_ARGOS_PORT
     backend = make_backend(args.backend, args.model_dir)
-    srv = build_server(backend, args.host, args.port)
-    print("sidecar[{}] listening on http://{}:{}/translate".format(backend.name, args.host, args.port))
+    srv = build_server(backend, args.host, args.port, max_requests=args.max_requests)
+    budget = "unbounded" if srv.max_requests is None else "{} requests".format(srv.max_requests)
+    print("sidecar[{}] listening on http://{}:{}/translate (budget: {})"
+          .format(backend.name, args.host, args.port, budget))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         srv.shutdown()
+    finally:
+        # Close the listening socket whichever way the loop ended, so the port is free for the
+        # process that follows. A bound exit that leaves the port held would recreate the one
+        # symptom item 005 was filed about.
         srv.server_close()
+    if srv.exit_requested:
+        # Printed, not raised: a batch that reached its budget finished successfully, and an
+        # exit code reading as a crash would teach the supervisor to fear the mechanism it asked
+        # for. The reason goes to stdout so a wrapper log can attribute the restart.
+        print("sidecar[{}] exiting on budget: {}".format(backend.name, srv.exit_reason))
 
 
 if __name__ == "__main__":

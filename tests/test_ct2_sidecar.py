@@ -1582,5 +1582,359 @@ class OutputSanitizationOverHttpTests(unittest.TestCase):
                              "%s: ZWSP, bidi override and BOM must not ship" % target)
 
 
+# ---- batch lifecycle: reload and self-exit (defect D30 items 3 and 4) -------
+
+class _ReloadableBackend:
+    """A backend with a resident engine that can be dropped on command.
+
+    It mirrors what MadladBackend and Ct2Backend really are -- one loaded object whose
+    absence the next request pays to rebuild -- so the assertions below are about the
+    service's behaviour, not about a call being counted.
+    """
+
+    name = "reloadable"
+
+    def __init__(self):
+        self.resident = False
+        self.discarded = []
+        self.reloads = 0
+        self.load_calls = 0
+        self.served = 0
+
+    def translate(self, text, source, target, glossary=None):
+        if not self.resident:
+            self.load_calls += 1
+            self.resident = True
+        self.served += 1
+        return "ok: {}".format(target)
+
+    def readiness(self):
+        return {"ready": self.resident,
+                "reason": None if self.resident else "model_not_loaded",
+                "loaded": ["engine"] if self.resident else []}
+
+    def warm(self, source=None, target=None):
+        was = self.resident
+        if not was:
+            self.load_calls += 1
+            self.resident = True
+        return {"ready": True, "already": was}
+
+    def reload(self):
+        """Drop what is resident and say what went."""
+        self.reloads += 1
+        dropped = ["engine"] if self.resident else []
+        self.resident = False
+        self.discarded.append(dropped)
+        return {"discarded": dropped}
+
+
+class ReloadEndpointTests(unittest.TestCase):
+    """Item 004 asks for a way to reset an engine without killing the process.
+
+    Its callers were restarting the sidecar per language -- kill, wait for the port, relaunch,
+    verify with a real translation -- and that loop is pure cost they wanted the service to
+    carry. `POST /reload` is that: drop the resident checkpoint, keep the port.
+
+    Two things are deliberately not offered. Reloading is not warm by default: re-materialising
+    this checkpoint measured 4.2-5.5 s on this build, and the desktop client probes the service
+    with a 1500 ms HTTP timeout, so a synchronous reload would read as an outage to exactly the
+    callers this endpoint exists to help. And the answer never claims memory came back --
+    whether the OS reclaims it is a measured question, not a promise.
+    """
+
+    def setUp(self):
+        self.backend = _ReloadableBackend()
+        self.server, self.port = serve_in_thread(self.backend, host="127.0.0.1", port=0)
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def _post(self, path, payload):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("POST", path, json.dumps(payload),
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        body = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return resp.status, body
+
+    def _get(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        body = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return resp.status, body
+
+    def test_a_backend_that_cannot_reload_says_so_and_keeps_its_model(self):
+        # Same honesty shape as warmup_unknown: 200 would claim a reset that never happened
+        # and 503 would claim an outage.
+        self.server.backend = _LegacyBackend()
+        status, body = self._post("/reload", {})
+        self.assertEqual(501, status, body)
+        self.assertEqual("reload_unsupported", body["error"])
+        self.assertEqual("legacy", body["backend"])
+
+    def test_reload_drops_the_resident_engine_and_says_what_went(self):
+        self.assertEqual(200, self._post("/translate",
+                        {"text": "hello", "source": "en", "target": "zh"})[0])
+        self.assertTrue(self.backend.resident, "the request above must have loaded it")
+        status, body = self._post("/reload", {})
+        self.assertEqual(200, status, body)
+        self.assertEqual(["engine"], body["discarded"],
+                         "the caller has to see that something was actually dropped: %r" % body)
+        self.assertFalse(self.backend.resident,
+                         "reload must not have reloaded it behind the caller's back")
+        # Reported with /readyz vocabulary rather than a third word for the same fact.
+        self.assertEqual("warming", body["status"])
+        self.assertEqual("reloadable", body["backend"])
+        self.assertEqual(1, self.backend.reloads)
+        ready_status, ready_body = self._get("/readyz")
+        self.assertEqual(503, ready_status, ready_body)
+        self.assertEqual("model_not_loaded", ready_body["reason"])
+
+    def test_after_a_reload_the_service_answers_and_the_engine_comes_back(self):
+        # The failure mode this guards against is a reset that takes the service down with it.
+        self._post("/translate", {"text": "hello", "source": "en", "target": "zh"})
+        self._post("/reload", {})
+        status, body = self._post("/translate", {"text": "again", "source": "en", "target": "zh"})
+        self.assertEqual(200, status, body)
+        self.assertEqual("ok: zh", body["text"])
+        self.assertTrue(self.backend.resident)
+        self.assertEqual(2, self.backend.load_calls,
+                         "two cold loads: the first request and the one after the reload")
+
+    def test_an_explicit_warm_pays_the_load_inside_the_call_and_proves_it(self):
+        self._post("/translate", {"text": "hello", "source": "en", "target": "zh"})
+        status, body = self._post("/reload", {"warm": True})
+        self.assertEqual(200, status, body)
+        self.assertEqual("ready", body["status"])
+        self.assertTrue(body["reloaded"], "a warm reload did reload: %r" % body)
+        self.assertTrue(self.backend.resident)
+        # The stopwatch only runs when this call paid a load (the /warmup discipline).
+        self.assertGreaterEqual(body["load_s"], 0.0)
+
+    def test_a_reload_with_nothing_resident_is_not_reported_as_a_drop(self):
+        # Nothing was loaded yet, so claiming a discard would teach the caller to read a
+        # report that invents its own content.
+        status, body = self._post("/reload", {})
+        self.assertEqual(200, status, body)
+        self.assertEqual([], body["discarded"])
+        self.assertEqual("warming", body["status"])
+
+    def test_a_warm_that_loaded_nothing_does_not_claim_a_reload(self):
+        # Argos deliberately refuses to load every installed package on a bare request, so a warm
+        # can honestly leave the service cold. Calling that a reload would hand the caller a
+        # field that invents its own content -- the same reason /warmup keeps load_s at zero.
+        class _RefusesToLoadAnything(_ReloadableBackend):
+            def warm(self, source=None, target=None):
+                return {"ready": False, "already": False, "reason": "no pair named"}
+
+        self.server.backend = _RefusesToLoadAnything()
+        status, body = self._post("/reload", {"warm": True})
+        self.assertEqual(200, status, body)
+        self.assertFalse(body["reloaded"],
+                         "nothing became ready, so no reload happened: %r" % body)
+        self.assertEqual(0.0, body["load_s"])
+        self.assertEqual("warming", body["status"])
+
+    def test_a_reloadable_backend_without_warm_says_which_half_happened(self):
+        # Third-party duck-typed backends exist in this contract already (that is why /readyz
+        # answers 501 instead of guessing). One that can drop but not reload must not fail the
+        # call -- the drop is real and the caller has to learn it happened.
+        class _DropOnlyBackend:
+            name = "droponly"
+
+            def __init__(self):
+                self.resident = True
+
+            def readiness(self):
+                return {"ready": self.resident, "reason": None, "loaded": []}
+
+            def reload(self):
+                self.resident = False
+                return {"discarded": ["engine"]}
+
+        self.server.backend = _DropOnlyBackend()
+        status, body = self._post("/reload", {"warm": True})
+        self.assertEqual(200, status, body)
+        self.assertEqual(["engine"], body["discarded"])
+        self.assertFalse(body["reloaded"], "nothing was reloaded: %r" % body)
+        self.assertIn("cannot warm", body["note"])
+
+    def test_reload_is_post_only(self):
+        status, body = self._get("/reload")
+        self.assertEqual(404, status, body)
+
+    def test_a_permanent_code_stays_permanent_through_a_reload(self):
+        # Warming on reload goes through the same resolution, so an impossible target must
+        # keep answering 422 instead of becoming a fresh 503 -- the D22 distinction has to
+        # survive the new endpoint rather than be re-implemented worse next to it.
+        class _TargetRejecting(_ReloadableBackend):
+            def warm(self, source=None, target=None):
+                raise ct2_sidecar.UnsupportedTarget("no such target")
+
+        self.server.backend = _TargetRejecting()
+        status, body = self._post("/reload", {"warm": True, "target": "xx"})
+        self.assertEqual(422, status, body)
+        self.assertEqual("unsupported_target", body["error"])
+
+
+class BatchBudgetTests(unittest.TestCase):
+    """A bounded batch, so a degrading engine retires itself instead of hanging.
+
+    Item 004 measured 130 s, then 280 s, then over 900 s for the same workload, and the
+    caller's only recovery was to notice the wall clock and taskkill the process. A
+    request budget means a long batch can be run against a process that is known to be
+    healthy for exactly N calls, and the exit is announced in the answer that carries it.
+
+    The budget is deliberately opt-in (no default), because the desktop client supervises
+    its own sidecars and an unannounced exit would read as a crash there. And it reads the
+    same counter /health already reports, rather than keeping a second tally that could
+    disagree with the first about whether a 422 cost anything.
+    """
+
+    def setUp(self):
+        self.servers = []
+
+    def tearDown(self):
+        for srv in self.servers:
+            srv.shutdown()
+            srv.server_close()
+
+    def _serve(self, backend, max_requests=None):
+        srv, port = serve_in_thread(backend, host="127.0.0.1", port=0,
+                                   max_requests=max_requests)
+        self.servers.append(srv)
+        return srv, port
+
+    def _translate(self, port, target="zh"):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request("POST", "/translate", json.dumps(
+            {"text": "hello", "source": "en", "target": target}),
+            headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        body = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return resp.status, body
+
+    def _health(self, port):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request("GET", "/health")
+        resp = conn.getresponse()
+        body = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return body
+
+    def test_no_budget_means_no_countdown_invented(self):
+        srv, port = self._serve(_StubBackend(ready=True, targets=["zh"]))
+        body = self._health(port)
+        self.assertIsNone(body["requests_until_exit"],
+                          "an unbounded service must not report a countdown it will never use")
+        self._translate(port)
+        self.assertFalse(srv.exit_requested)
+        self.assertIsNone(srv.exit_reason)
+
+    def test_the_countdown_lives_in_the_same_counter_health_already_reports(self):
+        srv, port = self._serve(_StubBackend(ready=True, targets=["zh"]), max_requests=3)
+        self.assertEqual(3, self._health(port)["requests_until_exit"])
+        self._translate(port)
+        self.assertEqual(2, self._health(port)["requests_until_exit"])
+        self._translate(port)
+        self.assertEqual(1, self._health(port)["requests_until_exit"])
+        self.assertFalse(srv.exit_requested, "the last permit is the third call, not the second")
+
+    def test_the_last_permit_is_announced_in_the_answer_that_uses_it(self):
+        srv, port = self._serve(_StubBackend(ready=True, targets=["zh"]), max_requests=2)
+        _status, first = self._translate(port)
+        self.assertNotIn("shutting_down", first,
+                         "a call that is not the last must not read like one: %r" % first)
+        _status, last = self._translate(port)
+        self.assertIn("shutting_down", last,
+                      "the caller cannot schedule a relaunch from a signal it never sees")
+        self.assertEqual("max_requests", last["shutting_down"]["reason"])
+        self.assertEqual(2, last["shutting_down"]["requests_served"])
+        self.assertEqual("ok: zh", last["text"], "the announcement is additive, not a refusal")
+        self.assertTrue(srv.exit_requested)
+        self.assertIn("max_requests", srv.exit_reason)
+
+    def test_a_refused_target_spends_the_same_budget_as_an_answer(self):
+        # One tally, one truth: a 422 reaches the engine and is counted by /health today,
+        # so it must also spend the permit. A second counter would disagree about whether a
+        # rejected code costs anything, and the caller would be left guessing.
+        srv, port = self._serve(_StubBackend(ready=True, targets=["zh"]), max_requests=1)
+        status, body = self._translate(port, target="xx")
+        self.assertEqual(422, status, body)
+        self.assertTrue(srv.exit_requested,
+                        "a spent budget must retire the process even if the answer was an error")
+
+    def test_zero_and_negative_budgets_mean_unbounded_not_immediate_exit(self):
+        # "--max-requests 0" reading as "exit after this very call" is the kind of surprise
+        # that stops a batch nobody meant to bound.
+        self.assertIsNone(ct2_sidecar.resolve_max_requests(0))
+        self.assertIsNone(ct2_sidecar.resolve_max_requests(None))
+        self.assertIsNone(ct2_sidecar.resolve_max_requests(-5))
+        self.assertEqual(1500, ct2_sidecar.resolve_max_requests(1500))
+
+
+class RealMadladReloadTests(unittest.TestCase):
+    """The reset on the checkpoint that item 004 was actually run against.
+
+    The stub proves the endpoint's shape; this proves the one thing a caller cares about:
+    after a reload the service still answers correctly, and it is honest about being cold
+    in between -- on the 2.95 GB MADLAD-400 engine whose restart cost the reporter was
+    paying by hand.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        model_dir = default_model_dir().parent / "madlad"
+        if not model_dir.is_dir():
+            raise unittest.SkipTest(
+                "no MADLAD checkpoint under {}; run script/fetch_madlad_model.py"
+                .format(model_dir))
+        try:
+            cls.backend = MadladBackend(model_dir=str(model_dir))
+        except MissingDependency as exc:
+            raise unittest.SkipTest("madlad stack unavailable: {}".format(exc))
+
+    def test_a_reload_leaves_the_real_engine_able_to_answer_again(self):
+        question = "The buffer is too small for one frame."
+        before = self.backend.translate(question, "en", "zh")
+        self.assertTrue(self.backend.readiness()["ready"])
+        server, port = serve_in_thread(self.backend, host="127.0.0.1", port=0)
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
+            conn.request("POST", "/reload", json.dumps({}),
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            body = json.loads(resp.read().decode("utf-8"))
+            conn.close()
+            self.assertEqual(200, resp.status, body)
+            self.assertEqual("warming", body["status"])
+            self.assertTrue(body["discarded"], "the checkpoint was resident, so something went: %r"
+                            % body)
+            self.assertFalse(self.backend.readiness()["ready"],
+                             "the drop must be real, not a report over a live engine")
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=180)
+            conn.request("POST", "/translate",
+                         json.dumps({"text": question, "source": "en", "target": "zh"}),
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            after = json.loads(resp.read().decode("utf-8"))
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(200, resp.status, after)
+        self.assertEqual(before, after["text"],
+                         "the same sentence must read the same after a reset: before=%r after=%r"
+                         % (before, after.get("text")))
+        self.assertTrue(self.backend.readiness()["ready"])
+
+
 if __name__ == "__main__":
     unittest.main()
