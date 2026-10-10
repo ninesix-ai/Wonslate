@@ -32,7 +32,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Build and start the GUI | `python script/build.py --run` |
 | XAML static lint + window-appears smoke | `verify.bat` / `verify.sh` |
 | Self-sign output so local smokes repeat | `sign.bat` |
-| Measure what a long batch actually costs (D24/D30 probes; `--help` for the five modes; `reload` prices a self-reset) | `python script/diag_sidecar_batch.py <mode>` |
+| Measure what a long batch actually costs (D24/D30 probes; `--help` for the five modes; `reload` prices a self-reset, and `--corpus` drives a run with distinct sentences reported pass against pass) | `python script/diag_sidecar_batch.py load --corpus script/eval-data/av-zh-en --n 900 --out-json run.json` |
 | Check an output for invisible characters, on either or both engine tiers (D42) | `python script/diag_invisible_chars.py both` |
 
 ## 3. Traps that have already cost someone a session
@@ -187,8 +187,33 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    and `python script/diag_sidecar_batch.py reload` is what re-measures whether the bytes came
    back and what the reset cost -- reporting the calls that merely translate *separately* from
    the one call that pays for the reset, because averaging them blames the reload for the
-   seconds it buys on purpose. `RealMadladReloadTests` pins the part no stub can prove: after a
-   reload on the real checkpoint the service still answers, and says it is cold in between.
+   seconds it buys on purpose. Measure a batch the way the report described one: `--corpus`
+   with distinct sentences, compared **pass against pass**, because a ladder is one body of
+   work done again. A run that repeats a single sentence is refused rather than reported -- its
+   ratio is flat for the wrong reason, and a flat number measured that way is what gets quoted
+   later as "no drift over hundreds of calls". `RealMadladReloadTests` pins the part no stub can
+   prove: after a reload on the real checkpoint the service still answers, and says it is cold
+   in between.
+
+   The retention line this all feeds (defect D30 item 4) is one number: **the last complete
+   pass must not cost more than 1.15x the first**, reported by `pass_report` and carried out as
+   the exit code. 1.15 is not new -- it is what `run_rotate` already uses to call a revisited
+   language slower, and the two places must not drift into meaning different things. Three
+   cautions for whoever reads the output:
+
+   * **Paired or nothing.** A head-vs-tail window over a varied corpus compares *different
+     sentences*, and it disagreed with the paired number by 8% on the run that set this line
+     (`report` now prints UNPAIRED next to its own ratio). Quote the pass report.
+   * **Complete passes only.** A run that stopped mid-pass did different amounts of work, so
+     those passes are excluded; if two full passes are left, the tool says it cannot decide.
+   * **A single repeated sentence proves nothing.** `--text` alone now refuses to state a line
+     rather than print a flat ratio, because its work really is identical -- that flat number is
+     exactly what gets misquoted later as "no drift over hundreds of calls".
+
+   The measurement that set the line, including what it does not show, is in
+   `docs/evidence/retention-madlad-en-zh-900.json`; re-measure with the command in the table
+   above rather than re-quoting it, and keep the environment precondition with the number --
+   this host's long-lived sidecars are named in that file for exactly that reason.
 
 ## 4. Conventions and invariants
 
