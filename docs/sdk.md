@@ -8,7 +8,7 @@
 | 集成形态 | 状态 | 说明 |
 |---|---|---|
 | **C ABI FFI（`tt_*`）** | ✅ 已落地（本文主体） | **唯一契约真相源**；C / C# / Python 等语言均可直接绑定 |
-| sidecar 本机 HTTP | ✅ 已落地 | `POST /translate`、`GET /health`（存活）、`GET /readyz`（就绪）、`POST /warmup`（显式预热）、`GET /languages`（能力枚举），仅绑定 `127.0.0.1`（内部契约，见 §8） |
+| sidecar 本机 HTTP | ✅ 已落地 | `POST /translate`、`GET /health`（存活）、`GET /readyz`（就绪）、`POST /warmup`（显式预热）、`POST /reload`（丢弃已驻留引擎）、`GET /languages`（能力枚举），仅绑定 `127.0.0.1`（内部契约，见 §8） |
 | 官方 .NET / Python SDK 包 | ⏳ 规划中（未发布） | 发布前请按本文直接绑定 FFI |
 | CLI / REST API / MCP Server / 批量接口 | ⏳ 规划中（未实现） | sidecar 的**内部通道**已有批量入参 `texts`（仅 `127.0.0.1`，见 §8）；对外的 REST / CLI 批量仍待实现，桌面端批量请在调用方循环；见 [terminology.md](terminology.md) |
 
@@ -365,10 +365,11 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
 | 接口 | 请求 | 响应 |
 |---|---|---|
 | `POST /translate` | 入参两种形状，**互斥**：`{"text":"…","source":"en","target":"zh"[,"glossary":[{"src":"…","tgt":"…"}]]}` 或 `{"texts":["…","…"],…}`（同 source/target/glossary） | `200 {"text":"…"}` 或 `200 {"texts":[…]}`（**逐元素下标对齐**）；多行输入会**逐行翻译再拼回，行数与空行结构不变**；若有段落未能译出则附 **`"failed_lines":[下标]`** 与 `"note"`（不静默）；发生区域码折叠时附带 `requested_target`/`resolved_target`，源侧同理；`400 {"error":"missing 'text'"/"invalid json"/"text and texts are mutually exclusive"/"'texts' must be a non-empty list"/…}`；**`422 {"error":"unsupported_target","message":"…","supported":{…}}`**（目标码不可用是面对整个请求的永久事实，不会降级成“部分成功”）；`503 {"error":"backend_unavailable","message":"…"}` |
-| `GET /health` | — | `200 {"status":"ok","backend":"mock\|ct2\|madlad","requests_served":N,"latency_samples":N,"last_latency_p50":秒\|null,"last_latency_p99":秒\|null,"rss_bytes":字节\|null}` —— **只代表存活（端口在应答），不代表首句不会卡在冷加载**；后五个字段是给批量调用方的退化可观测量（见下） |
+| `GET /health` | — | `200 {"status":"ok","backend":"mock\|ct2\|madlad","requests_served":N,"requests_until_exit":N\|null,"latency_samples":N,"last_latency_p50":秒\|null,"last_latency_p99":秒\|null,"rss_bytes":字节\|null}` —— **只代表存活（端口在应答），不代表首句不会卡在冷加载**；后面的字段是给批量调用方的退化可观测量（见下）。`requests_until_exit` **仅当进程带 `--max-requests` 启动时为非 null**；无上限时是 `null` 而不是一个大数——不给不会兑现的倒计时编一个值 |
 | `GET /readyz` | — | 就绪 `200 {"status":"ready","backend":…,"loaded":[…]}`；未就绪 `503 {"status":"warming","error":"not_ready","reason":"model_not_loaded"}`；后端无法自述 `501 {"error":"readiness_unknown"}` |
 | `GET /languages` | 可选 `?target=xx` | `200 {"backend":…,"pairs":[…],"target_codes":[…],"complete":bool,"note":"…"}`；带 `?target=` 时附加 `"supported": true\|false\|null`（`null` = 后端无法判定，与「不支持」严格区分）；区域码经折叠而可用时为 `true` 并附 `resolved_target` |
 | `POST /warmup` | 可选 `{"source":"en","target":"zh"}` | 就绪 `200 {"status":"ready","backend":…,"warmed":bool,"load_s":秒,"loaded":[…]}`；仍未就绪 `503 {"status":"warming","error":"not_ready"}`；后端不支持 `501 {"error":"warmup_unknown"}`；语言码不可用 `422 unsupported_target`（与 `/translate` 同一判定，区域码同样先折叠） |
+| `POST /reload` | 可选 `{"warm":true,"source","target"}` | `200 {"backend":…,"discarded":[…],"reloaded":bool,"status":"ready\|warming","requests_served":N,"load_s":秒}`；后端无可丢弃的东西 `501 {"error":"reload_unsupported"}`；带 `warm` 时语言码不可用仍走 `422`、依赖缺失仍走 `503`，**但响应里照样带着已经发生的 `discarded`** |
 
 两类失败**必须分开处理**：`422 unsupported_target` 是该引擎在这个语言码上**永久无解**，重试、重启、重载模型都不会改变，响应里的 `supported` 已给出可用集合，调用方应直接跳过该方向；`503 backend_unavailable` 才是可恢复故障（依赖或模型尚未就位），值得等待与重试。把两者混为 503 会让批量任务在冷门语言上白白付出「杀进程 → 等端口 → 重载」的整轮代价。
 
@@ -390,6 +391,17 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
 `/readyz` 只说真话，不会把模型装进内存——**把它变成就绪的手段是 `POST /warmup`**。该端点按当前配置真实加载并回报代价（`warmed` 表示本次是否真的付了加载，`load_s` 仅在真加载时为非零）。**Argos 是按方向加载的**：不带 `source`/`target` 的 warmup 不会把磁盘上所有包都拉进内存（那比懒加载贵得多），而是回 `503 warming` 并在 `note` 里提示方、目标语言；若调用方把 200 当作“已暖好”，这个区分就是必需的。桌面客户端的用法：先 `GET /readyz` 探得 warming，再在后台 `POST /warmup`，完成后状态转 `ready`。
 
 约束：**只绑定 `127.0.0.1`**（翻译文本不出设备）。该契约与 Rust `engine/sidecar.rs`、.NET `SidecarManager`、测试 mock 四方对齐；作为内部接口随实现演进，不承诺与 FFI 同级的兼容性——新集成请优先用 FFI。
+
+### 8.1 长批次：不用猜的重载与自退
+
+外部审计条目 004 的实测形状是：同一负载从 130 s → 280 s → >900 s 阶梯式变慢，期间每一次 `/translate` 都返回 200、`/health` 一直 `ok`——「失败才重启」在这种形状下**永远无法触发**，调用方只能 `taskkill` 并自己按语言重启（杀净 → 等端口释放 → 重启 → 用真实译文验证就绪）。现在这两个手段在 sidecar 侧：
+
+- **`--max-requests N`**：答完 N 个请求后自行退出。消耗最后一个配额的那次**照常拿到译文**，额外带 `"shutting_down":{"reason":"max_requests","requests_served":N,"note":"…"}`；进程**退出码为 0**（跑满配额是正常完成，不是故障），原因打印到 stdout，监听 socket 一并关闭所以端口立即可复用。默认不设上限：桌面客户端自己监督它拉起的 sidecar，未经预告的退出会被当成崩溃。`/health` 的 `requests_until_exit` 给剩余配额，**未设上限时恒为 `null`**。
+- **`POST /reload`**：丢弃已驻留的检查点，进程与端口都留着。默认**只丢弃不重载**（本机实测：`/reload` 自身只花 0.16 s）；要在这次调用里把装载代价付掉就传 `{"warm":true}`。**为什么默认不热回**：重新装载本机实测 4.2–5.5 s，而客户端探活用的是 1500 ms HTTP 超时，同步重载会看起来像宕机。
+
+两个手段的**计数共用一个真相**：`requests_served`、`requests_until_exit` 与自退判定读同一个计数器，所以上面那个表里返回 `422` 的被拒绝语言码不会「一边被计数、一边被跳过」。
+
+关于内存，本文不写保证只写测量手段：`python script/diag_sidecar_batch.py reload --n 100 --every 25` 会报出每次重载归还了多少驻留内存、重载后首句付了多少秒。该模式把「只是翻译」的调用与「为重载买单」的那一次**分开统计**——混在一个均值里会把重载自己故意花的秒数当成退化，那正好是 004 需要被回答的那个问题的反面。本机一次实测：三次重载各归还 2848–2850 MB（约 97%），稳态均值在前半 4.593 s / 后半 4.503 s（比值 0.98）。
 
 ## 9. 版本与兼容承诺
 

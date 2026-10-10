@@ -32,7 +32,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Build and start the GUI | `python script/build.py --run` |
 | XAML static lint + window-appears smoke | `verify.bat` / `verify.sh` |
 | Self-sign output so local smokes repeat | `sign.bat` |
-| Measure what a long batch actually costs (D24/D30 probes; `--help` for the four modes) | `python script/diag_sidecar_batch.py <mode>` |
+| Measure what a long batch actually costs (D24/D30 probes; `--help` for the five modes; `reload` prices a self-reset) | `python script/diag_sidecar_batch.py <mode>` |
 | Check an output for invisible characters, on either or both engine tiers (D42) | `python script/diag_invisible_chars.py both` |
 
 ## 3. Traps that have already cost someone a session
@@ -164,6 +164,31 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    Batch callers send `{"texts": [...]}` -- one round trip, index-aligned, elements may
    themselves be multi-line -- and `RealMadladLineTests` pins that a batch answer equals the
    same sentences sent one at a time, on the real checkpoint.
+15. **A long batch needs a predictable exit, not a smarter watchdog.** External item 004
+   measured 130 s -> 280 s -> >900 s for one workload while every call kept returning 200 and
+   `/health` kept saying ok, so the caller's "restart on failure" rule could never fire and its
+   only recovery was `taskkill` plus a per-language restart loop. Two mechanisms now live here:
+
+   * `--max-requests N` answers N requests and exits **with code 0** and a printed reason. It
+     is off by default because the desktop client supervises its own sidecars and an
+     unannounced exit would read as a crash there. The request that spends the last permit is
+     answered normally and carries `shutting_down` -- an exit the caller cannot predict is the
+     same silence the item was filed about, and a non-zero code would teach the supervisor to
+     fear the mechanism the caller asked for.
+   * `POST /reload` discards the resident checkpoint and keeps the process and the port. It is
+     *not* warm by default: re-materialising this checkpoint measured 4.2-5.5 s, while the
+     client probes with a 1500 ms HTTP timeout, so a blocking reload would look like an outage.
+     Pass `"warm": true` to pay that inside the call.
+
+   Three rules follow. **One tally**: `/health`'s `requests_served`, `requests_until_exit` and
+   the self-exit all read the same counter, so a refused target code cannot be counted by one
+   and skipped by another. **Never invent a countdown**: `requests_until_exit` is `null` when
+   unbounded. **Never promise reclaimed memory in prose**: `reload` reports what it discarded,
+   and `python script/diag_sidecar_batch.py reload` is what re-measures whether the bytes came
+   back and what the reset cost -- reporting the calls that merely translate *separately* from
+   the one call that pays for the reset, because averaging them blames the reload for the
+   seconds it buys on purpose. `RealMadladReloadTests` pins the part no stub can prove: after a
+   reload on the real checkpoint the service still answers, and says it is cold in between.
 
 ## 4. Conventions and invariants
 
