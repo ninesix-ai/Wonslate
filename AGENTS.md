@@ -149,6 +149,21 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    position rather than an oversight: run the tool before adding a second implementation, and
    if it does report noise, reuse the two-rule shape -- a blanket strip repeats the mistake
    item 009's own reporter had already made.
+14. **Never hand a multi-line blob to the local checkpoints.** Measured against the real
+   MADLAD-400 checkpoint (external item 007): three English sentences joined with newlines
+   came back as **one** line of repeated tokens -- `10000000...` followed by fragments of
+   the source -- with none of the three translations present, and the HTTP status was 200.
+   The transport keeps the newlines and the sentencepiece keeps the `\n` piece, so the loss
+   happens in the decoder: nothing in the status code tells a caller its text was thrown
+   away. `Handler._translate_lines` therefore splits on newlines, translates each line, and
+   rejoins keeping the caller's line count, with blank lines passed through as structure that
+   never costs a model call. A line the engine did not answer is named in `failed_lines`
+   rather than returned as an empty string (REQ-B2: an unanswered segment must not look like a
+   translation of nothing), and a permanently bad target code still fails the whole request as
+   422 instead of degrading into partial success (that is D22's rule applied to a batch).
+   Batch callers send `{"texts": [...]}` -- one round trip, index-aligned, elements may
+   themselves be multi-line -- and `RealMadladLineTests` pins that a batch answer equals the
+   same sentences sent one at a time, on the real checkpoint.
 
 ## 4. Conventions and invariants
 

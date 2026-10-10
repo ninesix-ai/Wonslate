@@ -19,6 +19,10 @@ LT_ARGOS_URL is the legacy spelling, WONSLATE_ARGOS_URL the brand one):
 Contract (aligned with engine/sidecar.rs and sidecar/ct2_sidecar.py):
     POST /translate   body {"text","source","target"[,"glossary":[{src,tgt}]]}
     200 -> {"text": "<tagged pseudo-translation>"}
+                      (the real service also accepts {"texts": [...]} and translates
+                      multi-line input line by line; nothing in engine/sidecar.rs sends
+                      either today, so the mock keeps the single-text shape only - if the
+                      Rust side starts batching, this echo is what a test compares against)
     GET  /health      -> {"status":"ok"}                 (liveness only)
     GET  /readyz      -> {"status":"ready",...}           (mock loads no model)
     GET  /languages   -> coverage answer; the mock echoes any pair, so it must

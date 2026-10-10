@@ -10,7 +10,7 @@
 | **C ABI FFI（`tt_*`）** | ✅ 已落地（本文主体） | **唯一契约真相源**；C / C# / Python 等语言均可直接绑定 |
 | sidecar 本机 HTTP | ✅ 已落地 | `POST /translate`、`GET /health`（存活）、`GET /readyz`（就绪）、`POST /warmup`（显式预热）、`GET /languages`（能力枚举），仅绑定 `127.0.0.1`（内部契约，见 §8） |
 | 官方 .NET / Python SDK 包 | ⏳ 规划中（未发布） | 发布前请按本文直接绑定 FFI |
-| CLI / REST API / MCP Server / 批量接口 | ⏳ 规划中（未实现） | 当前批处理请在调用方循环；见 [terminology.md](terminology.md) |
+| CLI / REST API / MCP Server / 批量接口 | ⏳ 规划中（未实现） | sidecar 的**内部通道**已有批量入参 `texts`（仅 `127.0.0.1`，见 §8）；对外的 REST / CLI 批量仍待实现，桌面端批量请在调用方循环；见 [terminology.md](terminology.md) |
 
 设计原则：所有对外形态（界面 / SDK / 未来的 CLI、REST、MCP）最终都调用同一 Rust 核心 `tt_translate_full`——**隐私模式、不静默降级、置信度门控等不变量与图形界面完全一致**；绑定层不复制业务逻辑。
 
@@ -364,7 +364,7 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
 
 | 接口 | 请求 | 响应 |
 |---|---|---|
-| `POST /translate` | `{"text":"…","source":"en","target":"zh"[,"glossary":[{"src":"…","tgt":"…"}]]}` | `200 {"text":"…"}`（发生区域码折叠时附带 `requested_target`/`resolved_target`，源侧同理）；`400 {"error":"missing 'text'"/"invalid json"}`；**`422 {"error":"unsupported_target","message":"…","supported":{…}}`**；`503 {"error":"backend_unavailable","message":"…"}` |
+| `POST /translate` | 入参两种形状，**互斥**：`{"text":"…","source":"en","target":"zh"[,"glossary":[{"src":"…","tgt":"…"}]]}` 或 `{"texts":["…","…"],…}`（同 source/target/glossary） | `200 {"text":"…"}` 或 `200 {"texts":[…]}`（**逐元素下标对齐**）；多行输入会**逐行翻译再拼回，行数与空行结构不变**；若有段落未能译出则附 **`"failed_lines":[下标]`** 与 `"note"`（不静默）；发生区域码折叠时附带 `requested_target`/`resolved_target`，源侧同理；`400 {"error":"missing 'text'"/"invalid json"/"text and texts are mutually exclusive"/"'texts' must be a non-empty list"/…}`；**`422 {"error":"unsupported_target","message":"…","supported":{…}}`**（目标码不可用是面对整个请求的永久事实，不会降级成“部分成功”）；`503 {"error":"backend_unavailable","message":"…"}` |
 | `GET /health` | — | `200 {"status":"ok","backend":"mock\|ct2\|madlad","requests_served":N,"latency_samples":N,"last_latency_p50":秒\|null,"last_latency_p99":秒\|null,"rss_bytes":字节\|null}` —— **只代表存活（端口在应答），不代表首句不会卡在冷加载**；后五个字段是给批量调用方的退化可观测量（见下） |
 | `GET /readyz` | — | 就绪 `200 {"status":"ready","backend":…,"loaded":[…]}`；未就绪 `503 {"status":"warming","error":"not_ready","reason":"model_not_loaded"}`；后端无法自述 `501 {"error":"readiness_unknown"}` |
 | `GET /languages` | 可选 `?target=xx` | `200 {"backend":…,"pairs":[…],"target_codes":[…],"complete":bool,"note":"…"}`；带 `?target=` 时附加 `"supported": true\|false\|null`（`null` = 后端无法判定，与「不支持」严格区分）；区域码经折叠而可用时为 `true` 并附 `resolved_target` |
@@ -375,9 +375,11 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
 **`/translate` 的 `text` 不会带出不该有的不可见字符**（外部审计条目 009：老挝语译文里混入一个零宽空格，屏幕上看不见，却会静默破坏下游一切字符串比较——去重、搜索、缓存键、本地化校验、diff 脚本）。规则分两类，**例外只存在于第一类**：
 
 - **零宽与组合标记**（ZWSP `U+200B`、ZWNJ `U+200C`、ZWJ `U+200D`）——**可以保留**，条件是：请求的源文本本身带着该码位，或者目标语言的正字法需要它。前者保住 emoji 家族序列与 Indic 组合控制；后者覆盖 `fa`/`ps`/`ckb`/`ug`/`ku`/`sd` 与 Indic 诸语用 `U+200C` 作半空格、`km`/`my` 用 `U+200B` 分词、Indic 与 `ar` 用 `U+200D` 控组合形。
-- **任何文字都不拿来成词的控制与格式符**——**无例外，一律剥除**：软连字符 `U+00AD`、word joiner `U+2060`、BOM `U+FEFF`、双向控制 `U+202A`–`U+202E`、双向隔离符 `U+2066`–`U+2069`，以及 C0/C1 控制字符。唯一保留的是制表符、换行与回车：行结构是数据，已有调用方依赖它（条目 007 仍开放，净化层不会替谁把多行压平）。
+- **任何文字都不拿来成词的控制与格式符**——**无例外，一律剥除**：软连字符 `U+00AD`、word joiner `U+2060`、BOM `U+FEFF`、双向控制 `U+202A`–`U+202E`、双向隔离符 `U+2066`–`U+2069`，以及 C0/C1 控制字符。唯一保留的是制表符、换行与回车：行结构是数据，已有调用方依赖它（而自条目 007 之后，多行输入本身就是逐行翻译再拼回的，行结构更动不得）。
 
 判定按主语言子码进行（`fa-IR` 视同 `fa`），并发生在 HTTP 响应这一层而不是各引擎内部，所以三个后端与经 `engine/sidecar.rs` 读同一份字节的主管线拿到的是同一个答案。原先自己做过字符集体检的批量调用方可以省下那一步。
+
+**多行输入不再交给模型整段处理**（外部审计条目 007）：真机取证表明，三个英文句子拼成一串带换行的请求送给 MADLAD-400 后，回的是**一行** `100000000000000000000PSample ratePlease rate the…` 这类重复 token + 源文片段，**三句内容 0% 出现**，而 HTTP 状态是 200。丢内容不是发生在传输也不是发生在分词（分词把 `\n` 作为独立 piece 保留了），而是发生在解码器——所以服务端现在**逐行翻译、拼回时保持调用方的行数与空行结构**（空行不消耗模型）。若某一行没译出来，它不会假装成功：位置列在 `failed_lines` 里，其余内容照常返回，调用方可定向重试。需要一次往返处理 N 条的批量调用方，用 `"texts": [...]` 数组入参（逐元素下标对齐，元素内部仍可多行）；一次往返不应该改变任何一句话的译文（已入真机断言）。
 
 区域码**由引擎自己折叠**：`pt-BR`→`pt`、`zh-Hans-CN`→`zh`、`es-419`→`es`（取 BCP-47 主语言子标），因为产品侧语言码几乎都带区域后缀，而 MADLAD 词表与 Argos 包只认主码。折叠只朝向**后端确认能服务**的码：折不出可行目标的请求仍按原码交给引擎，422 文案由它（唯一知道自己覆盖面的组件）给出。发生过折叠时，响应会并列 `requested_target` 与 `resolved_target` 供审计；未折叠则不多这两个字段。`GET /languages?target=pt-BR` 同样回答 `supported: true` 并附 `resolved_target`，所以批量调用方**不必自己再写一份 `split('-')[0]`**。
 
