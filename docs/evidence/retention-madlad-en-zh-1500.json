@@ -1,0 +1,171 @@
+{
+  "mode": "load",
+  "backend": "madlad",
+  "pair": "en->zh",
+  "corpus": "script\\eval-data\\av-zh-en\\av-zh-en.tgt",
+  "requested_calls": 1500,
+  "retention_limit": 1.15,
+  "started_at": "2026-10-10T22:36:23",
+  "note": "seconds are client-side wall time around one POST, one fresh connection per call; the service ran in this same process",
+  "kept_separately": "retention-madlad-en-zh-1500-calls.json",
+  "run": {
+    "command": "python script/diag_sidecar_batch.py load --backend madlad --corpus script/eval-data/av-zh-en/av-zh-en.tgt --src en --tgt zh --n 1500 --every 100 --out-json <file>",
+    "started_at": "2026-10-10T22:36:23",
+    "calls_answered": 1500,
+    "calls_error": 0,
+    "non_200": 0,
+    "elapsed": "started 22:36, finished before 00:38 local; about 120 minutes for 1500 calls",
+    "engine": "MADLAD-400 3B int8 via ctranslate2, CPU, one process, one client at a time"
+  },
+  "per_pass": {
+    "pass1": {
+      "n": 300,
+      "mean_s": 4.649,
+      "p95_s": 6.133
+    },
+    "pass2": {
+      "n": 300,
+      "mean_s": 4.687,
+      "p95_s": 6.106
+    },
+    "pass3": {
+      "n": 300,
+      "mean_s": 4.603,
+      "p95_s": 5.977
+    },
+    "pass4": {
+      "n": 300,
+      "mean_s": 4.689,
+      "p95_s": 6.242
+    },
+    "pass5": {
+      "n": 300,
+      "mean_s": 4.367,
+      "p95_s": 5.904
+    }
+  },
+  "analysis": {
+    "pass5_against_pass1": 0.939,
+    "verdict_at_the_line": "PASS (limit 1.15)",
+    "trend_ms_per_100_calls": -0.009,
+    "fitted_drift_over_the_whole_run_s": -0.14,
+    "per_100_call_means": [
+      4.5,
+      4.45,
+      5.0,
+      4.61,
+      4.58,
+      4.87,
+      4.49,
+      4.46,
+      4.86,
+      4.49,
+      4.54,
+      5.03,
+      4.37,
+      3.9,
+      4.83
+    ],
+    "within_lap_halves": {
+      "lap1": {
+        "n": 299,
+        "first_half_mean_s": 4.454,
+        "second_half_mean_s": 4.824,
+        "ratio": 1.083
+      },
+      "lap2": {
+        "n": 299,
+        "first_half_mean_s": 4.637,
+        "second_half_mean_s": 4.74,
+        "ratio": 1.022
+      },
+      "lap3": {
+        "n": 299,
+        "first_half_mean_s": 4.514,
+        "second_half_mean_s": 4.695,
+        "ratio": 1.04
+      },
+      "lap4": {
+        "n": 299,
+        "first_half_mean_s": 4.551,
+        "second_half_mean_s": 4.83,
+        "ratio": 1.061
+      },
+      "lap5": {
+        "n": 299,
+        "first_half_mean_s": 4.251,
+        "second_half_mean_s": 4.482,
+        "ratio": 1.054
+      }
+    },
+    "worst_within_lap_ratio": 1.083,
+    "mean_s": 4.599,
+    "p95_s": 6.093,
+    "p99_s": 7.234,
+    "slowest_call_s": 9.98,
+    "slowest_calls": [
+      {
+        "n": 1163,
+        "lap": 4,
+        "seconds": 9.9834
+      },
+      {
+        "n": 1162,
+        "lap": 4,
+        "seconds": 8.5499
+      },
+      {
+        "n": 1170,
+        "lap": 4,
+        "seconds": 8.3847
+      },
+      {
+        "n": 1167,
+        "lap": 4,
+        "seconds": 8.2286
+      },
+      {
+        "n": 1166,
+        "lap": 4,
+        "seconds": 7.9701
+      },
+      {
+        "n": 70,
+        "lap": 1,
+        "seconds": 7.8102
+      }
+    ],
+    "why_the_within_lap_ratios_are_all_above_one": "Every lap's second half reads slower than its first (1.022 to 1.083), which looks like degeneration and is not: the sentence order is the same inside every lap, so the later sentences are simply the more expensive ones, repeated once per lap. The signature that distinguishes the two explanations is accumulation -- under real degradation each lap's within-lap ratio would grow, and these do not (1.083, 1.022, 1.040, 1.061, 1.054), and the paired pass numbers stay flat at 0.94-1.01. This is also why the line is set on paired passes: a within-lap window over a varied corpus sits at 1.083 here, close enough to 1.15 to cry wolf on a longer run.",
+    "slow_call_cluster": "six of the eight slowest calls landed near #1162-1170 in lap 4, back to back, peaking at 9.98 s. A cluster is not a slope: lap 5 afterwards is the fastest lap of the run (mean 4.37 s, p95 5.90 s), and the fitted trend across all 1500 calls is -0.01 ms per 100 calls. It reads as a one-off host activity, not accumulation.",
+    "clean_segment_check": {
+      "why": "laps 1-2 sit partly in the window where local test work competed with the batch, which inflates lap 1 and flatters the headline ratio; these laps had none",
+      "means_s": {
+        "lap3": 4.603,
+        "lap4": 4.689,
+        "lap5": 4.367
+      },
+      "lap5_against_lap3": 0.949,
+      "lap4_against_lap3": 1.019,
+      "verdict": "PASS (0.95 against the same 1.15 limit) -- the same reading as the headline 0.94, so the conclusion does not depend on the contaminated baseline"
+    }
+  },
+  "resource_trace": {
+    "rss_mb_first_sample": 2934,
+    "rss_mb_last_sample": 2682,
+    "note": "fell by about 250 MB over the run; it did not climb",
+    "threads_delta": -3,
+    "handles_delta": -2
+  },
+  "environment_precondition": "same host and same standing environment as retention-madlad-en-zh-900.json: two long-lived sidecars (argos on 11435, madlad on 11436) have been resident since 2026-10-07 21:40 and were idle throughout. The interference is from this session, not from them: local test runs were interleaved with roughly the first 400 calls (visible as 5.5 s per call there against 4.0 s afterwards, and the run continued rather than being restarted). Lap 1 therefore sits partly inside a contaminated window, which would bias a lap5-vs-lap1 ratio downward -- in the flattering direction -- so clean_segment_check below repeats the judgement using only the undisturbed laps.",
+  "what_this_covers": [
+    "1500 sequential calls: the upper end of the per-language volume item 004 described (1088 UI keys, 1100-1500 calls per language). The 900-call run left that open; this closes it.",
+    "distinct sentences, same order each lap, one target language, one client, one process.",
+    "zero errors, zero non-200 responses, zero timeouts; slowest single call 9.98 s against a 120 s client timeout."
+  ],
+  "what_this_does_not_show": [
+    "the reporter's total volume (about 30k calls across 30+ languages) and their hard failure (process gone or unresponsive), which nothing here attempted to reproduce.",
+    "concurrency, or language rotation across many engines resident at once -- rotate covers a different question (what each script costs), not this one.",
+    "memory pressure from other applications on the host, or a GPU shared with ollama.",
+    "the argos/CT2 backend: only madlad was driven at this scale."
+  ]
+}

@@ -209,11 +209,23 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    * **A single repeated sentence proves nothing.** `--text` alone now refuses to state a line
      rather than print a flat ratio, because its work really is identical -- that flat number is
      exactly what gets misquoted later as "no drift over hundreds of calls".
+   * **Never compare halves of the same lap.** Over a varied corpus every lap's second half read
+     slower than its first (1.022-1.083 here) because the sentence order repeats, so the later
+     sentences are simply the costlier ones -- five times in a row, with no accumulation across
+     laps. A window inside one lap is the unpaired mistake again, and 1.083 is uncomfortably
+     close to the limit to leave in the output unlabelled.
+   * **Keep your own work out of the measurement window.** Running test suites while the batch
+     runs inflates the early laps, and it does so in the direction that makes the verdict pass
+     (a busier baseline makes every later lap look faster). Either run nothing else, or re-compute
+     the judgement on the undisturbed laps only -- `docs/evidence/retention-madlad-en-zh-1500.json`
+     carries that `clean_segment_check` beside the headline number for exactly this reason.
 
    The measurement that set the line, including what it does not show, is in
-   `docs/evidence/retention-madlad-en-zh-900.json`; re-measure with the command in the table
+   `docs/evidence/retention-madlad-en-zh-900.json` and the 1500-call follow-up beside it
+   (`-1500.json` for the reading, `-1500-calls.json` for the per-call curve, so the aggregates
+   can be re-derived rather than trusted). Re-measure with the command in the table
    above rather than re-quoting it, and keep the environment precondition with the number --
-   this host's long-lived sidecars are named in that file for exactly that reason.
+   this host's long-lived sidecars are named in those files for exactly that reason.
 
 ## 4. Conventions and invariants
 

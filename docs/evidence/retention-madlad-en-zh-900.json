@@ -12,9 +12,24 @@
     "why_this_shape": "item 004 described its symptom as the same body of work getting slower on each repeat (130 s, then 280 s, then over 900 s), so the measurement has to re-run the same sentences rather than repeat one sentence; a distinct-sentence corpus is also what the reporter's 1088 UI keys actually were."
   },
   "per_pass": {
-    "1": { "n": 300, "mean_s": 4.805, "p95_s": 6.289, "vs_pass1": 1.0 },
-    "2": { "n": 300, "mean_s": 4.669, "p95_s": 6.108, "vs_pass1": 0.97 },
-    "3": { "n": 300, "mean_s": 4.721, "p95_s": 6.16, "vs_pass1": 0.98 }
+    "1": {
+      "n": 300,
+      "mean_s": 4.805,
+      "p95_s": 6.289,
+      "vs_pass1": 1.0
+    },
+    "2": {
+      "n": 300,
+      "mean_s": 4.669,
+      "p95_s": 6.108,
+      "vs_pass1": 0.97
+    },
+    "3": {
+      "n": 300,
+      "mean_s": 4.721,
+      "p95_s": 6.16,
+      "vs_pass1": 0.98
+    }
   },
   "verdict": {
     "paired_last_against_first": 0.98,
@@ -23,7 +38,18 @@
     "limit_provenance": "1.15 is the ratio run_rotate already uses to call a revisited language slower; measured pass-to-pass variation in this run is about 3%, so the line sits roughly four times above the noise floor and would have caught the 2.15x and 6.9x steps item 004 reported."
   },
   "resource_trace_mb_rss": {
-    "samples_at_every_100_calls": [2931, 2934, 2932, 2935, 2937, 2778, 2783, 2778, 2781, 2781],
+    "samples_at_every_100_calls": [
+      2931,
+      2934,
+      2932,
+      2935,
+      2937,
+      2778,
+      2783,
+      2778,
+      2781,
+      2781
+    ],
     "first_to_last": "2931 -> 2782 (fell; it did not climb)",
     "threads_delta": -2,
     "handles_delta": 3
@@ -38,5 +64,7 @@
     "900 calls is fewer than the 1088-to-1500 calls per language the reporter described, and far short of their 30k total; this refutes drift at this scale, it does not exclude a failure further along.",
     "one target language, one client, one process: no concurrency, no language rotation, no GPU contention with ollama, no memory pressure from other applications.",
     "the reporter's hard failure (process gone or unresponsive) was not attempted: nothing here shows that a crash cannot happen, only that latency and RSS did not degrade over these 900 calls."
-  ]
+  ],
+  "superseded_on_volume_by": "retention-madlad-en-zh-1500.json",
+  "superseding_note": "2026-10-10 later same day: the boundary this file names -- 900 calls being fewer than the reporter's 1088-1500 per language -- was closed at the upper end by a 1500-call run on the same corpus and same host. Nothing in this file is edited; read it as the 900-call measurement it was, and the other file for the volume question."
 }
