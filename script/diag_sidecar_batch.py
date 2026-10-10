@@ -86,9 +86,24 @@ def post_json(port, path, payload, timeout=120.0):
         conn.close()
 
 
+# psutil is an operator-side diagnostic dependency (see sidecar/requirements and the ledger's
+# license notes), not part of the shipped runtime. A host without it must still get the latency
+# measurement -- which is the thing a retention line is read off -- so the resource columns come
+# back unknown rather than killing a two-hour run at its first sample.
+UNKNOWN = -1.0
+
+
 def sample():
-    """(rss_mb, threads, handles_or_fds) of this process; the backend runs in it."""
-    import psutil
+    """(rss_mb, threads, handles_or_fds) of this process; the backend runs in it.
+
+    Unknown is printed as unknown, never as zero: a 0 MB memory column on a host that cannot
+    read memory is the "stopwatch that never ran looked fast" mistake this repo has already been
+    burned on (defect D30 item 1 fixed exactly that in /health).
+    """
+    try:
+        import psutil
+    except ImportError:
+        return UNKNOWN, UNKNOWN, UNKNOWN
     p = psutil.Process(os.getpid())
     io = p.memory_info().rss / 1048576.0
     if hasattr(p, "num_handles"):
@@ -96,6 +111,36 @@ def sample():
     else:
         third = p.num_fds()
     return io, p.num_threads(), third
+
+
+def fmt(value):
+    """One place that decides how an unknown resource reading looks."""
+    return "n/a" if value is None or value < 0 else "%d" % value
+
+
+def mem(value):
+    """A memory reading with its unit, or plain unknown -- "n/aMB" is what bolting the unit on
+    outside this function produces, and it reads like a value someone forgot to round."""
+    return "n/a" if value is None or value < 0 else "%dMB" % value
+
+
+def delta(then, now):
+    """A change between two samples, or unknown if either end was unreadable."""
+    if then is None or now is None or then < 0 or now < 0:
+        return "n/a"
+    return "%+d" % (now - then)
+
+
+def reclaimed(before, after):
+    """How much resident memory a reset gave back, or unknown.
+
+    Deliberately not ``before - after`` at the call site: with no psutil both ends are -1, and
+    the subtraction would then print "0 MB back" -- an invented number wearing the clothes of a
+    measurement, which is the mistake this file exists to avoid.
+    """
+    if before < 0 or after < 0:
+        return "n/a"
+    return "%.0f" % (before - after)
 
 
 def report(tag, latencies, first_rss, last_rss):
@@ -110,9 +155,9 @@ def report(tag, latencies, first_rss, last_rss):
     head = statistics.mean(latencies[:min(100, len(latencies))])
     tail = statistics.mean(latencies[-min(100, len(latencies)):])
     print("%s: n=%d  head_mean=%.2fs tail_mean=%.2fs ratio=%.2f (UNPAIRED -- different sentences"
-          " in each window; read the pass report for drift)  rss %.0f->%.0f MB"
+          " in each window; read the pass report for drift)  rss %s -> %s"
           % (tag, len(latencies), head, tail, (tail / head if head else 0.0),
-             first_rss, last_rss))
+             mem(first_rss), mem(last_rss)))
 
 
 def corpus_lines(raw):
@@ -294,14 +339,14 @@ def run_load(args):
                 rss, th, hd = sample()
                 if i == 1:
                     rss0, th0, hd0 = rss, th, hd
-                print("  n=%-5d pass=%d rss=%6.0fMB threads=%-3d handles=%-4d last=%.2fs"
-                      % (i, passed + 1, rss, th, hd, latencies[-1]))
+                print("  n=%-5d pass=%d rss=%s threads=%-3s handles=%-4s last=%.2fs"
+                      % (i, passed + 1, mem(rss), fmt(th), fmt(hd), latencies[-1]))
         rss, th, hd = sample()
         report("load/%s %s->%s" % (args.backend, args.src, args.tgt), latencies,
                rss0, rss)
         verdict = pass_report("load/%s %s->%s" % (args.backend, args.src, args.tgt), per_pass)
-        print("  deltas since first sample: threads+%d handles+%d"
-              % (th - th0, hd - hd0))
+        print("  deltas since first sample: threads=%s handles=%s"
+              % (delta(th0, th), delta(hd0, hd)))
         return verdict
     finally:
         dump_run(args.out_json, run_meta(args, "load"), records)
@@ -321,8 +366,8 @@ def run_rotate(args):
                                                "target": tgt})
                 costs.setdefault(tgt, []).append(time.perf_counter() - started)
             rss, th, hd = sample()
-            print("  %-4s mean=%.2fs  rss=%6.0fMB threads=%d handles=%d"
-                  % (tgt, statistics.mean(costs[tgt]), rss, th, hd))
+            print("  %-4s mean=%.2fs  rss=%s threads=%s handles=%s"
+                  % (tgt, statistics.mean(costs[tgt]), mem(rss), fmt(th), fmt(hd)))
         print("revisit (accumulation would make these slower):")
         for tgt in args.langs.split(",")[:2]:
             started = time.perf_counter()
@@ -358,7 +403,7 @@ def run_hard(args):
             if took >= 25.0:
                 print("      ^ close to a stuck decode; check max_decoding_length")
         rss, th, hd = sample()
-        print("after all cases: rss=%.0fMB threads=%d handles=%d" % (rss, th, hd))
+        print("after all cases: rss=%s threads=%s handles=%s" % (mem(rss), fmt(th), fmt(hd)))
     finally:
         srv.shutdown()
         srv.server_close()
@@ -399,11 +444,12 @@ def run_reload(args):
                     break
                 resets.append((i - 1, took, before, after, len(body.get("discarded") or [])))
                 records.append({"n": i - 1, "kind": "reload", "status": status,
-                                "seconds": round(took, 4), "rss_before_mb": round(before),
-                                "rss_after_mb": round(after)})
-                print("  reset after n=%-4d rss %6.0f -> %6.0f MB (%5.0f back), endpoint %.2fs, "
+                                "seconds": round(took, 4),
+                                "rss_before_mb": round(before) if before >= 0 else None,
+                                "rss_after_mb": round(after) if after >= 0 else None})
+                print("  reset after n=%-4d rss %s -> %s (%s back), endpoint %.2fs, "
                       "discarded %d"
-                      % (i - 1, before, after, before - after, took,
+                      % (i - 1, mem(before), mem(after), reclaimed(before, after), took,
                          len(body.get("discarded") or [])))
                 last_rss = after
                 pending = True
@@ -448,10 +494,13 @@ def run_reload(args):
                   "(the price of the reset, not drift)"
                   % (statistics.mean(after_reset), max(after_reset)))
         if resets:
-            print("  resets=%d  endpoint mean=%.2fs  memory returned mean=%.0f MB"
+            got_back = [reclaimed(r[2], r[3]) for r in resets
+                        if r[2] >= 0 and r[3] >= 0]
+            print("  resets=%d  endpoint mean=%.2fs  memory returned %s"
                   % (len(resets), statistics.mean(r[1] for r in resets),
-                     statistics.mean(r[2] - r[3] for r in resets)))
-        print("  rss across the run: %.0f -> %.0f MB" % (rss0 or 0.0, last_rss or 0.0))
+                     ("mean=%s MB" % statistics.mean([int(g) for g in got_back])
+                      if got_back else "unknown (no psutil on this host)")))
+        print("  rss across the run: %s -> %s" % (mem(rss0), mem(last_rss)))
         return verdict
     finally:
         dump_run(args.out_json, run_meta(args, "reload"), records)

@@ -226,6 +226,45 @@ class EvidenceKeepingTests(unittest.TestCase):
         self.assertFalse((blocker / "x.json").exists())
 
 
+class ResourceSamplingTests(unittest.TestCase):
+    """A host without psutil still gets the measurement, and never an invented number.
+
+    The absence is simulated rather than waited for. A test that only exercises its failure path
+    on machines lacking an optional dependency is the next D29: green here, red there, and
+    silent about which fact it was checking.
+    """
+
+    def setUp(self):
+        self.had_psutil = "psutil" in sys.modules
+        self.had_value = sys.modules.get("psutil")
+        self.captured = io.StringIO()
+        redirect = contextlib.redirect_stdout(self.captured)
+        redirect.__enter__()
+        self.addCleanup(redirect.__exit__, None, None, None)
+        self.addCleanup(self.restore)
+
+    def restore(self):
+        if self.had_psutil:
+            sys.modules["psutil"] = self.had_value
+        else:
+            sys.modules.pop("psutil", None)
+
+    def test_no_psutil_gives_unknown_samples_rather_than_a_crash(self):
+        sys.modules["psutil"] = None        # importing a None entry raises ImportError
+        rss, threads, handles = d.sample()
+        self.assertEqual((d.UNKNOWN, d.UNKNOWN, d.UNKNOWN), (rss, threads, handles),
+                         "the run must survive a host that cannot read its own memory")
+
+    def test_unknown_is_never_printed_as_zero(self):
+        # Two unknowns subtracted would print "0 MB back", which is a measurement-shaped lie.
+        self.assertEqual("n/a", d.fmt(d.UNKNOWN))
+        self.assertEqual("n/a", d.fmt(None))
+        self.assertEqual("n/a", d.reclaimed(d.UNKNOWN, d.UNKNOWN))
+        self.assertEqual("n/a", d.delta(d.UNKNOWN, d.UNKNOWN))
+        self.assertEqual("2850", d.reclaimed(2936.0, 86.0))
+        self.assertEqual("-3", d.delta(10, 7))
+
+
 class RegistrationTests(unittest.TestCase):
     """The two enumerations of Python suites have to agree.
 
