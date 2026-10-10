@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ninesix-ai studio
 """Sidecar batch diagnostics -- the measurements behind defect D24 / D30.
 
-Run from the repository root. Four modes, one variable each:
+Run from the repository root. Five modes, one variable each:
 
   load    N sequential requests against one backend, sampling the process while
           it runs. Answers "does latency or memory grow with request count?"
@@ -13,13 +13,19 @@ Run from the repository root. Four modes, one variable each:
   hard    awkward inputs (already-target text, identifier-like keys, templates,
           zero-width, long paragraphs). Answers "does some input run the decoder
           to max_decoding_length and stall there?"
+  reload  N requests with `POST /reload` every K, reporting the calls that merely
+          translate separately from the one call that pays for a reset. Answers
+          "does self-resetting hold latency at its baseline, and what does the reset
+          cost?" That split is the whole point: averaging both together blames the
+          reload for the seconds it buys deliberately, and the number a retention
+          line needs is the steady drift alone.
   race    drive two revisions of the sidecar with a fake ctranslate2 and count
           how many translators a cold burst builds. Answers "was the reported
           slowdown a duplicated 2.95 GB checkpoint?" No real model is loaded, so
           it is fast and deterministic.
 
 Nothing here is a gate: it measures, it does not assert. Numbers printed by
-`load` and `rotate` are environment-dependent by design -- the ledger's counting
+`load`, `rotate` and `reload` are environment-dependent by design -- the ledger's counting
 rule keeps a runtime-precondition column for exactly that reason (REQ-F3).
 
 Dependencies: psutil (process sampling) and git (only for `race --rev`).
@@ -178,6 +184,75 @@ def run_hard(args):
         srv.server_close()
 
 
+def run_reload(args):
+    """A long batch that resets itself, split into what drifts and what pays for the reset."""
+    backend = ct2_sidecar.make_backend(args.backend)
+    srv, port = serve_in_thread(backend)
+    try:
+        steady = []
+        after_reset = []
+        resets = []
+        rss0 = last_rss = None
+        pending = False                      # the next call inherits a cold engine
+        for i in range(1, args.n + 1):
+            if args.every > 0 and i > 1 and (i - 1) % args.every == 0:
+                before = sample()[0]
+                started = time.perf_counter()
+                status, body = post_json(port, "/reload", {}, timeout=300.0)
+                took = time.perf_counter() - started
+                after = sample()[0]
+                if status != 200:
+                    print("  /reload at n=%d returned %d: %s -- stopping"
+                          % (i - 1, status, body))
+                    break
+                resets.append((i - 1, took, before, after, len(body.get("discarded") or [])))
+                print("  reset after n=%-4d rss %6.0f -> %6.0f MB (%5.0f back), endpoint %.2fs, "
+                      "discarded %d"
+                      % (i - 1, before, after, before - after, took,
+                         len(body.get("discarded") or [])))
+                last_rss = after
+                pending = True
+            started = time.perf_counter()
+            status, _ = post_json(port, "/translate",
+                                  {"text": args.text, "source": args.src, "target": args.tgt})
+            took = time.perf_counter() - started
+            if status != 200:
+                print("request %d returned %d -- stopping the run" % (i, status))
+                break
+            (after_reset if pending else steady).append(took)
+            pending = False
+            if rss0 is None:
+                rss0 = sample()[0]
+            last_rss = sample()[0]
+
+        print("\nreload/%s %s->%s: n=%d  steady=%d  calls right after a reset=%d"
+              % (args.backend, args.src, args.tgt, len(steady) + len(after_reset),
+                 len(steady), len(after_reset)))
+        if len(steady) >= 4:
+            # First half against second half, and said out loud when the run is too short for
+            # that comparison to mean anything: a retention line needs drift, and drift needs
+            # enough calls to have a second half at all.
+            half = len(steady) // 2
+            first_mean = statistics.mean(steady[:half])
+            second_mean = statistics.mean(steady[half:])
+            print("  steady drift: first_half_mean=%.3fs second_half_mean=%.3fs ratio=%.2f%s"
+                  % (first_mean, second_mean, second_mean / first_mean if first_mean else 0.0,
+                     "" if len(steady) >= 100 else "   <-- %d samples, too few for a line"
+                     % len(steady)))
+        if after_reset:
+            print("  first call after a reset: mean=%.2fs max=%.2fs "
+                  "(the price of the reset, not drift)"
+                  % (statistics.mean(after_reset), max(after_reset)))
+        if resets:
+            print("  resets=%d  endpoint mean=%.2fs  memory returned mean=%.0f MB"
+                  % (len(resets), statistics.mean(r[1] for r in resets),
+                     statistics.mean(r[2] - r[3] for r in resets)))
+        print("  rss across the run: %.0f -> %.0f MB" % (rss0 or 0.0, last_rss or 0.0))
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
 class _Result:
     """A ctranslate2 batch result: this path only reads .hypotheses[0]."""
 
@@ -319,7 +394,7 @@ def run_race(args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("mode", choices=["load", "rotate", "hard", "race"])
+    ap.add_argument("mode", choices=["load", "rotate", "hard", "reload", "race"])
     ap.add_argument("--backend", default="madlad", choices=["mock", "ct2", "madlad"])
     ap.add_argument("--text", default=SENTENCE)
     ap.add_argument("--src", default="en")
@@ -332,7 +407,8 @@ def main():
     ap.add_argument("--burst", type=int, default=4)
     ap.add_argument("--load-seconds", type=float, default=0.5)
     args = ap.parse_args()
-    {"load": run_load, "rotate": run_rotate, "hard": run_hard, "race": run_race}[args.mode](args)
+    {"load": run_load, "rotate": run_rotate, "hard": run_hard,
+     "reload": run_reload, "race": run_race}[args.mode](args)
 
 
 if __name__ == "__main__":
