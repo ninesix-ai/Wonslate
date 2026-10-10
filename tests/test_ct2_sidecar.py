@@ -1249,6 +1249,186 @@ class ConcurrentColdStartTests(unittest.TestCase):
             self.assertTrue(payload.get("text"), "a client got an empty translation")
 
 
+# ---- Multi-line and batch input (external item 007) -------------------------
+
+class _PerLineStubBackend:
+    """Answers one line at a time, and goes quiet on a poisoned line.
+
+    The stub can only satisfy a multi-line request if the service splits the text before
+    handing it over -- which is the point: measured against the real checkpoint, a blob with
+    newlines comes back as a single run-on line of repeated tokens (item 007), and a 200
+    with garbage in it is worse than an error.
+    """
+
+    name = "perline"
+
+    def __init__(self):
+        self.units = []                     # exactly what the service asked us to translate
+
+    def translate(self, text, source, target, glossary=None):
+        self.units.append(text)
+        if "MISSING" in text:
+            return ""                       # a segment the engine did not answer
+        return "[%s] %s" % (target, text.strip())
+
+
+class MultiLineContractTests(unittest.TestCase):
+    def setUp(self):
+        self.backend = _PerLineStubBackend()
+        self.server, self.port = serve_in_thread(self.backend, host="127.0.0.1", port=0)
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def _post(self, body):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/translate", json.dumps(body),
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        data = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, (json.loads(data) if data else {})
+
+    def test_each_line_is_translated_as_its_own_unit(self):
+        status, _ = self._post({"text": "one\n\nthree", "source": "en", "target": "zh"})
+        self.assertEqual(200, status)
+        self.assertEqual(["one", "three"], self.backend.units,
+                         "the engine must be handed one line at a time; a blob is what makes"
+                         " MADLAD run away with repeated tokens (item 007)")
+
+    def test_line_structure_survives_a_multi_line_request(self):
+        status, body = self._post({"text": "one\ntwo\n\nfour", "source": "en", "target": "zh"})
+        self.assertEqual(200, status)
+        lines = body["text"].split("\n")
+        self.assertEqual(4, len(lines), "the answer must keep the caller's line count: %r" % (lines,))
+        self.assertEqual("", lines[2], "a blank line is structure, not a gap to close")
+        self.assertEqual(["[zh] one", "[zh] two", "", "[zh] four"], lines)
+
+    def test_a_segment_that_came_back_empty_is_reported_not_left_silent(self):
+        # REQ-B2: an unanswered line must not look like a translation of nothing.
+        status, body = self._post(
+            {"text": "fine\nMISSING\nalso fine", "source": "en", "target": "zh"})
+        self.assertEqual(200, status)
+        self.assertEqual([1], body.get("failed_lines"),
+                         "the caller has to see which line the engine did not answer: %r" % (body,))
+        self.assertEqual(3, len(body["text"].split("\n")))
+
+    def test_whitespace_only_text_is_still_rejected(self):
+        status, _ = self._post({"text": "   \n  ", "source": "en", "target": "zh"})
+        self.assertEqual(400, status, "blank lines are structure, but a blank request is not work")
+
+    def test_array_input_keeps_order_and_count(self):
+        status, body = self._post({"texts": ["b", "", "a"], "source": "en", "target": "zh"})
+        self.assertEqual(200, status)
+        self.assertEqual(["[zh] b", "", "[zh] a"], body["texts"],
+                         "a batch answer must line up index by index with the request")
+        self.assertEqual(["b", "a"], self.backend.units, "the empty entry is not a model call")
+
+    def test_the_batch_names_a_failing_segment_by_index(self):
+        status, body = self._post({"texts": ["ok", "MISSING"], "source": "en", "target": "zh"})
+        self.assertEqual(200, status)
+        self.assertEqual(["[zh] ok", ""], body["texts"])
+        self.assertEqual([1], body["failed_lines"])
+
+    def test_text_and_texts_together_are_rejected(self):
+        status, body = self._post({"text": "a", "texts": ["b"], "source": "en", "target": "zh"})
+        self.assertEqual(400, status, "one request, one shape of input, never both")
+        self.assertIn("error", body)
+
+    def test_array_items_must_be_strings(self):
+        status, _ = self._post({"texts": ["a", 3], "source": "en", "target": "zh"})
+        self.assertEqual(400, status)
+
+    def test_an_empty_array_is_rejected(self):
+        status, _ = self._post({"texts": [], "source": "en", "target": "zh"})
+        self.assertEqual(400, status)
+
+    def test_a_permanent_target_stays_permanent_across_a_batch(self):
+        # One bad target code is a target-wide fact, not a per-line accident: it must not be
+        # downgraded to a partial success (defect D22's distinction, applied to a batch).
+        class _RejectingBackend(_PerLineStubBackend):
+            def translate(self, text, source, target, glossary=None):
+                raise ct2_sidecar.UnsupportedTarget("no such target")
+
+        self.server.shutdown()
+        self.server.server_close()
+        rejecting = _RejectingBackend()
+        self.server, self.port = serve_in_thread(rejecting, host="127.0.0.1", port=0)
+        status, body = self._post({"texts": ["a", "b"], "source": "en", "target": "xx"})
+        self.assertEqual(422, status, body)
+        self.assertEqual("unsupported_target", body["error"])
+
+
+class RealMadladLineTests(unittest.TestCase):
+    """Item 007 measured on the actual checkpoint, through the wire.
+
+    MADLAD decodes deterministically (verified for this build: identical input twice gives
+    identical output), so a line translated inside a multi-line request has to read exactly
+    as it does when sent alone. That is a strong equality, and before the fix it failed
+    spectacularly: three lines in came back as one line of repeated tokens with none of the
+    source content present.
+    """
+
+    LINES = ["The buffer is too small for one frame.", "Sample rate must match the device."]
+
+    @classmethod
+    def setUpClass(cls):
+        model_dir = default_model_dir().parent / "madlad"
+        if not model_dir.is_dir():
+            raise unittest.SkipTest(
+                "no MADLAD checkpoint under {}; run script/fetch_madlad_model.py"
+                .format(model_dir))
+        try:
+            cls.backend = MadladBackend(model_dir=str(model_dir))
+        except MissingDependency as exc:
+            raise unittest.SkipTest("madlad stack unavailable: {}".format(exc))
+
+    def test_multi_line_request_matches_line_by_line_on_the_real_model(self):
+        solo = [self.backend.translate(line, "en", "zh") for line in self.LINES]
+        server, port = serve_in_thread(self.backend, host="127.0.0.1", port=0)
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
+            conn.request("POST", "/translate",
+                         json.dumps({"text": "\n".join(self.LINES),
+                                     "source": "en", "target": "zh"}),
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            body = json.loads(resp.read().decode("utf-8"))
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        self.assertEqual(200, resp.status, body)
+        lines = body["text"].split("\n")
+        self.assertEqual(len(self.LINES), len(lines),
+                         "a two-line request answered with %d lines: %r" % (len(lines), lines))
+        self.assertEqual(solo, lines,
+                         "each line must read as it does when sent alone: solo=%r blob=%r"
+                         % (solo, lines))
+        self.assertFalse(body.get("failed_lines"), body)
+
+    def test_batch_array_matches_the_same_answers_on_the_real_model(self):
+        solo = [self.backend.translate(line, "en", "zh") for line in self.LINES]
+        server, port = serve_in_thread(self.backend, host="127.0.0.1", port=0)
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
+            conn.request("POST", "/translate",
+                         json.dumps({"texts": self.LINES, "source": "en", "target": "zh"}),
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            body = json.loads(resp.read().decode("utf-8"))
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        self.assertEqual(200, resp.status, body)
+        self.assertEqual(solo, body["texts"],
+                         "one round trip must not change what any segment becomes: %r" % (body,))
+
+
 # ---- Output sanitisation (external item 009) ----------------------------------
 
 class OutputSanitizationTests(unittest.TestCase):

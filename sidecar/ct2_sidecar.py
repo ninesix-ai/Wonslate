@@ -5,7 +5,13 @@
 
 Contract (strictly aligned with Rust engine/sidecar.rs, .NET SidecarManager,
 tests/mock_sidecar_server.py):
-    POST /translate   body {"text","source","target"[,"glossary":[{"src","tgt"}]]}  -> 200 {"text": "<translation>"}
+    POST /translate   body {"text" | "texts":[...]}, "source", "target"[, "glossary":[{"src","tgt"}]]
+                      -> 200 {"text": "<translation>"} | {"texts": ["<translation>", ...]}
+                         A line break is never handed to these checkpoints as part of one unit:
+                         input is split, each line translated, and the answer rejoined keeping
+                         the caller's line count (a blob makes the decoder emit repeated tokens
+                         with no source content in it - external item 007). "failed_lines" names
+                         the positions that came back unanswered; blank lines are structure.
     GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>"}   (LIVENESS only)
     GET  /readyz      -> 200 {"status":"ready","backend",...} | 503 {"status":"warming","error":"not_ready","reason":...}
                          501 {"error":"readiness_unknown"} when the backend cannot say
@@ -858,6 +864,62 @@ class Handler(BaseHTTPRequestHandler):
             body["error"] = "not_ready"       # reason says which half is missing
             self._send(503, body)
 
+    def _translate_lines(self, lines, source, target, glossary):
+        """Translate each line on its own and report which ones did not come back.
+
+        Line breaks are not a unit these checkpoints can translate. Measured against the
+        real MADLAD-400 checkpoint (external item 007): three lines in came back as one
+        run-on line of repeated tokens (``10000000...`` followed by source fragments), with
+        none of the three answers present and a 200 on the wire. The tokenizer is not the
+        problem - it keeps the ``\n`` piece - and neither is the transport; the decoder
+        simply degenerates. So the service splits, joins back in the caller's structure, and
+        names any line the engine could not answer instead of shipping an empty slot that
+        reads like a translation of nothing (REQ-B2).
+
+        Blank lines are structure, not work: they are echoed unchanged and never reach the
+        engine, so a caller splitting a UI string on ``\n\n`` gets its paragraph break back.
+        """
+        answers = []
+        failed = []
+        for index, line in enumerate(lines):
+            if not line.strip():
+                answers.append(line)
+                continue
+            answer = self.server.backend.translate(line, source, target, glossary)
+            answer = sanitize_output(answer or "", target, line)
+            if not answer.strip():
+                failed.append(index)
+                answers.append("")
+            else:
+                answers.append(answer)
+        return answers, failed
+
+    def _units_from_request(self, req):
+        """Normalise ``text`` / ``texts`` into entries, or send a 400 and return None.
+
+        Exactly one shape per request: accepting both would make the answer depend on key
+        order in a JSON object, which is the kind of ambiguity a batch caller cannot audit.
+        """
+        text, batch = req.get("text"), req.get("texts")
+        if text is not None and batch is not None:
+            self._send(400, {"error": "text and texts are mutually exclusive"})
+            return None
+        if batch is not None:
+            if not isinstance(batch, list) or not batch:
+                self._send(400, {"error": "'texts' must be a non-empty list"})
+                return None
+            if not all(isinstance(u, str) for u in batch):
+                self._send(400, {"error": "'texts' must contain only strings"})
+                return None
+            if not any(u.strip() for u in batch):
+                self._send(400, {"error": "no text to translate"})
+                return None
+            return [u.split("\n") for u in batch]
+        if not text or not str(text).strip():
+            self._send(400, {"error": "missing 'text'"})
+            return None
+        return [str(text).split("\n")]
+
     def do_POST(self):
         path = urlparse(self.path).path
         if path not in ("/translate", "/warmup"):
@@ -872,16 +934,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/warmup":
             self._warmup(req)
             return
-        text = req.get("text")
-        if not text or not str(text).strip():
-            self._send(400, {"error": "missing 'text'"})
+        entries = self._units_from_request(req)
+        if entries is None:
             return
-        folded_source, folded_target, echoes = self._fold_codes(
+        as_array = req.get("texts") is not None
+        flat = [line for entry in entries for line in entry]
+        folded_source_lang, folded_target, echoes = self._fold_codes(
             str(req.get("source") or ""), str(req.get("target") or ""))
         started = time.perf_counter()
         try:
-            out = self.server.backend.translate(
-                text, folded_source, folded_target, req.get("glossary"))
+            answers, failed_lines = self._translate_lines(
+                flat, folded_source_lang, folded_target, req.get("glossary"))
         except UnsupportedTarget as e:
             # Permanent for this code, and ordered before MissingDependency
             # because it IS one. Hand back the supported set so a batch caller can
@@ -899,12 +962,31 @@ class Handler(BaseHTTPRequestHandler):
         # exact moment the engine is failing.
         self.server.signals.record_served()
         self.server.signals.record_latency(time.perf_counter() - started)
-        # Nothing invisible may leave this process. Decided here rather than inside each
-        # `_detokenize` so the two real backends, the mock and any third-party one all get
-        # the same answer from one place -- and because the identical bytes reach the Rust
-        # pipeline through sidecar.rs, this is the single choke point that covers both
-        # consumers (external item 009).
-        body = {"text": sanitize_output(out, folded_target, str(text))}
+        # Regroup in the caller's own shape: one entry per array element, one text for a
+        # plain request, and always the same number of lines the entry had.
+        joined = []
+        cursor = 0
+        for entry in entries:
+            joined.append("\n".join(answers[cursor:cursor + len(entry)]))
+            cursor += len(entry)
+        # `failed_lines` counts flat lines; the caller holds entries, so a batch maps each
+        # failed line back to the entry it came from, and a single text reports line numbers
+        # directly. Naming the position is what keeps a partial answer honest (REQ-B2).
+        if as_array:
+            bounds, cursor = [], 0
+            for entry in entries:
+                bounds.append((cursor, cursor + len(entry)))
+                cursor += len(entry)
+            failed_units = sorted({i for i, (first, last) in enumerate(bounds)
+                                   for line in failed_lines if first <= line < last})
+        else:
+            failed_units = list(failed_lines)
+        body = {"texts": joined} if as_array else {"text": joined[0]}
+        if failed_units:
+            body["failed_lines"] = failed_units
+            body["note"] = ("%d %s did not come back translated; the rest of the answer is"
+                            " intact and the position is named so it can be retried"
+                            % (len(failed_units), "entries" if as_array else "lines"))
         body.update(echoes)
         self._send(200, body)
 
