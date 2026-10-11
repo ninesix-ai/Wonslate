@@ -304,6 +304,77 @@ class HttpContractTests(unittest.TestCase):
         self.assertEqual(status, 404)
 
 
+class GlossaryDeclarationTests(unittest.TestCase):
+    """008: a caller that sends `glossary` must be able to tell applied from ignored.
+
+    The real ct2/madlad checkpoints accept the parameter and then never reference it, so a
+    200 used to read as "the brand names / DAW terms were pinned". Once REQ-B2 was extended
+    over the sidecar HTTP contract (2026-10-11) that silence became a defect the red line
+    governs: the answer has to say which way it went -- the same capability/data split D17
+    made on the Rust pipeline, now on this channel. The flag lives on the backend classes so
+    the handler does not re-derive it from the backend's identity.
+    """
+
+    def _serve(self, backend):
+        srv, port = serve_in_thread(backend, host="127.0.0.1", port=0)
+        # addCleanup is LIFO: register close first so shutdown() runs first. Closing the
+        # listening socket while serve_forever still loops raises inside that thread -- the
+        # same shutdown/server_close order the existing tearDown uses.
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        return port
+
+    def _translate(self, port, glossary=None):
+        body = {"text": "vocoder", "source": "en", "target": "zh"}
+        if glossary is not None:
+            body["glossary"] = glossary
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("POST", "/translate", body=json.dumps(body),
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        data = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return resp.status, data
+
+    def test_backend_that_rejects_glossary_declares_it_not_applied(self):
+        # A stub whose translate ignores the glossary argument and which carries no
+        # `accepts_glossary` flag -- the shape of CT2/Madlad. Sending a term must NOT
+        # return a bare 200 that reads as if the term had been honoured.
+        port = self._serve(_StubBackend(pairs=["en->zh"], targets=["zh"], sources=["en"]))
+        status, data = self._translate(port, glossary=[{"src": "vocoder", "tgt": "声码器"}])
+        self.assertEqual(status, 200)
+        self.assertIs(False, data.get("glossary_applied"),
+                      "008: an ignored glossary must be declared, not hidden behind a 200")
+        self.assertIn("not", (data.get("glossary_note") or "").lower())
+
+    def test_backend_that_uses_glossary_declares_it_applied(self):
+        # The mock is the one backend here that actually consumes the parameter, so the
+        # honest answer flips to true -- proving the field tracks the capability, not the
+        # mere presence of a request.
+        port = self._serve(MockBackend())
+        status, data = self._translate(port, glossary=[{"src": "hello", "tgt": "你好"}])
+        self.assertEqual(status, 200)
+        self.assertIs(True, data.get("glossary_applied"))
+
+    def test_no_glossary_requested_adds_no_claim(self):
+        # Absent request -> absent field. The service must not invent a statement about
+        # something nobody asked, and a caller must not have to tell apart "false because
+        # ignored" from "false because none was sent".
+        port = self._serve(_StubBackend(pairs=["en->zh"], targets=["zh"], sources=["en"]))
+        status, data = self._translate(port)
+        self.assertEqual(status, 200)
+        self.assertNotIn("glossary_applied", data)
+
+    def test_shipped_backends_carry_the_right_capability_flag(self):
+        # The two real checkpoints ignore glossary by design; the mock is the only one that
+        # uses it. Pinning this on the classes is what keeps the handler's decision honest
+        # when a third backend is added.
+        self.assertIs(False, CT2Backend.accepts_glossary)
+        self.assertIs(False, MadladBackend.accepts_glossary)
+        self.assertIs(True, MockBackend.accepts_glossary)
+
+
+
 # ---- permanent vs recoverable, readiness, enumeration ------------
 #
 # Three separate questions a batch caller has to be able to ask, none of which

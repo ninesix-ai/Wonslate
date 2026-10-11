@@ -12,6 +12,11 @@ tests/mock_sidecar_server.py):
                          the caller's line count (a blob makes the decoder emit repeated tokens
                          with no source content in it - external item 007). "failed_lines" names
                          the positions that came back unanswered; blank lines are structure.
+                         When the request carried a glossary, the answer also carries
+                         "glossary_applied": true|false (and a "glossary_note" when false): ct2 and
+                         madlad take the parameter but translate without term context, so a 200 must
+                         not read as if the terms were pinned -- REQ-B2 extended over this channel
+                         (external item 008). No such field when no glossary was sent.
                       429 {"error":"busy","decode_slots":N,"decodes_in_flight":N,"waited_ms",
                          "note"} + Retry-After, only when --decode-slots is set: every slot is
                          decoding, so nothing was started for this request and retrying costs no
@@ -449,6 +454,11 @@ class MockBackend:
 
     name = "mock"
 
+    # The one backend here that actually consumes the glossary argument (it tags the echo
+    # with "+gloss"), so an honest caller asking "were my terms applied?" gets a true. The
+    # real checkpoints set this False -- see 008 / the /translate handler.
+    accepts_glossary = True
+
     def translate(self, text, source, target, glossary=None):
         out = "[{}] {}".format(target, text)
         if glossary:
@@ -535,6 +545,11 @@ class CT2Backend:
     """
 
     name = "ct2"
+
+    # Takes the glossary argument and never references it (docstring above): the checkpoints
+    # translate without term context. The /translate handler reports `glossary_applied: false`
+    # when a caller sends one, rather than letting a 200 imply the terms were pinned (008).
+    accepts_glossary = False
 
     def __init__(self, model_dir=None):
         try:
@@ -738,6 +753,10 @@ class MadladBackend:
     """
 
     name = "madlad"
+
+    # Same as ct2: the parameter is accepted and ignored (docstring above), so the handler
+    # declares it not applied whenever a caller sends a glossary (008).
+    accepts_glossary = False
 
     # Shown in "unsupported pair" messages; the full MADLAD-400 list has 450+ codes.
     _COMMON_CODES = ("en", "zh", "ja", "ko", "fr", "de", "es", "ru", "pt", "it", "ar")
@@ -1247,6 +1266,20 @@ class Handler(BaseHTTPRequestHandler):
                             " intact and the position is named so it can be retried"
                             % (len(failed_units), "entries" if as_array else "lines"))
         body.update(echoes)
+        # 008, once REQ-B2 was extended over this HTTP channel: a caller that sent a glossary
+        # must be able to tell "the terms were pinned" from "this backend took the parameter and
+        # translated without it". Only a backend that declares the capability may claim applied;
+        # an unknown/duck-typed backend defaults to not-applied, because the honest direction
+        # when you cannot tell is to say the work was not done, never to imply it was. No field
+        # is added when nothing was requested -- the service does not comment on what was asked.
+        if req.get("glossary"):
+            applied = bool(getattr(self.server.backend, "accepts_glossary", False))
+            body["glossary_applied"] = applied
+            if not applied:
+                body["glossary_note"] = (
+                    "this backend accepted the glossary but does not apply term context; the "
+                    "answer was translated without it. Terms are honoured by the Rust pipeline "
+                    "for engines that take a prompt (external item 008).")
         self._send(200, self._mark_exit(body, spent))
 
     def _send_busy(self, waited_s):
