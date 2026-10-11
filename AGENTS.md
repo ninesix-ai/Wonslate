@@ -32,7 +32,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Build and start the GUI | `python script/build.py --run` |
 | XAML static lint + window-appears smoke | `verify.bat` / `verify.sh` |
 | Self-sign output so local smokes repeat | `sign.bat` |
-| Measure what a long batch actually costs (D24/D30 probes; `--help` for the five modes; `reload` prices a self-reset, and `--corpus` drives a run with distinct sentences reported pass against pass) | `python script/diag_sidecar_batch.py load --corpus script/eval-data/av-zh-en --n 900 --out-json run.json` |
+| Measure what a long batch actually costs (D24/D30 probes; `--help` for the seven modes; `reload` prices a self-reset, `abandon` prices work nobody waits for, `gate` picks the decode-slot limit, and `--corpus` drives a run with distinct sentences reported pass against pass) | `python script/diag_sidecar_batch.py load --corpus script/eval-data/av-zh-en --n 900 --out-json run.json` |
 | Check an output for invisible characters, on either or both engine tiers (D42) | `python script/diag_invisible_chars.py both` |
 
 ## 3. Traps that have already cost someone a session
@@ -167,7 +167,7 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
 15. **A long batch needs a predictable exit, not a smarter watchdog.** External item 004
    measured 130 s -> 280 s -> >900 s for one workload while every call kept returning 200 and
    `/health` kept saying ok, so the caller's "restart on failure" rule could never fire and its
-   only recovery was `taskkill` plus a per-language restart loop. Two mechanisms now live here:
+   only recovery was `taskkill` plus a per-language restart loop. Three mechanisms now live here:
 
    * `--max-requests N` answers N requests and exits **with code 0** and a printed reason. It
      is off by default because the desktop client supervises its own sidecars and an
@@ -179,10 +179,28 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
      *not* warm by default: re-materialising this checkpoint measured 4.2-5.5 s, while the
      client probes with a 1500 ms HTTP timeout, so a blocking reload would look like an outage.
      Pass `"warm": true` to pay that inside the call.
+   * `--decode-slots N` bounds how many decodes may run at once; the overflow is answered
+     `429 busy` (with `Retry-After`, `decodes_in_flight`, and a note saying **nothing was
+     started**), never queued, and `--queue-wait-ms` is there because waiting is a real
+     alternative that had to be measured rather than assumed. It is off by default for two
+     measured reasons: at one or two abandoned decodes it makes a patient caller *slower*
+     (`Retry-After` is whole seconds while a decode is a few), and a client that does not retry
+     -- which is what `engine/sidecar.rs` does with any non-200 today -- trades slowness for a
+     lost translation. So it is a switch for a caller that expects abandonment bursts, not a
+     default. `python script/diag_sidecar_batch.py gate` is what re-measures it, and it must be
+     run **in both setting orders**: per-setting baselines at k=0 differ by up to 1.4 s on this
+     host even though nothing is contended there, and the slow slot moved with the order, not
+     with the setting. Absolute seconds across settings are therefore not comparable; only
+     ratios inside one setting's own baseline are. That is the paired-comparison lesson of
+     `load` applied one level up.
 
    Three rules follow. **One tally**: `/health`'s `requests_served`, `requests_until_exit` and
    the self-exit all read the same counter, so a refused target code cannot be counted by one
-   and skipped by another. **Never invent a countdown**: `requests_until_exit` is `null` when
+   and skipped by another. **A busy refusal is charged to neither**: it is a fact about this
+   instant, not work done, so it does not spend a permit and does not enter the latency sample --
+   and `decodes_in_flight` counts whether or not a gate is configured, because the number that
+   explains item 004's ladder has to be readable on a service that shipped without the gate.
+   **Never invent a countdown**: `requests_until_exit` is `null` when
    unbounded. **Never promise reclaimed memory in prose**: `reload` reports what it discarded,
    and `python script/diag_sidecar_batch.py reload` is what re-measures whether the bytes came
    back and what the reset cost -- reporting the calls that merely translate *separately* from
