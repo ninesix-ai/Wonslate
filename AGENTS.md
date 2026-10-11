@@ -245,6 +245,32 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    above rather than re-quoting it, and keep the environment precondition with the number --
    this host's long-lived sidecars are named in those files for exactly that reason.
 
+16. **A caller that hung up is a fact to record, not a crash to print.** `ThreadingHTTPServer`
+    gives every request its own thread and `socketserver` prints a full traceback for any
+    exception that escapes a handler -- which on a batch where clients time out means one stack
+    trace per abandoned call. Measured: **47 tracebacks, 127 KB of stderr, in a single run**, and
+    every one of them was the service finishing an answer and finding nobody listening. That is
+    also why the same event was mis-attributed twice while it was being investigated: the noise
+    looked like information, so the numbers were read off it ("47 of the 60 abandoned calls", and
+    "the other 11 must be a post-handler flush" -- wrong both times; splitting by client port and
+    stack shape gave 36 answers and 11 refusals, all inside `_send`).
+
+    `Handler._send` therefore catches `ConnectionError` and nothing wider, and counts the two
+    outcomes apart: an *answer* written to a gone caller spent a decode, a *refusal* spent
+    nothing. `OSError(ENOSPC)`, a `ValueError`, a crashing engine all still reach the log, and
+    `GoneClientTests` pins each of those boundaries -- including the one that matters most, that
+    overriding `handle_error` is not an acceptable fix. Two places in this repo used to do
+    exactly that to keep their output tidy (`AbandonedRequestTests` and the probe's `race` mode),
+    which is how this sat unnoticed: a silenced log is not a fixed log. The `race` override stays
+    on purpose and says why -- it runs a *checked-out revision* that predates the accounting, and
+    silencing somebody else's stderr is not the same as hiding your own.
+
+    What the counts are **not**: a duration. `writes_to_gone_clients()` answers "how many answers
+    went nowhere"; the seconds thrown away are measured by
+    `python script/diag_sidecar_batch.py abandon`, which prints both. Neither number is on
+    `/health` yet -- publishing a service's own waste is an open decision, and a field that
+    appears in a contract by accident is hard to take back out.
+
 ## 4. Conventions and invariants
 
 **This file is not the source of truth for either.** `CONTRIBUTING.md` is: comment
