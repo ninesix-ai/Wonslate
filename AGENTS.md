@@ -359,7 +359,7 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
       do with the product (this suite's skip path did that on the way out).
 
 18. **A wait knob needs an upper bound, and a percentile describes finished work -- not the
-    request in flight.** Two lessons from one round, both measured rather than argued:
+    request in flight.** Three lessons from three rounds, all measured rather than argued:
 
     * `--queue-wait-ms` shipped with no ceiling. The mutation meant to prove the new suite could
       see a unit error (`/1000` written as `*1000`) turned out to be a **real defect, D46**: past
@@ -374,6 +374,15 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
       the service promised `2`, because the window then held a 1.84 s sample while p99 was 25.18 s.
       A caller that sizes itself by that promise under-waits any mixed workload; the queue is for
       those, and a document that quotes a percentile has to say which one and of what.
+    * A caller *inside* a queue was invisible on `/health` (**D47**, 2026-10-11): `acquire(timeout=W)`
+      blocks before `decode_started()` is called (slot not yet granted, so `decodes_in_flight` is
+      still the old value) and before `record_served()` runs (no decode yet, so `requests_served`
+      doesn't count it either). The sizing rule W ≥ sum of decodes ahead of a caller requires
+      exactly that number, so an operator watching `/health` had nothing to evaluate it against.
+      Fixed with `queue_entered/queue_left` wrapping only the blocking section (guarded by
+      `queue_wait_s > 0` so a zero-wait immediate refusal does not become a phantom queue entry),
+      exposed as `decodes_queued`. The mutation proof must delete both halves: removing
+      `queue_entered()` hides the caller; removing `queue_left()` leaks a permanent phantom.
 
     The round also carries a method note: a mutation round can find a defect instead of confirming
     a suite, which is the cheapest way one has ever paid for itself here.

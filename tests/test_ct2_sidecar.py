@@ -2250,6 +2250,63 @@ class DecodeGateTests(unittest.TestCase):
         self.assertEqual(0, self._health(port)["decodes_in_flight"],
                          "the count leaked after the decode ended")
 
+    def test_queued_callers_are_visible_on_health(self):
+        # D47: a caller blocked in `acquire(timeout=W)` is counted neither in
+        # `decodes_in_flight` (that only increments *after* the acquire succeeds) nor in
+        # `requests_served` (that increments after the full decode completes). An operator
+        # watching /health sees `decodes_in_flight=1, requests_served=0` and reads a nearly-idle
+        # service, while in fact every slot is occupied and callers are piling up behind it.
+        # That pile is the sole input to the sizing rule (W >= sum of decodes ahead of the
+        # caller), so without `decodes_queued` the rule cannot be evaluated against a live
+        # service.
+        #
+        # Three waiters so the count is checked as a magnitude, not just "non-zero": a single
+        # caller would also pass if the fix counted each caller twice (enter once, leave never).
+        # After everyone is served the count must fall back to 0 -- a leaked increment is the
+        # twin of the invisible-queue problem: /health would report a phantom queue forever.
+        backend = _GatedBackend()
+        _srv, port = self._serve(backend, decode_slots=1, queue_wait_ms=30000)
+        results = {}
+        held = threading.Thread(target=lambda: results.setdefault(
+            "slow", self._post(port, "holding the slot")))
+        held.start()
+        backend.wait_for_entry()
+        waiters = [threading.Thread(
+            target=lambda i=i: results.setdefault(
+                "w%d" % i, self._post(port, "waiter %d" % i)))
+            for i in range(3)]
+        for w in waiters:
+            w.start()
+        # Poll, don't sleep: whether the waiters have reached the semaphore is a fact readable
+        # from the service, not a schedule to guess.
+        deadline = time.monotonic() + 12.0
+        health = self._health(port)
+        while health.get("decodes_queued", 0) < 3 and time.monotonic() < deadline:
+            time.sleep(0.1)
+            health = self._health(port)
+        self.assertEqual(3, health.get("decodes_queued", 0),
+                         "D47: /health must show how many callers are queued on the gate; "
+                         "got %r" % health)
+        # The held decode must not double-count: it acquired the gate before any of the waiters
+        # so it is in `decodes_in_flight`, not in `decodes_queued`.
+        self.assertEqual(1, health["decodes_in_flight"],
+                         "the decode that was already in flight when the waiters arrived "
+                         "should be in decodes_in_flight, not decodes_queued")
+        backend.release.set()
+        held.join(timeout=60)
+        for w in waiters:
+            w.join(timeout=60)
+        self.assertEqual(200, results["slow"][0])
+        for i in range(3):
+            self.assertEqual(200, results["w%d" % i][0],
+                             "waiter %d got %r instead of being served" % (i, results["w%d" % i]))
+        # After all callers are served, the queue must be empty again.
+        health = self._health(port)
+        self.assertEqual(0, health.get("decodes_queued", 0),
+                         "decodes_queued leaked to %d after all waiters were served -- "
+                         "queue_left() was not called or was not paired with queue_entered()"
+                         % health.get("decodes_queued", -1))
+
 
 # ---- Answers written to callers that already left (defect D30 item 2, option A) ----
 

@@ -23,12 +23,19 @@ tests/mock_sidecar_server.py):
                          refusal rather than a queue because a queued caller is still waiting
                          behind the timeout of text nobody wants any more.
     GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>","requests_served",...,
-                         "decodes_in_flight":N,"requests_until_exit":N|null}   (LIVENESS only)
+                         "decodes_in_flight":N,"decodes_queued":N,"requests_until_exit":N|null}
+                         (LIVENESS only)
                          requests_until_exit is null unless the process was started with
                          --max-requests; it never invents a countdown it will not honour.
                          decodes_in_flight is measured, not inferred: it is how many decodes are
                          running in this process right now, which is the thing item 004's ladder
                          was built from (work nobody waits for any more still holding the CPU).
+                         decodes_queued (D47) is how many callers are blocked waiting for a gate
+                         slot right now: 0 when --decode-slots or --queue-wait-ms are unset;
+                         otherwise the sole observable input to the sizing rule W >= sum of
+                         decodes ahead of a caller. The queued caller has not yet been counted
+                         in decodes_in_flight (incremented only after the slot is granted) nor
+                         in requests_served (incremented after the full decode completes).
                          Answers written to callers who had left are counted too, but only
                          in-process (signals.writes_to_gone_clients) -- whether /health should
                          publish them is still an open decision, so they are not on the wire.
@@ -237,6 +244,11 @@ class HealthSignals:
         self._latencies = collections.deque(maxlen=window)
         self._served = 0
         self._decodes = 0
+        # D47: how many callers are currently blocked inside `acquire_decode` waiting for a
+        # gate slot. Incremented before the timed acquire, decremented after it (whether the
+        # wait succeeded or ran out). Not counted at all when `queue_wait_s == 0`, because a
+        # zero timeout never actually blocks: the caller is refused immediately, not queued.
+        self._queued = 0
         self._gone_answers = 0
         self._gone_refusals = 0
         self._max_requests = max_requests
@@ -268,6 +280,28 @@ class HealthSignals:
             # Never let this go below zero: an unmatched release would turn /health into a
             # counter that lies by omission, which is the failure this field exists to expose.
             self._decodes = max(0, self._decodes - 1)
+
+    def queue_entered(self):
+        """A caller is about to block on the gate's semaphore (D47).
+
+        Paired with `queue_left()` in a finally block, so the count cannot leak whether the
+        caller is served, times out, or the platform raises. Not called at all when
+        `queue_wait_s == 0` -- a zero timeout never actually blocks, so counting it would make
+        every immediate refusal a phantom queue entry.
+        """
+        with self._lock:
+            self._queued += 1
+
+    def queue_left(self):
+        """The caller stopped waiting (got a slot, was refused, or the wait raised).
+
+        Clamped to zero for the same reason `decode_finished` is: an unmatched `queue_left` (for
+        example if a future refactor accidentally calls it without a matching `queue_entered`)
+        would silently under-report the queue and make the sizing rule invisible again -- which
+        is the very failure D47 describes.
+        """
+        with self._lock:
+            self._queued = max(0, self._queued - 1)
 
     def record_gone_write(self, refusal):
         """An answer was written to a caller that had already hung up.
@@ -303,12 +337,14 @@ class HealthSignals:
         with self._lock:
             served = self._served
             decodes = self._decodes
+            queued = self._queued
             ordered = sorted(self._latencies)
             remaining = (None if self._max_requests is None
                          else max(0, self._max_requests - served))
         return {"requests_served": served,
                 "requests_until_exit": remaining,
                 "decodes_in_flight": decodes,
+                "decodes_queued": queued,
                 "latency_samples": len(ordered),
                 "last_latency_p50": _percentile(ordered, 0.50),
                 "last_latency_p99": _percentile(ordered, 0.99),
@@ -1432,10 +1468,24 @@ class SidecarServer(ThreadingHTTPServer):
         With a gate, a caller may wait up to `queue_wait_s`; waiting past that is refused
         rather than left hanging, because a queued caller is still sitting behind the timeout
         of the request nobody wants any more (defect D30 item 2, external item 004).
+
+        D47: while the caller is blocked in `acquire(timeout=W)` it is neither in
+        `decodes_in_flight` (incremented only after the slot is granted) nor in
+        `requests_served` (incremented after the decode finishes). The caller would be
+        completely invisible on /health. `queue_entered/queue_left` wraps exactly the blocking
+        section so /health can report `decodes_queued` -- the only input an operator has for
+        the sizing rule W >= sum of decodes ahead of a given caller. The guard
+        `self.queue_wait_s > 0` is deliberate: with a zero timeout `acquire` never actually
+        sleeps, so counting that as "queued" would make every immediate refusal a phantom
+        queue entry.
         """
         if self.decode_gate is None:
             self.signals.decode_started()
             return True
+        # D47: increment only when a non-zero wait can actually block the caller.
+        will_wait = self.queue_wait_s > 0
+        if will_wait:
+            self.signals.queue_entered()
         try:
             acquired = self.decode_gate.acquire(timeout=self.queue_wait_s)
         except (OverflowError, ValueError):
@@ -1444,6 +1494,9 @@ class SidecarServer(ThreadingHTTPServer):
             # clamps the flag before it can reach this size, which is exactly why the guard is
             # asserted on its own: without that separate row, deleting it would show up nowhere.
             acquired = False
+        finally:
+            if will_wait:
+                self.signals.queue_left()
         if acquired:
             self.signals.decode_started()
             return True
