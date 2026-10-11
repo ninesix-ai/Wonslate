@@ -39,14 +39,29 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 ///
 /// It costs nothing when it is not needed: a `429` can only come from a service started with
 /// `--decode-slots`, which is off by default, so every existing deployment never waits.
+///
+/// Where it stops being enough, measured: `Retry-After` is the ceiling of the service's own
+/// p50, so the budget is priced in *that* unit. `tests/test_sidecar_busy_e2e.py` holds the slot
+/// with a real decode and watches the engine recover: a 2.1 s occupancy was recovered in 5.05 s,
+/// a 7.3 s one in 11.03 s -- inside the budget, but only just. A workload whose decodes run
+/// longer than about six seconds can therefore exhaust it, and the caller then gets the demo
+/// answer with `"engine 'madlad' produced no result, fell back to local demo"` rather than a
+/// silent wrong translation. Raising this number buys that regime at the cost of a longer UI
+/// wait; the suite is what re-measures both sides.
 const DEFAULT_BUSY_RETRY_MS: u64 = 12_000;
 
 /// The prefix chain each slot reads, in precedence order. Named once and used by the
 /// constructors themselves, so a test cannot pass on a list the product does not read.
-const ARGOS_CANDIDATES: &[&str] = &["LT_ARGOS_URL", "WONSLATE_ARGOS_URL"];
-const MADLAD_CANDIDATES: &[&str] = &["LT_MADLAD_URL", "WONSLATE_MADLAD_URL"];
+/// `pub` for the same reason: `tests/env_pin_coverage.rs` asserts what the hermetic table
+/// pins against what these engines actually resolve, and a copied list would re-create D41.
+pub const ARGOS_CANDIDATES: &[&str] = &["LT_ARGOS_URL", "WONSLATE_ARGOS_URL"];
+pub const MADLAD_CANDIDATES: &[&str] = &["LT_MADLAD_URL", "WONSLATE_MADLAD_URL"];
 /// The busy-wait budget's own keys, same legacy-first chain as every other knob.
-const RETRY_CANDIDATES: &[&str] = &["LT_SIDECAR_RETRY_MS", "WONSLATE_SIDECAR_RETRY_MS"];
+pub const RETRY_CANDIDATES: &[&str] = &["LT_SIDECAR_RETRY_MS", "WONSLATE_SIDECAR_RETRY_MS"];
+/// Per-request timeout keys, named for the same reason as the URL chains -- the inline literal
+/// this replaces was read by the constructor and by nothing else, so a suite could not prove
+/// it had pinned the value the engine would use.
+pub const TIMEOUT_CANDIDATES: &[&str] = &["LT_SIDECAR_TIMEOUT_MS", "WONSLATE_SIDECAR_TIMEOUT_MS"];
 /// Translation endpoint path.
 const TRANSLATE_PATH: &str = "/translate";
 
@@ -74,6 +89,18 @@ impl SidecarTranslator {
         Self { id, url, timeout, busy_retry }
     }
 
+    /// What this engine resolved the busy-wait budget to. The fields are private and a suite
+    /// that re-derived them from the environment would be asserting its own copy instead of
+    /// the engine's resolution (D41's shape again), so the read is exposed instead.
+    pub fn busy_retry(&self) -> Duration {
+        self.busy_retry
+    }
+
+    /// The address this engine will dial, for suites that must prove their own pin won.
+    pub fn endpoint(&self) -> &str {
+        &self.url
+    }
+
     fn from_env(id: &'static str, url_candidates: &[&str], default_url: &str) -> Self {
         Self::from_lookup(&|k| std::env::var(k).ok(), id, url_candidates, default_url)
     }
@@ -90,8 +117,7 @@ impl SidecarTranslator {
     ) -> Self {
         let url = crate::config::first_env(lookup, url_candidates)
             .unwrap_or_else(|| default_url.to_string());
-        let timeout_ms = crate::config::first_env(
-            lookup, &["LT_SIDECAR_TIMEOUT_MS", "WONSLATE_SIDECAR_TIMEOUT_MS"])
+        let timeout_ms = crate::config::first_env(lookup, TIMEOUT_CANDIDATES)
             .and_then(|v| v.trim().parse::<u64>().ok())
             .unwrap_or(DEFAULT_TIMEOUT_MS);
         let busy_retry_ms = crate::config::first_env(lookup, RETRY_CANDIDATES)

@@ -57,8 +57,9 @@ const TEST_MODEL: &str = "hermetic-test-model";
 /// precedence order (the lists mirror `config::build_config`, `config::data_dir_for`,
 /// `config::routes_file`, `config::settings_file` and `engine::sidecar::from_env`).
 /// A knob listed here but left unset is *cleared*, which is what keeps a developer's
-/// shell out of the result.
-const KNOBS: &[(&str, &[&str])] = &[
+/// shell out of the result. `pub` because `tests/env_pin_coverage.rs` compares it against the
+/// names the engine actually reads -- an unchecked table is how D45 happened.
+pub const KNOBS: &[(&str, &[&str])] = &[
     ("DATA_DIR", &["LT_DATA_DIR", "WONSLATE_DATA_DIR", "DATA_DIR"]),
     (
         "OLLAMA_URL",
@@ -79,6 +80,10 @@ const KNOBS: &[(&str, &[&str])] = &[
     (
         "SIDECAR_TIMEOUT_MS",
         &["LT_SIDECAR_TIMEOUT_MS", "WONSLATE_SIDECAR_TIMEOUT_MS"],
+    ),
+    (
+        "SIDECAR_RETRY_MS",
+        &["LT_SIDECAR_RETRY_MS", "WONSLATE_SIDECAR_RETRY_MS"],
     ),
     ("ARGOS_URL", &["LT_ARGOS_URL", "WONSLATE_ARGOS_URL"]),
     ("MADLAD_URL", &["LT_MADLAD_URL", "WONSLATE_MADLAD_URL"]),
@@ -138,6 +143,12 @@ impl Spec {
         // Fail fast rather than wait out the shipped 120 s, if a slot ever is reached.
         spec.pinned.insert("OLLAMA_TIMEOUT_MS", "500".to_string());
         spec.pinned.insert("SIDECAR_TIMEOUT_MS", "500".to_string());
+        // No integration suite may sleep on a busy refusal: the shipped default is 12 s, and
+        // the suites own no gated service. Pinned rather than cleared so a host export cannot
+        // quietly give every suite a different patience -- and so a suite that ever wants the
+        // wait asks for it out loud. (Leaving this knob out of the table was defect D45, caught
+        // by `tests/env_pin_coverage.rs`.)
+        spec.pinned.insert("SIDECAR_RETRY_MS", "0".to_string());
         spec.pinned.insert("ARGOS_URL", DEAD.to_string());
         spec.pinned.insert("MADLAD_URL", DEAD.to_string());
         spec
