@@ -1,0 +1,718 @@
+{
+  "mode": "queue",
+  "backend": "madlad",
+  "pair": "en->zh",
+  "corpus": "script/eval-data/av-zh-en/av-zh-en.tgt",
+  "requested_calls": 24,
+  "retention_limit": 1.15,
+  "started_at": "2026-10-11T17:39:28",
+  "note": "seconds are client-side wall time around one POST, one fresh connection per call; the service ran in this same process",
+  "gate_slots": 1,
+  "page_units": 6,
+  "waiter_counts_k": [
+    1,
+    3
+  ],
+  "settings": [
+    {
+      "setting": "slots=1+wait0ms",
+      "wait_ms": 0,
+      "k": 1,
+      "model_disagreements": 0,
+      "refused_set_moved_between_passes": false,
+      "outcome_flipped_at_k1": false,
+      "passes": [
+        {
+          "pass": 1,
+          "holder_s": 24.6203,
+          "remaining_s": 24.6152,
+          "model": {
+            "predicted_served": 0,
+            "predicted_wait_per_waiter_s": [
+              24.62
+            ]
+          },
+          "served": 0,
+          "refused": 1,
+          "refused_keys": [
+            "A buffer that is too sma"
+          ],
+          "worst_served_s": 0.0,
+          "mean_refused_s": 0.0015,
+          "waited_ms_off_by_s": {}
+        },
+        {
+          "pass": 2,
+          "holder_s": 23.4631,
+          "remaining_s": 23.4009,
+          "model": {
+            "predicted_served": 0,
+            "predicted_wait_per_waiter_s": [
+              23.4
+            ]
+          },
+          "served": 0,
+          "refused": 1,
+          "refused_keys": [
+            "A buffer that is too sma"
+          ],
+          "worst_served_s": 0.0,
+          "mean_refused_s": 0.0012,
+          "waited_ms_off_by_s": {}
+        }
+      ],
+      "per_waiter": {
+        "A buffer that is too sma": {
+          "status": 429,
+          "seconds": 0.0015,
+          "arrived_s": 0.0051,
+          "retry_after_s": 4.0,
+          "waited_ms": 0.0,
+          "error": null
+        }
+      }
+    },
+    {
+      "setting": "slots=1+wait0ms",
+      "wait_ms": 0,
+      "k": 3,
+      "model_disagreements": 0,
+      "refused_set_moved_between_passes": false,
+      "outcome_flipped_at_k1": false,
+      "passes": [
+        {
+          "pass": 1,
+          "holder_s": 23.7457,
+          "remaining_s": 23.6779,
+          "model": {
+            "predicted_served": 0,
+            "predicted_wait_per_waiter_s": [
+              23.68,
+              27.2,
+              30.72
+            ]
+          },
+          "served": 0,
+          "refused": 3,
+          "refused_keys": [
+            "Mono 16 kHz 16-bit is th",
+            "Stereo dual-channel audi",
+            "The sample rate and bit "
+          ],
+          "worst_served_s": 0.0,
+          "mean_refused_s": 0.0028,
+          "waited_ms_off_by_s": {}
+        },
+        {
+          "pass": 2,
+          "holder_s": 23.9029,
+          "remaining_s": 23.8329,
+          "model": {
+            "predicted_served": 0,
+            "predicted_wait_per_waiter_s": [
+              23.83,
+              27.35,
+              30.88
+            ]
+          },
+          "served": 0,
+          "refused": 3,
+          "refused_keys": [
+            "Mono 16 kHz 16-bit is th",
+            "Stereo dual-channel audi",
+            "The sample rate and bit "
+          ],
+          "worst_served_s": 0.0,
+          "mean_refused_s": 0.0026,
+          "waited_ms_off_by_s": {}
+        }
+      ],
+      "per_waiter": {
+        "Mono 16 kHz 16-bit is th": {
+          "status": 429,
+          "seconds": 0.0021,
+          "arrived_s": 0.068,
+          "retry_after_s": 24.0,
+          "waited_ms": 0.0,
+          "error": null
+        },
+        "The sample rate and bit ": {
+          "status": 429,
+          "seconds": 0.0031,
+          "arrived_s": 0.0679,
+          "retry_after_s": 24.0,
+          "waited_ms": 0.0,
+          "error": null
+        },
+        "Stereo dual-channel audi": {
+          "status": 429,
+          "seconds": 0.0033,
+          "arrived_s": 0.0678,
+          "retry_after_s": 24.0,
+          "waited_ms": 0.0,
+          "error": null
+        }
+      }
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "wait_ms": 10000,
+      "k": 1,
+      "model_disagreements": 0,
+      "refused_set_moved_between_passes": false,
+      "outcome_flipped_at_k1": false,
+      "passes": [
+        {
+          "pass": 1,
+          "holder_s": 23.5188,
+          "remaining_s": 23.4506,
+          "model": {
+            "predicted_served": 0,
+            "predicted_wait_per_waiter_s": [
+              23.45
+            ]
+          },
+          "served": 0,
+          "refused": 1,
+          "refused_keys": [
+            "Forced alignment lines u"
+          ],
+          "worst_served_s": 0.0,
+          "mean_refused_s": 10.0076,
+          "waited_ms_off_by_s": {}
+        },
+        {
+          "pass": 2,
+          "holder_s": 23.6513,
+          "remaining_s": 23.5823,
+          "model": {
+            "predicted_served": 0,
+            "predicted_wait_per_waiter_s": [
+              23.58
+            ]
+          },
+          "served": 0,
+          "refused": 1,
+          "refused_keys": [
+            "Forced alignment lines u"
+          ],
+          "worst_served_s": 0.0,
+          "mean_refused_s": 10.004,
+          "waited_ms_off_by_s": {}
+        }
+      ],
+      "per_waiter": {
+        "Forced alignment lines u": {
+          "status": 429,
+          "seconds": 10.0076,
+          "arrived_s": 0.0682,
+          "retry_after_s": 4.0,
+          "waited_ms": 10006.0,
+          "error": null
+        }
+      }
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "wait_ms": 10000,
+      "k": 3,
+      "model_disagreements": 0,
+      "refused_set_moved_between_passes": false,
+      "outcome_flipped_at_k1": false,
+      "passes": [
+        {
+          "pass": 1,
+          "holder_s": 23.6418,
+          "remaining_s": 23.6398,
+          "model": {
+            "predicted_served": 0,
+            "predicted_wait_per_waiter_s": [
+              23.64,
+              27.09,
+              30.55
+            ]
+          },
+          "served": 0,
+          "refused": 3,
+          "refused_keys": [
+            "In code-switched sentenc",
+            "Inverse text normalizati",
+            "Prompt injection into Ol"
+          ],
+          "worst_served_s": 0.0,
+          "mean_refused_s": 10.0172,
+          "waited_ms_off_by_s": {}
+        },
+        {
+          "pass": 2,
+          "holder_s": 23.4179,
+          "remaining_s": 23.3926,
+          "model": {
+            "predicted_served": 0,
+            "predicted_wait_per_waiter_s": [
+              23.39,
+              26.85,
+              30.3
+            ]
+          },
+          "served": 0,
+          "refused": 3,
+          "refused_keys": [
+            "In code-switched sentenc",
+            "Inverse text normalizati",
+            "Prompt injection into Ol"
+          ],
+          "worst_served_s": 0.0,
+          "mean_refused_s": 10.0162,
+          "waited_ms_off_by_s": {}
+        }
+      ],
+      "per_waiter": {
+        "Inverse text normalizati": {
+          "status": 429,
+          "seconds": 10.0017,
+          "arrived_s": 0.002,
+          "retry_after_s": 24.0,
+          "waited_ms": 10000.1,
+          "error": null
+        },
+        "In code-switched sentenc": {
+          "status": 429,
+          "seconds": 10.0168,
+          "arrived_s": 0.0021,
+          "retry_after_s": 24.0,
+          "waited_ms": 10014.6,
+          "error": null
+        },
+        "Prompt injection into Ol": {
+          "status": 429,
+          "seconds": 10.033,
+          "arrived_s": 0.002,
+          "retry_after_s": 24.0,
+          "waited_ms": 10011.4,
+          "error": null
+        }
+      }
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "wait_ms": 30000,
+      "k": 1,
+      "model_disagreements": 0,
+      "refused_set_moved_between_passes": false,
+      "outcome_flipped_at_k1": false,
+      "passes": [
+        {
+          "pass": 1,
+          "holder_s": 23.6028,
+          "remaining_s": 23.5886,
+          "model": {
+            "predicted_served": 1,
+            "predicted_wait_per_waiter_s": [
+              23.59
+            ]
+          },
+          "served": 1,
+          "refused": 0,
+          "refused_keys": [],
+          "worst_served_s": 27.1142,
+          "mean_refused_s": 0.0,
+          "waited_ms_off_by_s": {}
+        },
+        {
+          "pass": 2,
+          "holder_s": 23.4958,
+          "remaining_s": 23.4415,
+          "model": {
+            "predicted_served": 1,
+            "predicted_wait_per_waiter_s": [
+              23.44
+            ]
+          },
+          "served": 1,
+          "refused": 0,
+          "refused_keys": [],
+          "worst_served_s": 26.9398,
+          "mean_refused_s": 0.0,
+          "waited_ms_off_by_s": {}
+        }
+      ],
+      "per_waiter": {
+        "The subtitle track expor": {
+          "status": 200,
+          "seconds": 27.1142,
+          "arrived_s": 0.0142,
+          "retry_after_s": 0.0,
+          "waited_ms": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "wait_ms": 30000,
+      "k": 3,
+      "model_disagreements": 1,
+      "refused_set_moved_between_passes": true,
+      "outcome_flipped_at_k1": false,
+      "passes": [
+        {
+          "pass": 1,
+          "holder_s": 23.5188,
+          "remaining_s": 23.5167,
+          "model": {
+            "predicted_served": 2,
+            "predicted_wait_per_waiter_s": [
+              23.52,
+              27.36,
+              31.21
+            ]
+          },
+          "served": 3,
+          "refused": 0,
+          "refused_keys": [],
+          "worst_served_s": 33.6394,
+          "mean_refused_s": 0.0,
+          "waited_ms_off_by_s": {}
+        },
+        {
+          "pass": 2,
+          "holder_s": 23.6132,
+          "remaining_s": 23.5586,
+          "model": {
+            "predicted_served": 2,
+            "predicted_wait_per_waiter_s": [
+              23.56,
+              27.41,
+              31.25
+            ]
+          },
+          "served": 2,
+          "refused": 1,
+          "refused_keys": [
+            "Bilingual subtitles requ"
+          ],
+          "worst_served_s": 30.6672,
+          "mean_refused_s": 30.0048,
+          "waited_ms_off_by_s": {}
+        }
+      ],
+      "per_waiter": {
+        "Dubbing and lip sync are": {
+          "status": 200,
+          "seconds": 26.9536,
+          "arrived_s": 0.0021,
+          "retry_after_s": 0.0,
+          "waited_ms": null,
+          "error": null
+        },
+        "Bilingual subtitles requ": {
+          "status": 200,
+          "seconds": 29.9358,
+          "arrived_s": 0.0023,
+          "retry_after_s": 0.0,
+          "waited_ms": null,
+          "error": null
+        },
+        "Burned-in subtitles are ": {
+          "status": 200,
+          "seconds": 33.6394,
+          "arrived_s": 0.0022,
+          "retry_after_s": 0.0,
+          "waited_ms": null,
+          "error": null
+        }
+      }
+    }
+  ],
+  "records": [
+    {
+      "setting": "slots=1+wait0ms",
+      "k": 1,
+      "pass": 1,
+      "key": "A buffer that is too sma",
+      "status": 429,
+      "seconds": 0.0015,
+      "arrived_s": 0.0051,
+      "retry_after_s": 4.0,
+      "waited_ms": 0.0,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait0ms",
+      "k": 1,
+      "pass": 2,
+      "key": "A buffer that is too sma",
+      "status": 429,
+      "seconds": 0.0012,
+      "arrived_s": 0.0622,
+      "retry_after_s": 4.0,
+      "waited_ms": 0.0,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait0ms",
+      "k": 3,
+      "pass": 1,
+      "key": "Mono 16 kHz 16-bit is th",
+      "status": 429,
+      "seconds": 0.0021,
+      "arrived_s": 0.068,
+      "retry_after_s": 24.0,
+      "waited_ms": 0.0,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait0ms",
+      "k": 3,
+      "pass": 1,
+      "key": "The sample rate and bit ",
+      "status": 429,
+      "seconds": 0.0031,
+      "arrived_s": 0.0679,
+      "retry_after_s": 24.0,
+      "waited_ms": 0.0,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait0ms",
+      "k": 3,
+      "pass": 1,
+      "key": "Stereo dual-channel audi",
+      "status": 429,
+      "seconds": 0.0033,
+      "arrived_s": 0.0678,
+      "retry_after_s": 24.0,
+      "waited_ms": 0.0,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait0ms",
+      "k": 3,
+      "pass": 2,
+      "key": "Mono 16 kHz 16-bit is th",
+      "status": 429,
+      "seconds": 0.0019,
+      "arrived_s": 0.0702,
+      "retry_after_s": 24.0,
+      "waited_ms": 0.0,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait0ms",
+      "k": 3,
+      "pass": 2,
+      "key": "Stereo dual-channel audi",
+      "status": 429,
+      "seconds": 0.003,
+      "arrived_s": 0.07,
+      "retry_after_s": 24.0,
+      "waited_ms": 0.0,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait0ms",
+      "k": 3,
+      "pass": 2,
+      "key": "The sample rate and bit ",
+      "status": 429,
+      "seconds": 0.003,
+      "arrived_s": 0.0702,
+      "retry_after_s": 24.0,
+      "waited_ms": 0.0,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "k": 1,
+      "pass": 1,
+      "key": "Forced alignment lines u",
+      "status": 429,
+      "seconds": 10.0076,
+      "arrived_s": 0.0682,
+      "retry_after_s": 4.0,
+      "waited_ms": 10006.0,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "k": 1,
+      "pass": 2,
+      "key": "Forced alignment lines u",
+      "status": 429,
+      "seconds": 10.004,
+      "arrived_s": 0.069,
+      "retry_after_s": 4.0,
+      "waited_ms": 10002.4,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "k": 3,
+      "pass": 1,
+      "key": "Inverse text normalizati",
+      "status": 429,
+      "seconds": 10.0017,
+      "arrived_s": 0.002,
+      "retry_after_s": 24.0,
+      "waited_ms": 10000.1,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "k": 3,
+      "pass": 1,
+      "key": "In code-switched sentenc",
+      "status": 429,
+      "seconds": 10.0168,
+      "arrived_s": 0.0021,
+      "retry_after_s": 24.0,
+      "waited_ms": 10014.6,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "k": 3,
+      "pass": 1,
+      "key": "Prompt injection into Ol",
+      "status": 429,
+      "seconds": 10.033,
+      "arrived_s": 0.002,
+      "retry_after_s": 24.0,
+      "waited_ms": 10011.4,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "k": 3,
+      "pass": 2,
+      "key": "In code-switched sentenc",
+      "status": 429,
+      "seconds": 10.0161,
+      "arrived_s": 0.0254,
+      "retry_after_s": 24.0,
+      "waited_ms": 10014.1,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "k": 3,
+      "pass": 2,
+      "key": "Prompt injection into Ol",
+      "status": 429,
+      "seconds": 10.0162,
+      "arrived_s": 0.0253,
+      "retry_after_s": 24.0,
+      "waited_ms": 10013.2,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait10000ms",
+      "k": 3,
+      "pass": 2,
+      "key": "Inverse text normalizati",
+      "status": 429,
+      "seconds": 10.0162,
+      "arrived_s": 0.0254,
+      "retry_after_s": 24.0,
+      "waited_ms": 10013.4,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "k": 1,
+      "pass": 1,
+      "key": "The subtitle track expor",
+      "status": 200,
+      "seconds": 27.1142,
+      "arrived_s": 0.0142,
+      "retry_after_s": 0.0,
+      "waited_ms": null,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "k": 1,
+      "pass": 2,
+      "key": "The subtitle track expor",
+      "status": 200,
+      "seconds": 26.9398,
+      "arrived_s": 0.0543,
+      "retry_after_s": 0.0,
+      "waited_ms": null,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "k": 3,
+      "pass": 1,
+      "key": "Dubbing and lip sync are",
+      "status": 200,
+      "seconds": 26.9536,
+      "arrived_s": 0.0021,
+      "retry_after_s": 0.0,
+      "waited_ms": null,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "k": 3,
+      "pass": 1,
+      "key": "Bilingual subtitles requ",
+      "status": 200,
+      "seconds": 29.9358,
+      "arrived_s": 0.0023,
+      "retry_after_s": 0.0,
+      "waited_ms": null,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "k": 3,
+      "pass": 1,
+      "key": "Burned-in subtitles are ",
+      "status": 200,
+      "seconds": 33.6394,
+      "arrived_s": 0.0022,
+      "retry_after_s": 0.0,
+      "waited_ms": null,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "k": 3,
+      "pass": 2,
+      "key": "Dubbing and lip sync are",
+      "status": 200,
+      "seconds": 27.0108,
+      "arrived_s": 0.0546,
+      "retry_after_s": 0.0,
+      "waited_ms": null,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "k": 3,
+      "pass": 2,
+      "key": "Bilingual subtitles requ",
+      "status": 429,
+      "seconds": 30.0048,
+      "arrived_s": 0.0548,
+      "retry_after_s": 24.0,
+      "waited_ms": 30002.4,
+      "error": null
+    },
+    {
+      "setting": "slots=1+wait30000ms",
+      "k": 3,
+      "pass": 2,
+      "key": "Burned-in subtitles are ",
+      "status": 200,
+      "seconds": 30.6672,
+      "arrived_s": 0.0549,
+      "retry_after_s": 0.0,
+      "waited_ms": null,
+      "error": null
+    }
+  ]
+}

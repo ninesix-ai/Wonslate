@@ -1,0 +1,227 @@
+{
+  "what": "how long a busy MADLAD service may hold a caller on its semaphore, measured on the decode length a client retry budget cannot wait out",
+  "how": "python tests/test_sidecar_busy_e2e.py --queue --out-json docs/evidence/queue-wait-madlad.json",
+  "policy_under_test": "sidecar/ct2_sidecar.py acquire_decode(): with --queue-wait-ms the caller blocks on the slot and is refused only when its wait runs out; engine/sidecar.rs: without it the caller is refused at once and may only sleep whole Retry-After steps",
+  "one_variable": "queue sizes share a client budget of 0; the two queue=0 cells share one service and differ only in the budget. Waits are read against each service's own idle baseline in `per_service`, never against another service's seconds",
+  "per_service": {
+    "0": {
+      "seconds": 1.86,
+      "status": 200,
+      "served": true
+    },
+    "20000": {
+      "seconds": 1.9,
+      "status": 200,
+      "served": true
+    },
+    "45000": {
+      "seconds": 1.89,
+      "status": 200,
+      "served": true
+    }
+  },
+  "cells": [
+    {
+      "retry_ms": 0,
+      "elapsed_s": 0.0,
+      "arrival_s": 0.04,
+      "occupier_s": 25.19,
+      "busy_before": 1,
+      "p50_before_s": 1.841204,
+      "p99_before_s": 1.841204,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 2,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "queue_wait_ms": 0,
+      "baseline_s": 1.86,
+      "queue_model": {
+        "predicted_recovered": false,
+        "predicted_wake_s": null,
+        "predicted_refused_after_s": 0.0
+      },
+      "queue_model_agrees": true,
+      "wake_penalty_s": -27.01,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo",
+        "cjk": true
+      }
+    },
+    {
+      "retry_ms": 12000,
+      "elapsed_s": 10.01,
+      "arrival_s": 0.03,
+      "occupier_s": 25.18,
+      "busy_before": 1,
+      "p50_before_s": 1.841204,
+      "p99_before_s": 25.184937,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 2,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "queue_wait_ms": 0,
+      "baseline_s": 1.86,
+      "queue_model": {
+        "predicted_recovered": false,
+        "predicted_wake_s": null,
+        "predicted_refused_after_s": 0.0
+      },
+      "queue_model_agrees": true,
+      "client_model": {
+        "predicted_recovered": false,
+        "steps": 6,
+        "reached_s": null
+      },
+      "client_model_agrees": true,
+      "wake_penalty_s": -17.0,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo",
+        "cjk": true
+      }
+    },
+    {
+      "retry_ms": 0,
+      "elapsed_s": 20.01,
+      "arrival_s": 0.06,
+      "occupier_s": 26.34,
+      "busy_before": 1,
+      "p50_before_s": 1.893866,
+      "p99_before_s": 1.893866,
+      "peek": null,
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "queue_wait_ms": 20000,
+      "baseline_s": 1.9,
+      "queue_model": {
+        "predicted_recovered": false,
+        "predicted_wake_s": null,
+        "predicted_refused_after_s": 20.0
+      },
+      "queue_model_agrees": true,
+      "wake_penalty_s": -8.17,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo",
+        "cjk": true
+      }
+    },
+    {
+      "retry_ms": 0,
+      "elapsed_s": 26.96,
+      "arrival_s": 0.04,
+      "occupier_s": 25.17,
+      "busy_before": 1,
+      "p50_before_s": 1.873054,
+      "p99_before_s": 1.873054,
+      "peek": null,
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "queue_wait_ms": 45000,
+      "baseline_s": 1.89,
+      "queue_model": {
+        "predicted_recovered": true,
+        "predicted_wake_s": 25.13,
+        "predicted_refused_after_s": null
+      },
+      "queue_model_agrees": true,
+      "wake_penalty_s": -0.06,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null,
+        "cjk": true
+      }
+    }
+  ],
+  "model": "simulate_queue(): a queued caller is served at the instant the decode in front of it ends, with no rounding, and is refused at exactly its own wait; simulate(): a retrying caller can only arrive at whole multiples of the Retry-After it was promised",
+  "model_disagreements": {
+    "queue_model": 0,
+    "client_model": 0
+  },
+  "invalid_cells": [],
+  "analysis": {
+    "smallest_queue_that_recovered_ms": 45000,
+    "queues_that_lost_ms": [
+      20000
+    ],
+    "seconds_a_refused_queue_caller_spent": {
+      "20000": 20.01
+    },
+    "wake_penalty_s_of_recovered_callers": {
+      "45000": -0.06
+    },
+    "retry_after_promised_at_page_scale_s": [
+      2
+    ],
+    "what_the_promised_step_describes": [
+      {
+        "queue_wait_ms": 0,
+        "budget_ms": 0,
+        "decode_actually_in_flight_s": 25.19,
+        "p50_at_arrival_s": 1.841204,
+        "p99_at_arrival_s": 1.841204,
+        "retry_after_promised_s": 2
+      },
+      {
+        "queue_wait_ms": 0,
+        "budget_ms": 12000,
+        "decode_actually_in_flight_s": 25.18,
+        "p50_at_arrival_s": 1.841204,
+        "p99_at_arrival_s": 25.184937,
+        "retry_after_promised_s": 2
+      },
+      {
+        "queue_wait_ms": 20000,
+        "budget_ms": 0,
+        "decode_actually_in_flight_s": 26.34,
+        "p50_at_arrival_s": 1.893866,
+        "p99_at_arrival_s": 1.893866,
+        "retry_after_promised_s": null
+      },
+      {
+        "queue_wait_ms": 45000,
+        "budget_ms": 0,
+        "decode_actually_in_flight_s": 25.17,
+        "p50_at_arrival_s": 1.873054,
+        "p99_at_arrival_s": 1.873054,
+        "retry_after_promised_s": null
+      }
+    ],
+    "reading": "a queue is priced by the decode in front of the caller, not by a step: it recovers as soon as the slot frees, and if it is too short it spends its whole wait before refusing. A refused caller at queue=0 spends nothing. The retrying caller has no such guarantee: the number it is handed describes the service's median, not the decode it is blocked behind."
+  },
+  "what_this_does_not_show": [
+    "more than one waiting caller: every cell here has a single caller behind the decode it waits for, and the queue's shape with several waiters is a different question (BoundedSemaphore does not promise first-come-first-served, so who gets refused is not settled by arrival order -- `diag_sidecar_batch.py queue` is what measures that)",
+    "the argos slot: madlad is the slot whose decodes are seconds long",
+    "whether a desktop user should wait this long: that is a product decision, and the numbers here say what a queue costs, not what a person pays",
+    "any absolute latency to certify: one machine, one checkpoint, decodes the local model is good at"
+  ]
+}

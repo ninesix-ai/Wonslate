@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ninesix-ai studio
 """Sidecar batch diagnostics -- the measurements behind defect D24 / D30.
 
-Run from the repository root. Seven modes, one variable each:
+Run from the repository root. Eight modes, one variable each:
 
   load    N sequential requests against one backend, sampling the process while
           it runs. Answers "does latency or memory grow with request count?"
@@ -37,12 +37,18 @@ Run from the repository root. Seven modes, one variable each:
           report what a caller waits until it is served, refusals included. Answers "is a
           concurrent-decode limit worth shipping, and at what N" -- the question D30 item 2
           cannot be closed without. Also needs a real backend.
+  queue   hold one long decode and arrive at it with several waiters at once, across a ladder of
+          `--queue-wait-ms`. Answers "how long may the service keep a queue, and who does it lose
+          when the wait runs out" -- a queue is sized by the *number* waiting ahead of a caller,
+          not by the length of one decode, which is what the single-waiter measurement cannot say.
+          Each setting is run twice because a semaphore does not promise first-come-first-served.
+          Also needs a real backend.
 
 Nothing here runs in CI: `load` and `reload` now state a verdict against the retention
 line (exit code 0 or 1), but they need a real model and tens of minutes, so the verdict
-is for whoever is deciding a release, not for a gate. `rotate`, `hard`, `race`, `abandon`
-and `gate` only
-measure. Numbers printed by `load`, `rotate`, `reload` and `gate` are environment-dependent
+is for whoever is deciding a release, not for a gate. `rotate`, `hard`, `race`, `abandon`,
+`gate` and `queue` only
+measure. Numbers printed by `load`, `rotate`, `reload`, `gate` and `queue` are environment-dependent
 by design -- the ledger's counting rule keeps a runtime-precondition column for exactly that
 reason (REQ-F3), and the environment a verdict was reached in belongs with the verdict.
 
@@ -893,11 +899,13 @@ def run_gate(args):
                 unserved = len(group) - len(answered)
                 refusals = sum(row[2] for row in group)
                 slept = sum(a.get("slept_s", 0.0) for row in group for a in row[4])
-                # A caller that does not retry -- which is what our own Rust client does today,
-                # since `request()` turns any non-200 into None and the pipeline degrades -- would
-                # lose exactly these calls. The seconds columns alone would therefore recommend a
-                # gate that silently turns slowdowns into missing translations for every client
-                # that never learned to retry. Keep the two apart in the report.
+                # A caller that does not retry -- which is what an out-of-tree batch tool or MCP
+                # client does today, since only this repo's Rust client learned to wait inside
+                # `*_SIDECAR_RETRY_MS` -- would lose exactly these calls. The seconds columns alone
+                # would therefore recommend a gate that silently turns slowdowns into missing
+                # translations for every client that never learned to retry. Keep the two apart.
+                # (2026-10-11: this line used to claim the Rust client did not retry at all; it has
+                # since grown the wait, so the warning is scoped to callers outside this repo.)
                 lost_on_first_try = sum(1 for row in group
                                         if row[4] and row[4][0]["status"] == 429)
                 mean = statistics.mean([row[1] for row in answered]) if answered else 0.0
@@ -943,8 +951,10 @@ def run_gate(args):
     print("  read it as: the smallest 'mean' at the doses you expect is the setting worth")
     print("  shipping, provided 'unserved' stays 0 -- a setting that refuses a caller out of")
     print("  existence is not a latency win. 'never_started' is the compute a gate saved.")
-    print("  'no_retry_lost' is the honest warning: today's Rust client does not retry a non-200,")
-    print("  so every call counted there would become a degraded fallback rather than a slow one.")
+    print("  'no_retry_lost' is the honest warning: a client that does not wait out a 429 would")
+    print("  lose every call counted there, becoming a degraded fallback rather than a slow one.")
+    print("  (This repo's Rust client waits inside *_SIDECAR_RETRY_MS; callers outside it mostly")
+    print("  do not, which is why the column is still the one that decides whether to ship on.)")
     print("  what this cannot show: one machine, one client per row, sentences the local model")
     print("  is good at. It compares settings, which is the question being asked; it does not")
     print("  certify any absolute latency.")
@@ -964,6 +974,299 @@ def run_gate(args):
                                    for (k, mean, worst, refusals, unserved, wasted, never, slept,
                                         lost) in rows]}
                         for (label, quiet, rows) in results]
+    dump_run(args.out_json, meta, calls)
+    return 0
+
+
+def simulate_waiters(remaining_s: float, own_s: float, wait_ms: float, k: int) -> dict:
+    """How many of k queued waiters a `--queue-wait-ms` of this size must serve.
+
+    One slot means a staircase: the first waiter to be handed the slot starts when the decode in
+    front of it ends, the next one a decode later, and so on. The step of that staircase is the
+    *decode* length and not the promised `Retry-After`, because a queued caller is woken rather
+    than left to re-poll -- which is the whole difference between the two waiting mechanisms.
+
+    It deliberately does not predict WHICH waiters. `threading.BoundedSemaphore` makes no
+    first-come-first-served promise, so the count is the provable part and the identities are
+    something to measure.
+    """
+    needs = [remaining_s + i * own_s for i in range(k)]
+    return {"predicted_served": sum(1 for n in needs if n <= wait_ms / 1000.0),
+            "predicted_wait_per_waiter_s": [round(n, 2) for n in needs]}
+
+
+def run_queue(args):
+    """Size the service-side queue by the number of callers waiting, not by one decode.
+
+    `gate` asks whether a concurrent-decode limit is worth shipping; `tests/test_sidecar_busy_e2e.py
+    --queue` prices it for exactly one waiter. A batch has neither of those shapes: with k callers
+    queued behind one decode, the last of them waits for all of them, so a queue that serves one
+    can still refuse another, and the size that loses nothing scales with k. That is the question
+    this mode exists for, and it is the blank the budget grid marked as "one caller only".
+
+    Three accounting rules carried over from the modes above, each learned the hard way here:
+
+      * one checkpoint for every setting (`shared`): reloading a 2.95 GB model per row would make
+        each row a different machine state, and the rows would then not be comparable;
+      * a waiter is identified by the sentence it asked for, never by its position in the results,
+        because with k callers the first one to return is whichever got lucky, not the first one
+        to arrive;
+      * each setting is run twice. If which waiter loses changes between the passes, then "the
+        queue is fair" is an assumption a caller must not size its wait by.
+    """
+    if args.backend == "mock":
+        print("  queue measures seconds of queueing; on mock a decode is milliseconds, so every"
+              " number below would be scheduling noise. Run --backend madlad or --backend ct2.")
+        return 1
+
+    waits = [int(raw) for raw in str(args.waits or "").split(",") if raw.strip()]
+    ks = [int(raw) for raw in str(args.waiters or "").split(",") if raw.strip()]
+    slots = int(str(args.slots or "1").split(",")[0].strip() or "1") or 1
+    if not waits or not ks:
+        print("  nothing to compare: pass --waits 0,10000 --waiters 1,3 beside --backend madlad")
+        return 1
+
+    inner = ct2_sidecar.make_backend(args.backend)
+    backend = _TimestampedBackend(inner)
+    sentences = corpus_lines(args.corpus) or [args.text]
+    page = " ".join(sentences[:max(1, args.page_units)])
+    short_pool = sentences[max(1, args.page_units):] or sentences
+    cursor = [0]
+
+    def next_short():
+        index = cursor[0]
+        cursor[0] += 1
+        if index >= len(short_pool):
+            print("  corpus exhausted, so waiter keys stop being unique past that")
+        return short_pool[index % len(short_pool)]
+
+    def one_shot(port, text, timeout):
+        """One POST, no retry: what a caller that knows nothing about Retry-After experiences.
+
+        Returns (status, seconds, retry_after_s, waited_ms_reported, error). A fresh connection per
+        call, because a connection whose socket timed out cannot be re-used and trying turns the
+        rest of the run into instant failures (learned in `abandon`).
+        """
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+        started = time.perf_counter()
+        try:
+            conn.request("POST", "/translate",
+                         json.dumps({"text": text, "source": args.src, "target": args.tgt}),
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            body = resp.read().decode("utf-8")
+            took = time.perf_counter() - started
+            try:
+                parsed = json.loads(body)
+            except ValueError:
+                parsed = {}
+            return (resp.status, took, float(resp.getheader("Retry-After") or 0.0),
+                    parsed.get("waited_ms"), None)
+        except OSError as exc:
+            return None, time.perf_counter() - started, 0.0, None, repr(exc)
+        finally:
+            conn.close()
+
+    def health(port):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("GET", "/health")
+            return json.loads(conn.getresponse().read().decode("utf-8"))
+        except OSError:
+            return {}
+        finally:
+            conn.close()
+
+    def episode(port, k, wait_ms, long_timeout, identities):
+        """Hold the gate with one long decode, then arrive behind it with k callers at once.
+
+        `identities` is the *same* list of sentences on both passes, and that is the only thing
+        that makes the pass-to-pass comparison mean anything. The first run took a fresh sentence
+        per waiter per pass, so the set of callers who lost differed by construction -- the tool
+        then reported "not first-come-first-served" on every k=3 row, including the rows where
+        every caller was refused both times. That is an artifact of the measurement pointing at
+        itself, and it would have become a conclusion about the semaphore.
+        """
+        holder = {}
+
+        def hold():
+            started = time.perf_counter()
+            holder["call"] = one_shot(port, page, long_timeout)
+            holder["seconds"] = time.perf_counter() - started
+
+        thread = threading.Thread(target=hold, daemon=True)
+        began = time.perf_counter()
+        thread.start()
+        # `wall`, not `began`: a deadline built from one clock and compared against another is
+        # either always past or never past, and on Windows `perf_counter` starts near zero while
+        # `time.time()` is ~1.7e9 -- the loop would have given up on its first turn.
+        deadline = time.time() + 60.0
+        while not health(port).get("decodes_in_flight"):
+            if time.time() > deadline:
+                thread.join(600)
+                return None         # the premise never became true: nothing was queued behind
+            # Polled, not spun: a tight loop here would hammer the service with health requests
+            # while it is trying to decode, and the GIL does not distinguish those requests from
+            # the work being measured -- the instrument would slow down its own subject.
+            time.sleep(0.05)
+        start = threading.Barrier(k)
+        got = {}
+        lock = threading.Lock()
+
+        def waiter(order):
+            sentence = identities[order]
+            start.wait()
+            arrived = time.perf_counter() - began
+            status, took, retry_after, waited, error = one_shot(port, sentence, long_timeout)
+            with lock:
+                got[sentence[:24]] = {"status": status, "seconds": round(took, 4),
+                                      "arrived_s": round(arrived, 4),
+                                      "retry_after_s": retry_after, "waited_ms": waited,
+                                      "error": error}
+
+        threads = [threading.Thread(target=waiter, args=(order,), daemon=True)
+                   for order in range(k)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        thread.join(600)
+        if holder.get("call") is None or holder["call"][0] != 200:
+            print("    the long decode that everything queues behind did not succeed (%s), so"
+                  " this episode measures nothing" % (holder.get("call"),))
+            return None
+        return {"holder_s": round(holder["seconds"], 4), "waiters": got}
+
+    rows = []
+    calls = []
+    shared = None
+    for wait_ms in waits:
+        srv, port = serve_in_thread(shared or backend, decode_slots=slots,
+                                    queue_wait_ms=wait_ms)
+        shared = shared or backend
+        label = "slots=%d+wait%dms" % (slots, wait_ms)
+        long_timeout = max(args.deadline, 300.0) + wait_ms / 1000.0
+        try:
+            print("\n== %s" % label)
+            warm = one_shot(port, page, long_timeout)      # pay the model load, and time the page
+            if warm[0] != 200:
+                print("  warm-up was not served (%s), so nothing below is measured" % (warm[4],))
+                return 1
+            own = statistics.mean([one_shot(port, next_short(), long_timeout)[1] for _ in range(2)])
+            print("  one page decode here costs %.2fs, one short decode %.2fs" % (warm[1], own))
+            for k in ks:
+                identities = [next_short() for _ in range(k)]      # fixed across both passes
+                passes = []
+                for attempt_no in (1, 2):
+                    got = episode(port, k, wait_ms, long_timeout, identities)
+                    if got is None:
+                        print("    k=%d pass %d: the gate never showed a decode in flight, so the"
+                              " episode is dropped rather than guessed" % (k, attempt_no))
+                        continue
+                    remaining = max(0.0, got["holder_s"] - min(
+                        w["arrived_s"] for w in got["waiters"].values()))
+                    model = simulate_waiters(remaining, own, wait_ms, k)
+                    served = {key: w for key, w in got["waiters"].items() if w["status"] == 200}
+                    refused = {key: w for key, w in got["waiters"].items() if w["status"] != 200}
+                    # The service answers a timed-out waiter with the time it actually held that
+                    # caller, so `waited_ms` says whether an undersized queue refused early or
+                    # waited the whole way out. That is the cost a caller pays for a short wait.
+                    over = {key: round(w["waited_ms"] - wait_ms, 1) for key, w in refused.items()
+                            if w["waited_ms"] is not None and abs(w["waited_ms"] - wait_ms) > 1500}
+                    passes.append({"pass": attempt_no, "holder_s": got["holder_s"],
+                                   "remaining_s": round(remaining, 4), "model": model,
+                                   "served": len(served), "refused": len(refused),
+                                   "refused_keys": sorted(refused),
+                                   "worst_served_s": round(max([w["seconds"] for w in served.values()],
+                                                               default=0.0), 4),
+                                   "mean_refused_s": round(statistics.mean(
+                                       [w["seconds"] for w in refused.values()]), 4) if refused
+                                   else 0.0,
+                                   "waited_ms_off_by_s": over,
+                                   "waiters": got["waiters"]})
+                if not passes:
+                    continue
+                # Two passes disagree in *which callers lost* only means something when more than
+                # one caller was waiting: with k=1 a flip between served and refused is the queue
+                # sitting next to its own boundary, not a fairness finding, and calling it the
+                # latter would blame the semaphore for a decode that ran 0.4 s longer.
+                set_moved = (len(passes) == 2 and k >= 2
+                             and sorted(passes[0]["refused_keys"]) != sorted(passes[1]["refused_keys"]))
+                flipped = (len(passes) == 2 and k == 1
+                           and passes[0]["served"] != passes[1]["served"])
+                disagree = sum(1 for p in passes if p["served"] != p["model"]["predicted_served"])
+                rows.append({"setting": label, "wait_ms": wait_ms, "k": k,
+                             "passes": passes, "refused_set_moved_between_passes": set_moved,
+                             "outcome_flipped_at_k1": flipped,
+                             "model_disagreements": disagree})
+                for p in passes:
+                    for key, w in p["waiters"].items():
+                        calls.append({"setting": label, "k": k, "pass": p["pass"], "key": key,
+                                      **w})
+                print("    k=%-2d served=%s/%d predicted=%s  worst_wait=%5.2fs"
+                      " refused_after=%5.2fs  model_off=%d  who_lost_moved=%s%s%s"
+                      % (k, max(p["served"] for p in passes), k,
+                         [p["model"]["predicted_served"] for p in passes],
+                         max(p["worst_served_s"] for p in passes),
+                         max(p["mean_refused_s"] for p in passes), disagree, set_moved,
+                         "   <-- not first-come-first-served" if set_moved else "",
+                         "   (boundary: one pass served, one refused)" if flipped else ""))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    if not rows:
+        print("  no episode completed, so there is no queue table to read")
+        return 1
+
+    print("\n== what a queue of waiters costs: seconds from request to answer-or-refusal, the")
+    print("   caller's own decode included (a served row is NOT time spent waiting)")
+    for k in ks:
+        print("  k=%d" % k)
+        for row in rows:
+            if row["k"] != k:
+                continue
+            for p in row["passes"]:
+                print("    %-22s pass %d served=%d/%d (model %d) remaining=%5.2fs worst=%5.2fs"
+                      " refused_after=%5.2fs refused=%s%s"
+                      % (row["setting"], p["pass"], p["served"], k, p["model"]["predicted_served"],
+                         p["remaining_s"], p["worst_served_s"], p["mean_refused_s"],
+                         p["refused_keys"],
+                         "   waited_ms off by %s" % p["waited_ms_off_by_s"]
+                         if p["waited_ms_off_by_s"] else ""))
+    moved = [row["setting"] + "/k=%d" % row["k"] for row in rows
+             if row["refused_set_moved_between_passes"]]
+    flips = [row["setting"] + "/k=%d" % row["k"] for row in rows if row["outcome_flipped_at_k1"]]
+    off = [(row["setting"], row["k"], p["waited_ms_off_by_s"]) for row in rows for p in row["passes"]
+           if p["waited_ms_off_by_s"]]
+    print("  read it as: a queue serves the callers whose staircase fits inside it, so the size")
+    print("  that loses nothing is the whole line of work in front, not one decode. A refused")
+    print("  queued caller paid its full wait first -- an undersized queue is slower *and* lost.")
+    print("  where the callers who lost moved between passes: %s" % (moved or "nowhere in this run"))
+    print("  a semaphore does not promise order, and two passes that agree are not proof of")
+    print("  fairness -- they are only the absence of one finding in this run.")
+    print("  single-waiter rows that flipped between served and refused: %s" % (flips or "none"))
+    print("  (a queue sized close to its own boundary: the decode in front varied more than the")
+    print("  slack left in the wait, which is the honest reason to size a queue with margin")
+    print("  rather than to the measured second)")
+    print("  waited_ms disagreeing with the configured wait: %s" % (off or "none"))
+    print("  what this cannot show: one machine sharing its cores, so a queue of k costs the")
+    print("  model roughly k decodes; and callers that do not retry, which is what the refused")
+    print("  count means in the product -- for a waiting client it is one more round instead.")
+    meta = run_meta(args, "queue")
+    meta["requested_calls"] = len(calls)
+    meta["gate_slots"] = slots
+    meta["page_units"] = args.page_units
+    meta["waiter_counts_k"] = ks
+    meta["settings"] = [{"setting": row["setting"], "wait_ms": row["wait_ms"], "k": row["k"],
+                         "model_disagreements": row["model_disagreements"],
+                         "refused_set_moved_between_passes":
+                             row["refused_set_moved_between_passes"],
+                         "outcome_flipped_at_k1": row["outcome_flipped_at_k1"],
+                         "passes": [{k2: v for k2, v in p.items() if k2 != "waiters"}
+                                    for p in row["passes"]],
+                         "per_waiter": row["passes"][0]["waiters"]}
+                        for row in rows]
     dump_run(args.out_json, meta, calls)
     return 0
 
@@ -1116,7 +1419,7 @@ def run_race(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("mode", choices=["load", "rotate", "hard", "reload", "race", "abandon",
-                                     "gate"])
+                                     "gate", "queue"])
     ap.add_argument("--backend", default="madlad", choices=["mock", "ct2", "madlad"])
     ap.add_argument("--text", default=SENTENCE)
     ap.add_argument("--src", default="en")
@@ -1147,13 +1450,22 @@ def main():
     ap.add_argument("--deadline", type=float, default=120.0,
                     help="gate: how long a patient caller keeps retrying before the call is"
                          " counted as never served (it is reported as unserved, not dropped)")
+    ap.add_argument("--waits", default="0,10000,30000",
+                    help="queue: the --queue-wait-ms values to ladder, comma separated (every"
+                         " setting runs with --slots' first value as the gate)")
+    ap.add_argument("--waiters", default="1,3",
+                    help="queue: how many callers arrive at once behind the long decode,"
+                         " comma separated -- this is the variable the mode is about")
+    ap.add_argument("--page-units", type=int, default=8,
+                    help="queue: how many corpus sentences to join into the one long decode"
+                         " that the waiters queue behind")
     args = ap.parse_args()
     args.started_at = time.time()          # stamped here so a record says when the run began
     # A verdict, not just a printout: a caller scripting a release decision needs an exit code
     # to branch on, and modes that only measure return None, which becomes 0.
     sys.exit({"load": run_load, "rotate": run_rotate, "hard": run_hard,
               "reload": run_reload, "race": run_race, "abandon": run_abandon,
-              "gate": run_gate}[args.mode](args)
+              "gate": run_gate, "queue": run_queue}[args.mode](args)
               or 0)
 
 
