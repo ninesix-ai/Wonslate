@@ -387,12 +387,26 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
       `acquire_decode` gets no `429` -- the handler writes nothing while it waits -- so the
       `*_SIDECAR_RETRY_MS` budget never engages for a queued request and cannot rescue it. The
       only thing that bounds such a call is the **per-attempt** `*_SIDECAR_TIMEOUT_MS` (30000 ms
-      default), which `tcp_roundtrip` applies as a socket read timeout. So the desktop safe combo
-      is `*_SIDECAR_TIMEOUT_MS >= W + the caller's own decode`, and the desktop's `.NET` probes
-      (1500 ms liveness, 5000 ms start budget) are **not** part of the hazard because `/health`
-      and `/readyz` do not take a gate slot. Locked by the pair `a_server_hold_longer/shorter_than
-      _the_timeout_*`, each killed by breaking the timeout in the opposite direction -- a single
-      one-sided test would pass whether the inequality held or not.
+      default), which `tcp_roundtrip` applies as a socket read timeout. Locked by the pair
+      `a_server_hold_longer/shorter_than_the_timeout_*`, each killed by breaking the timeout in
+      the opposite direction -- a single one-sided test would pass whether the inequality held or
+      not.
+    * **Correction the same day (I under-counted the desktop chain).** That bullet framed the
+      desktop combo as `*_SIDECAR_TIMEOUT_MS >= W + decode` and called the .NET 1500 ms / 5000 ms
+      values the only outer layers. Both were wrong: a desktop `/translate` crosses **four**
+      timeouts, and the outermost is `MainViewModel.TranslateTimeout` = **20 s** with
+      `TranslateRetries = 1` -- a UI logical timeout that wraps the whole `tt_translate_full` FFI
+      call, is **not env-overridable**, and fires **before** the Rust 30 s. The abandoned native
+      call keeps decoding; the retry re-issues a second decode. Two consequences: the Rust-side
+      inequality is necessary but not sufficient for the desktop (so `--queue-wait-ms` is really
+      for out-of-repo batch callers, not the interactive desktop), and a multi-line paste already
+      exceeds 20 s because the sidecar decodes lines **sequentially on one slot** (sum of lines;
+      a measured 110-word madlad decode is ~25 s). With no gate the retry then overlaps the
+      still-running first decode -- the D30-2 amplification, reached without anyone enabling the
+      queue. Not a defect to silently change: the 20 s honestly reports "翻译超时（20s）" (REQ-B2
+      intact); whether to raise it or suppress an overlapping retry is a **product decision, left
+      to the owner**. The pair of hermetic tests still holds -- they measure the Rust->sidecar
+      read-timeout segment, which is real; they just do not stand for the whole chain.
 
     The round also carries a method note: a mutation round can find a defect instead of confirming
     a suite, which is the cheapest way one has ever paid for itself here.

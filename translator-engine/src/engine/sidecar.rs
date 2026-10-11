@@ -33,12 +33,17 @@ const DEFAULT_MADLAD_URL: &str = "http://127.0.0.1:11436";
 /// inequality that keeps the translation is `timeout >= queue_wait + the caller's own decode`;
 /// if it does not hold, this call times out and the pipeline falls back to demo while the service
 /// goes on decoding for a socket that has already closed (the abandoned-work shape of external
-/// item 004, now countable via `/health`'s `decodes_queued`). The desktop default of 30000 ms is
-/// safe only because the desktop does not enable a queue unless an operator passes
-/// `WONSLATE_*_ARGS=--queue-wait-ms W` -- and an operator who does must raise `*_SIDECAR_TIMEOUT_MS`
-/// to cover W; see `docs/hardware-requirements.md`. Proven both ways by the two
-/// `a_server_hold_*_the_timeout_*` cases, each killed by breaking the timeout in the opposite
-/// direction.
+/// item 004, now countable via `/health`'s `decodes_queued`). But this is only the RUST-side
+/// segment: a desktop `/translate` also has an OUTER .NET UI logical timeout
+/// (`MainViewModel.TranslateTimeout`, 20 s, retry once) that wraps this whole FFI call and fires
+/// BEFORE the 30 s here -- and it is not env-overridable. So covering W on the Rust side is
+/// necessary but not sufficient for the interactive desktop, which means `--queue-wait-ms` is
+/// really a knob for out-of-repo batch callers (who set their own single client timeout), not for
+/// the desktop. The desktop default is safe only because it does not enable a queue at all; a
+/// multi-line paste can still exceed the 20 s .NET timeout because the sidecar decodes lines
+/// sequentially on one slot. See `docs/hardware-requirements.md` for the four-layer chain. Proven
+/// both ways by the two `a_server_hold_*_the_timeout_*` cases, each killed by breaking the timeout
+/// in the opposite direction.
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 /// How long a caller may wait behind a `429 busy` refusal before it falls back, in
 /// milliseconds.
