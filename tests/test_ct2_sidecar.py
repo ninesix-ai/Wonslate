@@ -2174,6 +2174,66 @@ class DecodeGateTests(unittest.TestCase):
         self.assertEqual(0.0, ct2_sidecar.resolve_queue_wait_ms(None))
         self.assertEqual(0.0, ct2_sidecar.resolve_queue_wait_ms(-1))
         self.assertEqual(2.5, ct2_sidecar.resolve_queue_wait_ms(2500))
+        # D46: past a platform-dependent size a timed acquire stops waiting and starts raising,
+        # so the resolver has to cap the flag. The cap is read from the product rather than
+        # repeated here, or the two would drift apart and the test would assert its own number.
+        self.assertEqual(ct2_sidecar.QUEUE_WAIT_CEILING_S,
+                         ct2_sidecar.resolve_queue_wait_ms(10 ** 12))
+        self.assertLess(ct2_sidecar.resolve_queue_wait_ms(10 ** 12), 1e6,
+                        "the ceiling has to stay clear of the size that overflows, not merely "
+                        "be smaller than the value a caller might type")
+
+    def test_an_absurd_queue_wait_still_queues_instead_of_killing_the_connection(self):
+        # D46: `--queue-wait-ms` had no upper bound, and a timed acquire past CPython's limit
+        # raises OverflowError (measured on this host between 1,000,000 s and 20,000,000 s). The
+        # exception left the handler, so the caller's connection closed with no answer at all --
+        # a flag meant to be more patient than any real queue behaving as the least honest thing
+        # the service can do, because nothing reached it, not even a refusal.
+        #
+        # What the fix owes this caller is therefore the wait it asked for, clamped to a ceiling:
+        # it must be queued and served, not severed. Asserted as an outcome (200 after the slot
+        # frees, one decode at a time) rather than as a speed, because a caller that asked to
+        # wait an hour has no business being refused for waiting.
+        backend = _GatedBackend()
+        _srv, port = self._serve(backend, decode_slots=1, queue_wait_ms=10 ** 12)
+        results = {}
+        held = threading.Thread(target=lambda: results.setdefault(
+            "slow", self._post(port, "holding the only slot")))
+        held.start()
+        backend.wait_for_entry()
+        waiter = threading.Thread(target=lambda: results.setdefault(
+            "asked_for_forever", self._post(port, "a caller that asked to wait an hour")))
+        waiter.start()
+        self.assertEqual(1, self._health(port)["decodes_in_flight"],
+                         "the service stopped answering /health while a waiter was queued, so "
+                         "the waiter's handler took the process down with it")
+        backend.release.set()
+        held.join(timeout=30)
+        waiter.join(timeout=30)
+        self.assertEqual(200, results["slow"][0], results["slow"][1])
+        self.assertEqual(200, results["asked_for_forever"][0],
+                         "a queued caller whose --queue-wait-ms was clamped got %r %r instead of "
+                         "its translation -- either the connection was severed or it was refused"
+                         % (results["asked_for_forever"][0], results["asked_for_forever"][1]))
+        self.assertEqual(1, backend.peak,
+                         "a one-slot gate let two decodes run at once (peak %d)" % backend.peak)
+
+    def test_a_wait_the_platform_cannot_represent_still_refuses_inside_the_contract(self):
+        # The ceiling in `resolve_queue_wait_ms` keeps the flag honest; the handler must not
+        # depend on it. Asserted separately, because as long as the resolver clamps first, the
+        # row above never reaches this path and the guard can be deleted without anything
+        # noticing -- the shape of the mutation that a passing suite once hid from me.
+        backend = _GatedBackend()
+        srv, _port = self._serve(backend, decode_slots=1)
+        self.assertTrue(srv.acquire_decode(), "the gate started closed")
+        srv.queue_wait_s = 10 ** 12          # past CPython's timed-acquire limit, unclamped
+        try:
+            refused = srv.acquire_decode()
+        except (OverflowError, ValueError) as error:
+            self.fail("an unrepresentable wait raised %s out of the gate instead of refusing it"
+                      % error)
+        self.assertFalse(refused, "a caller that cannot be represented as waiting was served")
+        srv.release_decode()
 
     def test_in_flight_is_measured_and_never_invented(self):
         backend = _GatedBackend()

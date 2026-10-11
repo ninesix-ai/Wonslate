@@ -330,16 +330,30 @@ def resolve_decode_slots(raw):
     return value if value > 0 else None
 
 
+# The largest `--queue-wait-ms` the service will accept, in seconds. Read by the tests instead of
+# repeated there, because a ceiling copied into an assertion is a ceiling that can be lowered in
+# one place and still pass the other.
+QUEUE_WAIT_CEILING_S = 3600.0
+
+
 def resolve_queue_wait_ms(raw):
     """How long a caller may wait for a slot before being refused. Negative means zero.
 
     The default is no waiting: a caller that is queued is still waiting on the other side of
     its own timeout, which is the failure the gate exists to stop. Waiting is offered because
     it is a real alternative and the choice needs measurement, not opinion.
+
+    The ceiling is arithmetic rather than politeness. A timed acquire past CPython's own limit
+    does not wait long -- it raises `OverflowError`, the exception leaves the handler, and the
+    caller's connection closes with no answer at all (measured on this host between 1,000,000 s
+    and 20,000,000 s; defect D46). So a value meant to be more patient than any real queue would
+    be the least honest thing the service can do, because it bypasses the `429 busy` answer that
+    says nothing was started. An hour is far past any decode this service can run and three
+    orders of magnitude clear of the size that overflows.
     """
     if raw is None:
         return 0.0
-    return max(0.0, float(raw) / 1000.0)
+    return min(QUEUE_WAIT_CEILING_S, max(0.0, float(raw) / 1000.0))
 
 
 def resolve_max_requests(raw):
@@ -1422,7 +1436,15 @@ class SidecarServer(ThreadingHTTPServer):
         if self.decode_gate is None:
             self.signals.decode_started()
             return True
-        if self.decode_gate.acquire(timeout=self.queue_wait_s):
+        try:
+            acquired = self.decode_gate.acquire(timeout=self.queue_wait_s)
+        except (OverflowError, ValueError):
+            # A wait the platform cannot represent is not a long wait; it is no wait, and the
+            # caller still deserves the busy answer that says so (defect D46). The resolver
+            # clamps the flag before it can reach this size, which is exactly why the guard is
+            # asserted on its own: without that separate row, deleting it would show up nowhere.
+            acquired = False
+        if acquired:
             self.signals.decode_started()
             return True
         return False
@@ -1492,7 +1514,12 @@ def main():
                          "on")
     ap.add_argument("--queue-wait-ms", type=int, default=0,
                     help="with --decode-slots, how long a caller may wait for a slot before "
-                         "being refused (0, the default, refuses immediately)")
+                         "being refused (0, the default, refuses immediately; this is what turns "
+                         "the refusal into a queue). Anything above %d ms is clamped, because a "
+                         "longer wait cannot be represented by the platform's timed lock and "
+                         "would raise out of the handler rather than queue -- the caller would "
+                         "lose its connection instead of being told the service is busy "
+                         "(defect D46)" % (int(QUEUE_WAIT_CEILING_S * 1000),))
     args = ap.parse_args()
 
     if args.port is None:
