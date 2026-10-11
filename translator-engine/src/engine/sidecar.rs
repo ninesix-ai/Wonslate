@@ -29,26 +29,28 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 /// How long a caller may wait behind a `429 busy` refusal before it falls back, in
 /// milliseconds.
 ///
-/// Not invented: `Retry-After` comes out of the service's own measured p50, and the largest
-/// wait this repo has measured on MADLAD is 5-6 s (`docs/evidence/
-/// gate-decode-slots-madlad-calls.json`: `slept_on_retry_s / refusals` per group), where a
-/// single retry was already enough -- every group that refused finished with `unserved: 0`.
-/// Twelve seconds therefore buys two of the worst measured waits, i.e. a caller refused twice
-/// still gets its answer, and it stays well inside the 30 s per-request timeout so the worst
-/// case remains a budget a patient desktop call already tolerates.
+/// Not invented, and not a duration either: `Retry-After` is the ceiling of the service's own
+/// measured p50 (`docs/evidence/gate-decode-slots-madlad-calls.json`: 5-6 s on the AV corpus,
+/// where every group that refused finished with `unserved: 0`, i.e. one retry was enough), so
+/// twelve seconds buys **two whole steps** at that p50 -- a caller refused twice still gets its
+/// answer. If the step grows to 7 s it buys one, which is the difference between covering a
+/// decode of ~6 s and covering one of ~14 s; see the grid in `docs/evidence/
+/// busy-budget-sweep-madlad.json`.
 ///
 /// It costs nothing when it is not needed: a `429` can only come from a service started with
 /// `--decode-slots`, which is off by default, so every existing deployment never waits.
 ///
 /// Where it stops being enough, measured: `Retry-After` is the ceiling of the service's own
-/// p50, so the budget is priced in *that* unit. `tests/test_sidecar_busy_e2e.py` holds the slot
-/// with a real decode and watches the engine recover, printing its numbers on every run: a 2.4 s
-/// occupancy was recovered in 5.37 s, an 8.44 s one in 11.32 s -- inside the budget, but only
-/// just. A workload whose decodes run
-/// longer than about six seconds can therefore exhaust it, and the caller then gets the demo
-/// answer with `"engine 'madlad' produced no result, fell back to local demo"` rather than a
-/// silent wrong translation. Raising this number buys that regime at the cost of a longer UI
-/// wait; the suite is what re-measures both sides.
+/// p50, so the budget is spent in *whole steps of that number* and never in part. One run's
+/// grid is in `docs/evidence/busy-budget-sweep-madlad.json` (reproduce with
+/// `python tests/test_sidecar_busy_e2e.py --sweep`): with the step at 7 s, 8000 and 12000 ms
+/// each afforded one step and recovered nothing above ~6.2 s of occupancy, 20000 ms afforded
+/// two and recovered up to ~9.0 s, and 30000 ms reached ~26.7 s. Two consequences worth knowing
+/// before changing the number: a non-zero budget *below one step* waits zero seconds (it is
+/// equivalent to `0`, not to "a little patience" -- measured at 4000 ms), and no client budget
+/// sensibly reaches page-scale decodes, which belong to `--queue-wait-ms`. A caller who does run
+/// out gets the demo answer plus
+/// `"engine 'madlad' produced no result, fell back to local demo"`, never a silent wrong answer.
 const DEFAULT_BUSY_RETRY_MS: u64 = 12_000;
 
 /// The prefix chain each slot reads, in precedence order. Named once and used by the

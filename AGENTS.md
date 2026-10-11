@@ -197,7 +197,18 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
      `busy_retry + timeout`, because a request that finally gets a slot still gets its own full
      timeout -- and none of this fires at all unless somebody starts the service with
      `--decode-slots`, which is why a non-zero default budget is still zero behaviour change.
-     So the switch remains opt-in for callers outside this repo. `python
+     So the switch remains opt-in for callers outside this repo. Because the budget is spent in
+     whole `Retry-After` steps and a step is the service's own p50, "is 12 s enough" has no
+     answer in seconds: `python tests/test_sidecar_busy_e2e.py --sweep --out-json
+     docs/evidence/busy-budget-sweep-madlad.json` prices a grid of (how long the slot is held) x
+     (budget) on the real checkpoint. Two readings from the run that wrote that file: a non-zero
+     budget **below one step waits 0.00 s** and so behaves exactly like no budget at all -- the
+     price of never sleeping half a promise -- and recovery reaches a decode of up to
+     `k x Retry-After` for the largest affordable `k`, so 12 s covers a ~6 s occupancy while the
+     step sits at 5-6 s and stops covering anything above ~7 s once the step grows to 7 s.
+     Page-scale decodes are out of reach of any
+     sane client budget; that workload is `--queue-wait-ms` territory, and this repo has not
+     measured a queue sized for it. `python
      script/diag_sidecar_batch.py gate` is what re-measures the service side, and
      `python tests/test_sidecar_busy_e2e.py` is what re-proves the caller side on the real
      checkpoint: it holds the single slot with a real decode, then runs the Rust engine twice
