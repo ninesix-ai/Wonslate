@@ -1,0 +1,884 @@
+{
+  "what": "which concurrent-decode limit to ship, measured as a dose-response comparison (defect D30 item 2, external audit item 004)",
+  "measured_at": "2026-10-11, two runs back to back on the same host: order A 09:52-10:10 local, order B 10:11-10:24 local",
+  "question_answered": "D30 item 2 said the limit has to be picked by measurement rather than by opinion. This is that measurement.",
+  "commands": [
+    "python script/diag_sidecar_batch.py gate --backend madlad --corpus script/eval-data/av-zh-en/av-zh-en.tgt --src en --tgt zh --per 3 --burst 5 --timeout 1 --slots 1,2 --queue-wait-ms 2000 --deadline 120",
+    "same again with --slots 2,1 (setting order reversed) and --out-json gate_real_rev.json"
+  ],
+  "workload": {
+    "backend": "madlad (MADLAD-400 3B int8, CPU)",
+    "pair": "en->zh",
+    "corpus": "script/eval-data/av-zh-en/av-zh-en.tgt",
+    "sentences_per_dose": 3,
+    "doses_k": [
+      0,
+      1,
+      2,
+      4,
+      5
+    ],
+    "caller_that_times_out": "1 s deadline against a ~4 s decode",
+    "patient_caller_policy": "retry on 429, sleeping the Retry-After the service returns, up to a 120 s deadline"
+  },
+  "settings_compared": [
+    "off (control)",
+    "slots=1",
+    "slots=1 + wait 2000 ms",
+    "slots=2",
+    "slots=2 + wait 2000 ms"
+  ],
+  "why_two_orders": "Per-setting baselines at k=0 differ by up to 1.4 s even though nothing is contended at k=0, and the slow slot moved with the order: slots=1 in the first run, slots=2 in the second. Absolute seconds across settings are therefore not comparable; each number here is either a ratio inside one setting's own baseline or an absolute shown per order.",
+  "drift_by_order_position": {
+    "position_1": {
+      "baselines": [
+        4.31,
+        4.25
+      ],
+      "settings": [
+        "off",
+        "off"
+      ]
+    },
+    "position_2": {
+      "baselines": [
+        5.77,
+        5.74
+      ],
+      "settings": [
+        "slots=1",
+        "slots=2"
+      ]
+    },
+    "position_3": {
+      "baselines": [
+        3.7,
+        3.6
+      ],
+      "settings": [
+        "slots=1+wait2000ms",
+        "slots=2+wait2000ms"
+      ]
+    },
+    "position_4": {
+      "baselines": [
+        4.39,
+        4.27
+      ],
+      "settings": [
+        "slots=2",
+        "slots=1"
+      ]
+    },
+    "position_5": {
+      "baselines": [
+        5.52,
+        5.5
+      ],
+      "settings": [
+        "slots=2+wait2000ms",
+        "slots=1+wait2000ms"
+      ]
+    },
+    "baseline_by_setting": {
+      "off": {
+        "order A (off,1,1q,2,2q)": 4.31,
+        "order B (off,2,2q,1,1q)": 4.25
+      },
+      "slots=1": {
+        "order A (off,1,1q,2,2q)": 5.77,
+        "order B (off,2,2q,1,1q)": 4.27
+      },
+      "slots=1+wait2000ms": {
+        "order A (off,1,1q,2,2q)": 3.7,
+        "order B (off,2,2q,1,1q)": 5.5
+      },
+      "slots=2": {
+        "order A (off,1,1q,2,2q)": 4.39,
+        "order B (off,2,2q,1,1q)": 5.74
+      },
+      "slots=2+wait2000ms": {
+        "order A (off,1,1q,2,2q)": 5.52,
+        "order B (off,2,2q,1,1q)": 3.6
+      }
+    }
+  },
+  "control_reproducibility": {
+    "0": {
+      "order A (off,1,1q,2,2q)": 4.18,
+      "order B (off,2,2q,1,1q)": 4.17
+    },
+    "1": {
+      "order A (off,1,1q,2,2q)": 4.57,
+      "order B (off,2,2q,1,1q)": 4.58
+    },
+    "2": {
+      "order A (off,1,1q,2,2q)": 6.33,
+      "order B (off,2,2q,1,1q)": 6.29
+    },
+    "4": {
+      "order A (off,1,1q,2,2q)": 8.26,
+      "order B (off,2,2q,1,1q)": 8.22
+    },
+    "5": {
+      "order A (off,1,1q,2,2q)": 11.73,
+      "order B (off,2,2q,1,1q)": 10.62
+    }
+  },
+  "per_dose": {
+    "slots=1": {
+      "1": {
+        "seconds": [
+          6.42,
+          5.74
+        ],
+        "ungated_seconds": [
+          4.57,
+          4.58
+        ],
+        "ratio_to_ungated": [
+          1.405,
+          1.253
+        ],
+        "wasted_seconds": [
+          3.64,
+          2.87
+        ],
+        "ungated_wasted_seconds": [
+          3.22,
+          3.18
+        ],
+        "never_started": [
+          0,
+          0
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      },
+      "2": {
+        "seconds": [
+          7.22,
+          6.2
+        ],
+        "ungated_seconds": [
+          6.33,
+          6.29
+        ],
+        "ratio_to_ungated": [
+          1.141,
+          0.986
+        ],
+        "wasted_seconds": [
+          3.39,
+          2.1
+        ],
+        "ungated_wasted_seconds": [
+          10.91,
+          10.75
+        ],
+        "never_started": [
+          1,
+          1
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      },
+      "4": {
+        "seconds": [
+          6.89,
+          6.14
+        ],
+        "ungated_seconds": [
+          8.26,
+          8.22
+        ],
+        "ratio_to_ungated": [
+          0.834,
+          0.747
+        ],
+        "wasted_seconds": [
+          4.25,
+          4.49
+        ],
+        "ungated_wasted_seconds": [
+          31.85,
+          31.54
+        ],
+        "never_started": [
+          3,
+          3
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      },
+      "5": {
+        "seconds": [
+          7.31,
+          5.77
+        ],
+        "ungated_seconds": [
+          11.73,
+          10.62
+        ],
+        "ratio_to_ungated": [
+          0.623,
+          0.543
+        ],
+        "wasted_seconds": [
+          4.66,
+          4.57
+        ],
+        "ungated_wasted_seconds": [
+          49.83,
+          43.96
+        ],
+        "never_started": [
+          4,
+          4
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      }
+    },
+    "slots=1+wait2000ms": {
+      "1": {
+        "seconds": [
+          7.19,
+          6.65
+        ],
+        "ungated_seconds": [
+          4.57,
+          4.58
+        ],
+        "ratio_to_ungated": [
+          1.573,
+          1.452
+        ],
+        "wasted_seconds": [
+          6.9,
+          3.72
+        ],
+        "ungated_wasted_seconds": [
+          3.22,
+          3.18
+        ],
+        "never_started": [
+          0,
+          0
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      },
+      "2": {
+        "seconds": [
+          6.72,
+          7.46
+        ],
+        "ungated_seconds": [
+          6.33,
+          6.29
+        ],
+        "ratio_to_ungated": [
+          1.062,
+          1.186
+        ],
+        "wasted_seconds": [
+          3.76,
+          3.35
+        ],
+        "ungated_wasted_seconds": [
+          10.91,
+          10.75
+        ],
+        "never_started": [
+          1,
+          1
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      },
+      "4": {
+        "seconds": [
+          6.7,
+          5.98
+        ],
+        "ungated_seconds": [
+          8.26,
+          8.22
+        ],
+        "ratio_to_ungated": [
+          0.811,
+          0.727
+        ],
+        "wasted_seconds": [
+          7.95,
+          4.67
+        ],
+        "ungated_wasted_seconds": [
+          31.85,
+          31.54
+        ],
+        "never_started": [
+          2,
+          3
+        ],
+        "lost_if_no_retry": [
+          1,
+          0
+        ]
+      },
+      "5": {
+        "seconds": [
+          7.37,
+          5.23
+        ],
+        "ungated_seconds": [
+          11.73,
+          10.62
+        ],
+        "ratio_to_ungated": [
+          0.628,
+          0.492
+        ],
+        "wasted_seconds": [
+          8.23,
+          5.08
+        ],
+        "ungated_wasted_seconds": [
+          49.83,
+          43.96
+        ],
+        "never_started": [
+          3,
+          4
+        ],
+        "lost_if_no_retry": [
+          1,
+          0
+        ]
+      }
+    },
+    "slots=2": {
+      "1": {
+        "seconds": [
+          5.82,
+          5.61
+        ],
+        "ungated_seconds": [
+          4.57,
+          4.58
+        ],
+        "ratio_to_ungated": [
+          1.274,
+          1.225
+        ],
+        "wasted_seconds": [
+          2.89,
+          3.61
+        ],
+        "ungated_wasted_seconds": [
+          3.22,
+          3.18
+        ],
+        "never_started": [
+          0,
+          0
+        ],
+        "lost_if_no_retry": [
+          0,
+          0
+        ]
+      },
+      "2": {
+        "seconds": [
+          6.65,
+          8.35
+        ],
+        "ungated_seconds": [
+          6.33,
+          6.29
+        ],
+        "ratio_to_ungated": [
+          1.051,
+          1.328
+        ],
+        "wasted_seconds": [
+          9.22,
+          12.74
+        ],
+        "ungated_wasted_seconds": [
+          10.91,
+          10.75
+        ],
+        "never_started": [
+          0,
+          0
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      },
+      "4": {
+        "seconds": [
+          7.52,
+          7.67
+        ],
+        "ungated_seconds": [
+          8.26,
+          8.22
+        ],
+        "ratio_to_ungated": [
+          0.91,
+          0.933
+        ],
+        "wasted_seconds": [
+          13.6,
+          12.54
+        ],
+        "ungated_wasted_seconds": [
+          31.85,
+          31.54
+        ],
+        "never_started": [
+          2,
+          2
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      },
+      "5": {
+        "seconds": [
+          7.04,
+          8.81
+        ],
+        "ungated_seconds": [
+          11.73,
+          10.62
+        ],
+        "ratio_to_ungated": [
+          0.6,
+          0.83
+        ],
+        "wasted_seconds": [
+          13.23,
+          15.13
+        ],
+        "ungated_wasted_seconds": [
+          49.83,
+          43.96
+        ],
+        "never_started": [
+          3,
+          3
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      }
+    },
+    "slots=2+wait2000ms": {
+      "1": {
+        "seconds": [
+          5.61,
+          7.1
+        ],
+        "ungated_seconds": [
+          4.57,
+          4.58
+        ],
+        "ratio_to_ungated": [
+          1.228,
+          1.55
+        ],
+        "wasted_seconds": [
+          3.8,
+          6.83
+        ],
+        "ungated_wasted_seconds": [
+          3.22,
+          3.18
+        ],
+        "never_started": [
+          0,
+          0
+        ],
+        "lost_if_no_retry": [
+          0,
+          0
+        ]
+      },
+      "2": {
+        "seconds": [
+          7.51,
+          6.71
+        ],
+        "ungated_seconds": [
+          6.33,
+          6.29
+        ],
+        "ratio_to_ungated": [
+          1.186,
+          1.067
+        ],
+        "wasted_seconds": [
+          10.42,
+          9.68
+        ],
+        "ungated_wasted_seconds": [
+          10.91,
+          10.75
+        ],
+        "never_started": [
+          0,
+          0
+        ],
+        "lost_if_no_retry": [
+          1,
+          1
+        ]
+      },
+      "4": {
+        "seconds": [
+          7.24,
+          7.36
+        ],
+        "ungated_seconds": [
+          8.26,
+          8.22
+        ],
+        "ratio_to_ungated": [
+          0.877,
+          0.895
+        ],
+        "wasted_seconds": [
+          12.06,
+          18.95
+        ],
+        "ungated_wasted_seconds": [
+          31.85,
+          31.54
+        ],
+        "never_started": [
+          2,
+          1
+        ],
+        "lost_if_no_retry": [
+          0,
+          1
+        ]
+      },
+      "5": {
+        "seconds": [
+          6.92,
+          7.42
+        ],
+        "ungated_seconds": [
+          11.73,
+          10.62
+        ],
+        "ratio_to_ungated": [
+          0.59,
+          0.699
+        ],
+        "wasted_seconds": [
+          14.15,
+          18.29
+        ],
+        "ungated_wasted_seconds": [
+          49.83,
+          43.96
+        ],
+        "never_started": [
+          3,
+          2
+        ],
+        "lost_if_no_retry": [
+          0,
+          1
+        ]
+      }
+    }
+  },
+  "summary_k_ge_2": {
+    "slots=1": {
+      "seconds_per_order": [
+        7.22,
+        6.89,
+        7.31,
+        6.2,
+        6.14,
+        5.77
+      ],
+      "mean_seconds": 6.59,
+      "ratio_to_off_in_same_run": 0.81,
+      "worst_ratio": 1.14,
+      "wasted_decode_seconds": 3.91,
+      "ungated_wasted_same_doses": 29.81,
+      "compute_saved_percent": 86.9,
+      "refusals": 6,
+      "abandoned_never_started": 16,
+      "calls_a_non_retrying_client_loses": 6,
+      "unserved": 0
+    },
+    "slots=1+wait2000ms": {
+      "seconds_per_order": [
+        6.72,
+        6.7,
+        7.37,
+        7.46,
+        5.98,
+        5.23
+      ],
+      "mean_seconds": 6.58,
+      "ratio_to_off_in_same_run": 0.82,
+      "worst_ratio": 1.19,
+      "wasted_decode_seconds": 5.51,
+      "ungated_wasted_same_doses": 29.81,
+      "compute_saved_percent": 81.5,
+      "refusals": 4,
+      "abandoned_never_started": 14,
+      "calls_a_non_retrying_client_loses": 4,
+      "unserved": 0
+    },
+    "slots=2": {
+      "seconds_per_order": [
+        6.65,
+        7.52,
+        7.04,
+        8.35,
+        7.67,
+        8.81
+      ],
+      "mean_seconds": 7.67,
+      "ratio_to_off_in_same_run": 0.94,
+      "worst_ratio": 1.33,
+      "wasted_decode_seconds": 12.74,
+      "ungated_wasted_same_doses": 29.81,
+      "compute_saved_percent": 57.2,
+      "refusals": 6,
+      "abandoned_never_started": 10,
+      "calls_a_non_retrying_client_loses": 6,
+      "unserved": 0
+    },
+    "slots=2+wait2000ms": {
+      "seconds_per_order": [
+        7.51,
+        7.24,
+        6.92,
+        6.71,
+        7.36,
+        7.42
+      ],
+      "mean_seconds": 7.19,
+      "ratio_to_off_in_same_run": 0.89,
+      "worst_ratio": 1.19,
+      "wasted_decode_seconds": 13.93,
+      "ungated_wasted_same_doses": 29.81,
+      "compute_saved_percent": 53.3,
+      "refusals": 4,
+      "abandoned_never_started": 8,
+      "calls_a_non_retrying_client_loses": 4,
+      "unserved": 0
+    }
+  },
+  "verdict": {
+    "slots=1": {
+      "ratio_to_ungated_mean_k_ge_2": 0.81,
+      "worst_dose_ratio": 1.14,
+      "compute_saved_percent": 86.9,
+      "calls_a_non_retrying_client_loses": 6,
+      "ratio_by_dose": {
+        "1": [
+          1.405,
+          1.253
+        ],
+        "2": [
+          1.141,
+          0.986
+        ],
+        "4": [
+          0.834,
+          0.747
+        ],
+        "5": [
+          0.623,
+          0.543
+        ]
+      }
+    },
+    "slots=2": {
+      "ratio_to_ungated_mean_k_ge_2": 0.94,
+      "compute_saved_percent": 57.2,
+      "calls_a_non_retrying_client_loses": 6,
+      "ratio_by_dose": {
+        "1": [
+          1.274,
+          1.225
+        ],
+        "2": [
+          1.051,
+          1.328
+        ],
+        "4": [
+          0.91,
+          0.933
+        ],
+        "5": [
+          0.6,
+          0.83
+        ]
+      }
+    },
+    "one_slot_is_what_the_data_supports": "it is where the interference curve flattens and where the wasted compute collapses; see per_dose and summary_k_ge_2 rather than a restated figure here",
+    "where_it_does_not_help": "at one or two abandoned decodes a gate is neutral to slightly worse for a patient caller, because the retry hint is a whole number of seconds while one decode is a few seconds -- the sleeping column shows that cost, and it belongs to the hint rather than to the engine",
+    "the_warning_column": "'calls_a_non_retrying_client_loses' is not latency: today's Rust client turns any non-200 into 'no answer' and degrades, so shipping a gate on by default would convert slowness into missing translations for exactly that client"
+  },
+  "the_cost_it_does_not_remove": {
+    "ungated_wasted_seconds_per_dose": {
+      "1": [
+        3.22,
+        3.18
+      ],
+      "2": [
+        10.91,
+        10.75
+      ],
+      "4": [
+        31.85,
+        31.54
+      ],
+      "5": [
+        49.83,
+        43.96
+      ]
+    },
+    "gated_wasted_seconds_per_dose": {
+      "1": [
+        3.64,
+        2.87
+      ],
+      "2": [
+        3.39,
+        2.1
+      ],
+      "4": [
+        4.25,
+        4.49
+      ],
+      "5": [
+        4.66,
+        4.57
+      ]
+    },
+    "abandoned_calls_that_never_started": {
+      "1": [
+        0,
+        0
+      ],
+      "2": [
+        1,
+        1
+      ],
+      "4": [
+        3,
+        3
+      ],
+      "5": [
+        4,
+        4
+      ]
+    },
+    "note": "the waste falls because most abandoned calls are turned away before any compute, but it does not reach zero: the decode already running when its caller left cannot be interrupted at all. That residue is the part of item 004 a gate can only bound, never fix."
+  },
+  "retry_hint_granularity": {
+    "slept_seconds_by_setting_and_dose_order_B": {
+      "off": {
+        "0": 0.0,
+        "1": 0.0,
+        "2": 0.0,
+        "4": 0.0,
+        "5": 0.0
+      },
+      "slots=2": {
+        "0": 0.0,
+        "1": 0.0,
+        "2": 6.0,
+        "4": 6.0,
+        "5": 6.0
+      },
+      "slots=2+wait2000ms": {
+        "0": 0.0,
+        "1": 0.0,
+        "2": 5.0,
+        "4": 5.0,
+        "5": 5.0
+      },
+      "slots=1": {
+        "0": 0.0,
+        "1": 5.0,
+        "2": 5.0,
+        "4": 5.0,
+        "5": 5.0
+      },
+      "slots=1+wait2000ms": {
+        "0": 0.0,
+        "1": 5.0,
+        "2": 5.0,
+        "4": 0.0,
+        "5": 0.0
+      }
+    },
+    "note": "Retry-After is a whole number of seconds (RFC 7231 delta-seconds) and is taken from the service's own measured p50, so a refused caller sleeps several seconds here. That is why only the larger doses come out ahead. Any refinement of the hint has to be priced against this table rather than assumed."
+  },
+  "server_side_noise": {
+    "tracebacks_written_to_stderr_order_A": 47,
+    "distinct_client_connections_those_belong_to": 47,
+    "exception_kinds": {
+      "ConnectionAbortedError": 47
+    },
+    "where": "all of them at _send -> socketserver.py:826 in write -- the service finishing an answer to a socket nobody is reading",
+    "split_by_handler_that_was_answering": {
+      "do_POST_then_send_completed_translation": 36,
+      "do_POST_then_send_busy_refusal": 11
+    },
+    "bytes_of_stderr_order_A": 127110,
+    "abandoned_attempts_in_the_run": 60,
+    "abandoned_attempts_turned_away_before_any_decode": 24,
+    "why_the_numbers_do_not_line_up": "47 tracebacks are not 47 thrown-away translations: 36 are a finished translation written to a caller that left, 11 are a busy-refusal written to a caller that left while it waited in a queue variant past its 1s deadline. So option A's counter must separate 'answered a gone caller with a translation' from 'refused a gone caller': lumped together the number means nothing, and it is not equal to the compute wasted. A first draft of the decision note read the 47 as 'of the ungated 60' and then read the 11 as a post-handler flush; both were wrong and were corrected against the stacks.",
+    "counted_by": "python .mimosa/scratch/count_traceback_owners.py and attribute_the_other_eleven.py (scratch counters over the run's own stderr)",
+    "note": "this is option A's evidence rather than the gate's: every abandoned caller currently costs a full traceback in the operator's log. Counted so that the fix can be verified by the same number falling to zero."
+  },
+  "environment_precondition": "Same host and same standing environment as retention-madlad-en-zh-1500.json: two long-lived sidecars (argos on 11435, madlad on 11436) resident since 2026-10-07 21:40, idle throughout. No other work was run during either measurement -- that is the lesson from the 1500-call run, where interleaved test suites inflated the early laps in the direction that makes a verdict pass.",
+  "records": "order B persisted 155 per-call records in gate_real_rev.json; order A was run without --out-json, so only its printed aggregates exist and are quoted as printed. A future re-run must pass --out-json in both orders.",
+  "raw_meta_caveat": "the records file's `requested_calls` was stamped before the tool was corrected for this mode (it echoed --n, which `gate` does not read); the counts below are re-derived from the records themselves.",
+  "call_counts_from_records": {
+    "warm-up": 5,
+    "baseline": 15,
+    "wanted": 75,
+    "abandoned": 60,
+    "total": 155
+  },
+  "what_this_does_not_show": [
+    "one machine, one client per row; the doses are bursts of abandoned calls, not a steady concurrent load",
+    "a retrying client only: the desktop path (Rust engine/sidecar.rs) treats any non-200 as 'no answer' and does not retry, so its cost is the 'calls_a_non_retrying_client_loses' column, not the seconds",
+    "absolute latency certification; only the comparison between settings is claimed",
+    "the CT2/Argos backend, which decodes faster per call and may change where a gate starts to pay",
+    "the doses are bursts of abandoned calls at one instant; a long batch that abandons a steady single call every few minutes is a different shape and would need its own run"
+  ]
+}

@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ninesix-ai studio
 """Sidecar batch diagnostics -- the measurements behind defect D24 / D30.
 
-Run from the repository root. Five modes, one variable each:
+Run from the repository root. Seven modes, one variable each:
 
   load    N sequential requests against one backend, sampling the process while
           it runs. Answers "does latency or memory grow with request count?"
@@ -33,13 +33,17 @@ Run from the repository root. Five modes, one variable each:
           leave behind (defect D30 item 2 -- the half of item 004 nobody has
           measured). Needs a real backend; on mock a decode is milliseconds and the
           ratios would be noise.
+  gate    hand the same abandoned-burst workload to several `--decode-slots` settings and
+          report what a caller waits until it is served, refusals included. Answers "is a
+          concurrent-decode limit worth shipping, and at what N" -- the question D30 item 2
+          cannot be closed without. Also needs a real backend.
 
 Nothing here runs in CI: `load` and `reload` now state a verdict against the retention
 line (exit code 0 or 1), but they need a real model and tens of minutes, so the verdict
-is for whoever is deciding a release, not for a gate. `rotate`, `hard`, `abandon` and
-`race` only
-measure. Numbers printed by `load`, `rotate` and `reload` are environment-dependent by
-design -- the ledger's counting rule keeps a runtime-precondition column for exactly that
+is for whoever is deciding a release, not for a gate. `rotate`, `hard`, `race`, `abandon`
+and `gate` only
+measure. Numbers printed by `load`, `rotate`, `reload` and `gate` are environment-dependent
+by design -- the ledger's counting rule keeps a runtime-precondition column for exactly that
 reason (REQ-F3), and the environment a verdict was reached in belongs with the verdict.
 
 Dependencies: psutil (process sampling) and git (only for `race --rev`).
@@ -516,6 +520,56 @@ def run_reload(args):
         srv.server_close()
 
 
+class _TimestampedBackend:
+    """Records what each decode was, and when it actually started and finished.
+
+    Shared by `abandon` and `gate` because both ask "what did this process really compute",
+    and two copies of that answer would eventually disagree about the same run.
+    """
+
+    def __init__(self, wrapped):
+        self._inner = wrapped
+        self._lock = threading.Lock()
+        self.spans = []
+        self.errors = []
+
+    def translate(self, text, source, target, glossary=None):
+        started = time.perf_counter()
+        try:
+            out = self._inner.translate(text, source, target, glossary)
+        except BaseException as exc:              # noqa: BLE001 - recorded, then re-raised
+            with self._lock:
+                self.errors.append(type(exc).__name__)
+            raise
+        with self._lock:
+            self.spans.append((text[:24], started, time.perf_counter()))
+        return out
+
+    def finished_of(self, key, at_least):
+        """The start/end clock readings of the newest decode of this sentence, or None.
+
+        Matched by sentence rather than taking the last entry: several handlers can be
+        decoding at once, so "the newest span" belongs to whichever finished first, not to
+        the call this loop is asking about.
+        """
+        with self._lock:
+            hits = [s for s in self.spans if s[0] == key]
+        if len(hits) < at_least:
+            return None
+        return hits[-1][1], hits[-1][2], len(hits)
+
+    def decode_count(self, key):
+        with self._lock:
+            return len([s for s in self.spans if s[0] == key])
+
+    def total_decode_seconds(self):
+        with self._lock:
+            return sum(end - start for _key, start, end in self.spans)
+
+    def __getattr__(self, name):        # the rest of the duck-typed backend contract
+        return getattr(self._inner, name)
+
+
 def run_abandon(args):
     """What a request nobody is waiting for still costs, and who else it costs it on.
 
@@ -537,45 +591,7 @@ def run_abandon(args):
               " so the ratios would be noise. Run --backend madlad or --backend ct2.")
         return 1
     inner = ct2_sidecar.make_backend(args.backend)
-
-    class _Timestamped:
-        """Records what each decode was, and when it actually started and finished."""
-
-        def __init__(self, wrapped):
-            self._inner = wrapped
-            self._lock = threading.Lock()
-            self.spans = []
-            self.errors = []
-
-        def translate(self, text, source, target, glossary=None):
-            started = time.perf_counter()
-            try:
-                out = self._inner.translate(text, source, target, glossary)
-            except BaseException as exc:          # noqa: BLE001 - recorded, then re-raised
-                with self._lock:
-                    self.errors.append(type(exc).__name__)
-                raise
-            with self._lock:
-                self.spans.append((text[:24], started, time.perf_counter()))
-            return out
-
-        def finished_of(self, key, at_least):
-            """The end clock-reading of the newest decode of this sentence, or None.
-
-            Matched by sentence rather than taking the last entry: several handlers can be
-            decoding at once, so "the newest span" belongs to whichever finished first, not to
-            the call this loop is asking about.
-            """
-            with self._lock:
-                hits = [s for s in self.spans if s[0] == key]
-            if len(hits) < at_least:
-                return None
-            return hits[-1][1], hits[-1][2], len(hits)
-
-        def __getattr__(self, name):        # the rest of the duck-typed backend contract
-            return getattr(self._inner, name)
-
-    backend = _Timestamped(inner)
+    backend = _TimestampedBackend(inner)
     srv, port = serve_in_thread(backend)
 
     def call(timeout, sentence):
@@ -698,6 +714,251 @@ def run_abandon(args):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def run_gate(args):
+    """Hand every candidate limit the same workload, and report what a caller feels.
+
+    The switch (`--decode-slots`) exists; which setting to ship is still an opinion until it
+    is measured, and this repo has already picked one threshold by feel and had to un-pick it.
+    Each setting is driven with the same shape: k callers that time out mid-decode, then
+    `--per` callers that still want an answer and retry when refused.
+
+    Two accounting rules, both learned the hard way in this file:
+
+      * the number compared is *seconds until the caller is served*, refusals included. A
+        fast 429 is not a fast translation, and averaging a refusal into a latency would
+        flatter the very setting that produces them;
+      * a call that never got served is reported as unserved, not dropped from the mean.
+        Dropping it is how a measurement quietly stops meaning what its label says.
+
+    Needs a real backend for the same reason `abandon` does.
+    """
+    if args.backend == "mock":
+        print("  gate measures seconds of decode; on mock it takes milliseconds, so every"
+              " ratio below would be scheduling noise. Run --backend madlad or --backend ct2.")
+        return 1
+
+    settings = [("off", 0, 0)]
+    for raw in str(args.slots or "").split(","):
+        raw = raw.strip()
+        if raw:
+            slots = int(raw)
+            settings.append(("slots=%d" % slots, slots, 0))
+            if args.queue_wait_ms > 0:
+                settings.append(("slots=%d+wait%dms" % (slots, args.queue_wait_ms),
+                                 slots, args.queue_wait_ms))
+    if len(settings) < 2:
+        print("  nothing to compare: pass --slots 1,2 beside --backend madlad")
+        return 1
+
+    inner = ct2_sidecar.make_backend(args.backend)
+    backend = _TimestampedBackend(inner)
+    sentences = corpus_lines(args.corpus) or [args.text]
+    doses = sorted({0, 1, 2, 4, max(4, args.burst)})
+    cursor = [0]                       # one global sentence cursor, so keys stay distinct
+
+    def next_sentence():
+        """A sentence nobody has asked for yet in this run.
+
+        Matching a decode to its request is done by sentence text (concurrency makes "the last
+        span" belong to whichever finished first), so repeating a sentence inside the run would
+        make that matching ambiguous. A wrap-around is reported instead of silently reusing.
+        """
+        index = cursor[0]
+        cursor[0] += 1
+        if index >= len(sentences):
+            print("  corpus exhausted (%d lines), keys stop being unique past that" % len(sentences))
+        return sentences[index % len(sentences)]
+
+    def attempt(port, sentence, timeout):
+        """One POST. Returns (status_or_None, retry_after_seconds, seconds_this_attempt_took)."""
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+        started = time.perf_counter()
+        try:
+            conn.request("POST", "/translate",
+                         json.dumps({"text": sentence, "source": args.src, "target": args.tgt}),
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            body = resp.read().decode("utf-8")
+            retry_after = float(resp.getheader("Retry-After") or 0.0)
+            return resp.status, retry_after, time.perf_counter() - started, body
+        except OSError:
+            return None, 0.0, time.perf_counter() - started, "caller timeout"
+        finally:
+            conn.close()
+
+    def served(port, sentence, deadline):
+        """Ask until the text is answered or the deadline passes, honouring Retry-After.
+
+        Returns (served, total_seconds, refusals, note, attempts). The attempts are kept because
+        Retry-After is a whole number of seconds while a decode is not: a refused caller can
+        end up waiting longer than the work it was waiting for, and that cost belongs to the
+        retry policy rather than to the engine. Reporting the mean without it would credit the
+        gate with a speed the caller never felt.
+        """
+        started = time.perf_counter()
+        refusals = 0
+        attempts = []
+        while True:
+            remaining = deadline - (time.perf_counter() - started)
+            if remaining <= 0:
+                return False, time.perf_counter() - started, refusals, "deadline hit", attempts
+            status, retry_after, took, body = attempt(port, sentence, min(remaining, 600.0))
+            attempts.append({"status": status, "seconds": round(took, 4),
+                             "retry_after_s": retry_after})
+            if status == 200:
+                return True, time.perf_counter() - started, refusals, None, attempts
+            if status == 429:
+                refusals += 1
+                pause = max(0.05, retry_after)
+                attempts[-1]["slept_s"] = round(pause, 4)
+                time.sleep(pause)
+                continue
+            return False, time.perf_counter() - started, refusals, (
+                "http %s (%s)" % (status, body[:60]) if status else "gave up"), attempts
+
+    def drain(port, limit=180.0):
+        """Wait for the queue to empty, so a group's waste is counted after it is all in.
+
+        Timed rather than assumed: measuring "what was still decoding" while decodes are still
+        running reports a number that was never finished.
+        """
+        deadline = time.perf_counter() + limit
+        while time.perf_counter() < deadline:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            try:
+                conn.request("GET", "/health")
+                body = json.loads(conn.getresponse().read().decode("utf-8"))
+            except OSError:
+                return None
+            finally:
+                conn.close()
+            if not body.get("decodes_in_flight"):
+                return body
+            time.sleep(0.25)
+        return None
+
+    results = []
+    calls = []
+    shared_backend = None
+    for label, slots, wait_ms in settings:
+        srv, port = serve_in_thread(shared_backend or backend, decode_slots=slots,
+                                    queue_wait_ms=wait_ms)
+        if shared_backend is None:
+            shared_backend = backend      # one checkpoint for every setting: reloading would
+                                          # make each row a different machine state
+        try:
+            print("\n== %s" % label)
+            ok, warm, _r, note, attempts = served(port, next_sentence(), 600.0)
+            calls.append({"setting": label, "k": None, "role": "warm-up",
+                          "served": ok, "seconds": round(warm, 4), "attempts": attempts})
+            if not ok:
+                print("  warm-up never got served (%s), so nothing below is measured" % note)
+                return 1
+            base = [served(port, next_sentence(), 600.0) for _ in range(max(2, args.per))]
+            quiet = statistics.mean([row[1] for row in base])
+            for row in base:
+                calls.append({"setting": label, "k": 0, "role": "baseline", "served": row[0],
+                              "seconds": round(row[1], 4), "refusals": row[2],
+                              "attempts": row[4]})
+            print("  baseline: %d served calls, mean %.2fs, worst %.2fs (warm-up %.2fs)"
+                  % (len(base), quiet, max(row[1] for row in base), warm))
+            rows = []
+            for k in doses:
+                # k callers that walk away mid-decode -- the situation item 004 was in.
+                abandoned = []
+                for _ in range(k):
+                    sentence = next_sentence()
+                    key = sentence[:24]
+                    before = backend.decode_count(key)
+                    status, _ra, _took, _body = attempt(port, sentence, args.timeout)
+                    abandoned.append((key, before, status, time.perf_counter()))
+                    calls.append({"setting": label, "k": k, "role": "abandoned",
+                                  "status": status})
+                group = [served(port, next_sentence(), args.deadline)
+                         for _ in range(max(2, args.per))]
+                if drain(port) is None:
+                    print("    k=%d: decodes were still running past the drain limit, so this"
+                          " group's waste is not counted and the run stops here" % k)
+                    return 1
+                answered = [row for row in group if row[0]]
+                unserved = len(group) - len(answered)
+                refusals = sum(row[2] for row in group)
+                slept = sum(a.get("slept_s", 0.0) for row in group for a in row[4])
+                # A caller that does not retry -- which is what our own Rust client does today,
+                # since `request()` turns any non-200 into None and the pipeline degrades -- would
+                # lose exactly these calls. The seconds columns alone would therefore recommend a
+                # gate that silently turns slowdowns into missing translations for every client
+                # that never learned to retry. Keep the two apart in the report.
+                lost_on_first_try = sum(1 for row in group
+                                        if row[4] and row[4][0]["status"] == 429)
+                mean = statistics.mean([row[1] for row in answered]) if answered else 0.0
+                worst = max([row[1] for row in answered]) if answered else 0.0
+                for row in group:
+                    calls.append({"setting": label, "k": k, "role": "wanted", "served": row[0],
+                                  "seconds": round(row[1], 4), "refusals": row[2],
+                                  "note": row[3], "attempts": row[4]})
+                wasted = 0.0
+                never = 0
+                for key, before, _status, left in abandoned:
+                    found = backend.finished_of(key, before + 1)
+                    if found is None:
+                        never += 1        # refused at the gate: no compute spent at all
+                    else:
+                        wasted += max(0.0, found[1] - left)
+                rows.append((k, mean, worst, refusals, unserved, wasted, never, slept,
+                             lost_on_first_try))
+                print("    k=%-2d served=%d/%d mean=%5.2fs worst=%5.2fs refusals=%-2d"
+                      " slept_on_retry=%4.1fs wasted=%5.2fs never_started=%d"
+                      " lost_if_no_retry=%d  ratio mean=%.2f worst=%.2f%s"
+                      % (k, len(answered), len(group), mean, worst, refusals, slept, wasted,
+                         never, lost_on_first_try, mean / quiet, worst / quiet,
+                         "   <-- past the line" if mean > quiet * RETENTION_LIMIT else ""))
+            results.append((label, quiet, rows))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    print("\n== what a patient caller waits: seconds until served, refusals and their retry")
+    print("   sleeps included (a fast 429 is not a fast translation)")
+    for k in doses:
+        print("  k=%d" % k)
+        for label, quiet, rows in results:
+            row = next((r for r in rows if r[0] == k), None)
+            if row is None:
+                continue
+            _k, mean, worst, refusals, unserved, wasted, never, slept, lost = row
+            print("    %-22s mean=%6.2fs worst=%6.2fs %5.2fx  refusals=%-2d slept=%4.1fs"
+                  " unserved=%d wasted_decode=%5.2fs never_started=%d no_retry_lost=%d"
+                  % (label, mean, worst, (mean / quiet) if quiet else 0.0, refusals, slept,
+                     unserved, wasted, never, lost))
+    print("  read it as: the smallest 'mean' at the doses you expect is the setting worth")
+    print("  shipping, provided 'unserved' stays 0 -- a setting that refuses a caller out of")
+    print("  existence is not a latency win. 'never_started' is the compute a gate saved.")
+    print("  'no_retry_lost' is the honest warning: today's Rust client does not retry a non-200,")
+    print("  so every call counted there would become a degraded fallback rather than a slow one.")
+    print("  what this cannot show: one machine, one client per row, sentences the local model")
+    print("  is good at. It compares settings, which is the question being asked; it does not")
+    print("  certify any absolute latency.")
+    meta = run_meta(args, "gate")
+    # `run_meta` stamps the fields that describe a `--n`-driven mode; `gate` is driven by doses,
+    # so leaving that number in would advertise 60 calls nobody made. Count what was asked for.
+    meta["requested_calls"] = len(calls)
+    meta["doses_k"] = list(doses)
+    meta["abandon_deadline_s"] = args.timeout
+    meta["patient_deadline_s"] = args.deadline
+    meta["settings"] = [{"setting": label, "baseline_s": round(quiet, 4),
+                         "doses": [{"k": k, "mean_s": round(mean, 4), "worst_s": round(worst, 4),
+                                    "refusals": refusals, "unserved": unserved,
+                                    "slept_on_retry_s": round(slept, 4),
+                                    "wasted_decode_s": round(wasted, 4), "never_started": never,
+                                    "lost_if_no_retry": lost}
+                                   for (k, mean, worst, refusals, unserved, wasted, never, slept,
+                                        lost) in rows]}
+                        for (label, quiet, rows) in results]
+    dump_run(args.out_json, meta, calls)
+    return 0
 
 
 class _Result:
@@ -841,7 +1102,8 @@ def run_race(args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("mode", choices=["load", "rotate", "hard", "reload", "race", "abandon"])
+    ap.add_argument("mode", choices=["load", "rotate", "hard", "reload", "race", "abandon",
+                                     "gate"])
     ap.add_argument("--backend", default="madlad", choices=["mock", "ct2", "madlad"])
     ap.add_argument("--text", default=SENTENCE)
     ap.add_argument("--src", default="en")
@@ -863,12 +1125,22 @@ def main():
     ap.add_argument("--timeout", type=float, default=1.0,
                     help="abandon: caller-side deadline shorter than one decode, so the"
                          " client gives up while the service is still working")
+    ap.add_argument("--slots", default="1,2",
+                    help="gate: the --decode-slots values to compare against no gate,"
+                         " comma separated")
+    ap.add_argument("--queue-wait-ms", type=int, default=0,
+                    help="gate: also compare each --slots value with this much waiting"
+                         " allowed before a refusal (0 skips the queued variants)")
+    ap.add_argument("--deadline", type=float, default=120.0,
+                    help="gate: how long a patient caller keeps retrying before the call is"
+                         " counted as never served (it is reported as unserved, not dropped)")
     args = ap.parse_args()
     args.started_at = time.time()          # stamped here so a record says when the run began
     # A verdict, not just a printout: a caller scripting a release decision needs an exit code
     # to branch on, and modes that only measure return None, which becomes 0.
     sys.exit({"load": run_load, "rotate": run_rotate, "hard": run_hard,
-              "reload": run_reload, "race": run_race, "abandon": run_abandon}[args.mode](args)
+              "reload": run_reload, "race": run_race, "abandon": run_abandon,
+              "gate": run_gate}[args.mode](args)
               or 0)
 
 

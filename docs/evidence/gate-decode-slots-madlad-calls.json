@@ -1,0 +1,2246 @@
+{
+  "mode": "gate",
+  "backend": "madlad",
+  "pair": "en->zh",
+  "corpus": "script\\eval-data\\av-zh-en\\av-zh-en.tgt",
+  "requested_calls": 200,
+  "retention_limit": 1.15,
+  "started_at": "2026-10-11T10:10:16",
+  "note": "seconds are client-side wall time around one POST, one fresh connection per call; the service ran in this same process",
+  "settings": [
+    {
+      "setting": "off",
+      "baseline_s": 4.2527,
+      "doses": [
+        {
+          "k": 0,
+          "mean_s": 4.1695,
+          "worst_s": 5.1231,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 0.0,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 1,
+          "mean_s": 4.5828,
+          "worst_s": 6.7307,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 3.1839,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 2,
+          "mean_s": 6.2872,
+          "worst_s": 10.4266,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 10.7486,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 4,
+          "mean_s": 8.2212,
+          "worst_s": 17.0348,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 31.5447,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 5,
+          "mean_s": 10.62,
+          "worst_s": 20.9757,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 43.957,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "baseline_s": 5.737,
+      "doses": [
+        {
+          "k": 0,
+          "mean_s": 6.1454,
+          "worst_s": 6.5231,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 0.0,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 1,
+          "mean_s": 5.609,
+          "worst_s": 7.9448,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 3.6055,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 2,
+          "mean_s": 8.349,
+          "worst_s": 14.9388,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 6.0,
+          "wasted_decode_s": 12.7434,
+          "never_started": 0,
+          "lost_if_no_retry": 1
+        },
+        {
+          "k": 4,
+          "mean_s": 7.6729,
+          "worst_s": 13.4984,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 6.0,
+          "wasted_decode_s": 12.5388,
+          "never_started": 2,
+          "lost_if_no_retry": 1
+        },
+        {
+          "k": 5,
+          "mean_s": 8.8083,
+          "worst_s": 15.6892,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 6.0,
+          "wasted_decode_s": 15.1342,
+          "never_started": 3,
+          "lost_if_no_retry": 1
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "baseline_s": 3.6047,
+      "doses": [
+        {
+          "k": 0,
+          "mean_s": 5.2826,
+          "worst_s": 5.9034,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 0.0,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 1,
+          "mean_s": 7.102,
+          "worst_s": 11.5846,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 6.8329,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 2,
+          "mean_s": 6.7079,
+          "worst_s": 11.2759,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 5.0,
+          "wasted_decode_s": 9.6829,
+          "never_started": 0,
+          "lost_if_no_retry": 1
+        },
+        {
+          "k": 4,
+          "mean_s": 7.3631,
+          "worst_s": 13.7435,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 5.0,
+          "wasted_decode_s": 18.9531,
+          "never_started": 1,
+          "lost_if_no_retry": 1
+        },
+        {
+          "k": 5,
+          "mean_s": 7.4232,
+          "worst_s": 12.8945,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 5.0,
+          "wasted_decode_s": 18.2863,
+          "never_started": 2,
+          "lost_if_no_retry": 1
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "baseline_s": 4.2715,
+      "doses": [
+        {
+          "k": 0,
+          "mean_s": 4.5013,
+          "worst_s": 4.6428,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 0.0,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 1,
+          "mean_s": 5.7366,
+          "worst_s": 9.2345,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 5.0,
+          "wasted_decode_s": 2.8667,
+          "never_started": 0,
+          "lost_if_no_retry": 1
+        },
+        {
+          "k": 2,
+          "mean_s": 6.2009,
+          "worst_s": 10.3162,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 5.0,
+          "wasted_decode_s": 2.1035,
+          "never_started": 1,
+          "lost_if_no_retry": 1
+        },
+        {
+          "k": 4,
+          "mean_s": 6.1425,
+          "worst_s": 10.1003,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 5.0,
+          "wasted_decode_s": 4.4911,
+          "never_started": 3,
+          "lost_if_no_retry": 1
+        },
+        {
+          "k": 5,
+          "mean_s": 5.771,
+          "worst_s": 8.804,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 5.0,
+          "wasted_decode_s": 4.573,
+          "never_started": 4,
+          "lost_if_no_retry": 1
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "baseline_s": 5.4986,
+      "doses": [
+        {
+          "k": 0,
+          "mean_s": 4.5269,
+          "worst_s": 5.4369,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 0.0,
+          "never_started": 0,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 1,
+          "mean_s": 6.6482,
+          "worst_s": 11.7922,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 5.0,
+          "wasted_decode_s": 3.7161,
+          "never_started": 0,
+          "lost_if_no_retry": 1
+        },
+        {
+          "k": 2,
+          "mean_s": 7.4577,
+          "worst_s": 11.5165,
+          "refusals": 1,
+          "unserved": 0,
+          "slept_on_retry_s": 5.0,
+          "wasted_decode_s": 3.3466,
+          "never_started": 1,
+          "lost_if_no_retry": 1
+        },
+        {
+          "k": 4,
+          "mean_s": 5.9838,
+          "worst_s": 6.6263,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 4.6725,
+          "never_started": 3,
+          "lost_if_no_retry": 0
+        },
+        {
+          "k": 5,
+          "mean_s": 5.2274,
+          "worst_s": 5.813,
+          "refusals": 0,
+          "unserved": 0,
+          "slept_on_retry_s": 0.0,
+          "wasted_decode_s": 5.0811,
+          "never_started": 4,
+          "lost_if_no_retry": 0
+        }
+      ]
+    }
+  ],
+  "records": [
+    {
+      "setting": "off",
+      "k": null,
+      "role": "warm-up",
+      "served": true,
+      "seconds": 6.789,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 6.789,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 3.356,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.356,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 5.5382,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.5382,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 3.864,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.8639,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.1231,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.1231,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.9492,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.9492,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.4362,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.4362,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 1,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 6.7307,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 6.7307,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.0438,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.0438,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.9739,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.9739,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 2,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 2,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 10.4266,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 10.4266,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.4989,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.4989,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.9359,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.9359,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 17.0348,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 17.0347,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.401,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.4009,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.2278,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.2278,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "off",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 20.9757,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 20.9756,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 6.093,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 6.0929,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "off",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.7914,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.7914,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": null,
+      "role": "warm-up",
+      "served": true,
+      "seconds": 4.4955,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.4954,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 5.2426,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.2425,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 6.8797,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 6.8797,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 5.0886,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.0886,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 6.5231,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 6.5231,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 6.167,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 6.167,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.7459,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.7459,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 1,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 7.9448,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 7.9448,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.7738,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.7738,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.1083,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.1082,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 2,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2",
+      "k": 2,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 14.9388,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 0.0026,
+          "retry_after_s": 6.0,
+          "slept_s": 6.0
+        },
+        {
+          "status": 200,
+          "seconds": 8.9314,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.5457,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.5457,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.5625,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.5625,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2",
+      "k": 4,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=2",
+      "k": 4,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=2",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 13.4984,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 0.0032,
+          "retry_after_s": 6.0,
+          "slept_s": 6.0
+        },
+        {
+          "status": 200,
+          "seconds": 7.487,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.9304,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.9304,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.59,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.59,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2",
+      "k": 5,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=2",
+      "k": 5,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=2",
+      "k": 5,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=2",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 15.6892,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 0.0028,
+          "retry_after_s": 6.0,
+          "slept_s": 6.0
+        },
+        {
+          "status": 200,
+          "seconds": 9.6744,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.1755,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.1754,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.5602,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.5601,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": null,
+      "role": "warm-up",
+      "served": true,
+      "seconds": 3.5486,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.5485,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 3.1132,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.1132,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 4.5836,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.5836,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 3.1171,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.1171,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.9034,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.9034,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.3629,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.3629,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.5816,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.5816,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 1,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 11.5846,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 11.5845,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.3361,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.3361,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.3854,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.3854,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 2,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 2,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 11.2759,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 2.0125,
+          "retry_after_s": 5.0,
+          "slept_s": 5.0
+        },
+        {
+          "status": 200,
+          "seconds": 4.2488,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.9147,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.9146,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.9332,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.9332,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 13.7435,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 2.0131,
+          "retry_after_s": 5.0,
+          "slept_s": 5.0
+        },
+        {
+          "status": 200,
+          "seconds": 6.7266,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.1425,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.1425,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.2032,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.2032,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 12.8945,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 2.0153,
+          "retry_after_s": 5.0,
+          "slept_s": 5.0
+        },
+        {
+          "status": 200,
+          "seconds": 5.8653,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.8825,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.8824,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=2+wait2000ms",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.4927,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.4927,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": null,
+      "role": "warm-up",
+      "served": true,
+      "seconds": 3.8106,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.8106,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 5.5064,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.5064,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 3.9601,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.9601,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 3.348,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.348,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.6428,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.6427,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.5384,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.5384,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.3228,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.3227,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 1,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 9.2345,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 0.0038,
+          "retry_after_s": 5.0,
+          "slept_s": 5.0
+        },
+        {
+          "status": 200,
+          "seconds": 4.2247,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.9523,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.9523,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.0231,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.023,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 2,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1",
+      "k": 2,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=1",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 10.3162,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 0.0022,
+          "retry_after_s": 5.0,
+          "slept_s": 5.0
+        },
+        {
+          "status": 200,
+          "seconds": 5.3042,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.3525,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.3525,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.9341,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.9341,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1",
+      "k": 4,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=1",
+      "k": 4,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=1",
+      "k": 4,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=1",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 10.1003,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 0.0024,
+          "retry_after_s": 5.0,
+          "slept_s": 5.0
+        },
+        {
+          "status": 200,
+          "seconds": 5.0844,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.0313,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.0313,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.2958,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.2958,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1",
+      "k": 5,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=1",
+      "k": 5,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=1",
+      "k": 5,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=1",
+      "k": 5,
+      "role": "abandoned",
+      "status": 429
+    },
+    {
+      "setting": "slots=1",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 8.804,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 0.0025,
+          "retry_after_s": 5.0,
+          "slept_s": 5.0
+        },
+        {
+          "status": 200,
+          "seconds": 3.7984,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.5932,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.5932,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.9159,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.9158,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": null,
+      "role": "warm-up",
+      "served": true,
+      "seconds": 4.5858,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.5857,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 4.5086,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.5085,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 6.1592,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 6.1592,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 0,
+      "role": "baseline",
+      "served": true,
+      "seconds": 5.8279,
+      "refusals": 0,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.8279,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.4369,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.4369,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 3.7919,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 3.7919,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 0,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.3518,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.3518,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 1,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 11.7922,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 2.0112,
+          "retry_after_s": 5.0,
+          "slept_s": 5.0
+        },
+        {
+          "status": 200,
+          "seconds": 4.7803,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.1056,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.1056,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 1,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.0469,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.0469,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 2,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 2,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 11.5165,
+      "refusals": 1,
+      "note": null,
+      "attempts": [
+        {
+          "status": 429,
+          "seconds": 2.0139,
+          "retry_after_s": 5.0,
+          "slept_s": 5.0
+        },
+        {
+          "status": 200,
+          "seconds": 4.4982,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.6981,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.6981,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 2,
+      "role": "wanted",
+      "served": true,
+      "seconds": 6.1586,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 6.1585,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 4,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 6.6263,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 6.6263,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.4537,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.4537,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 4,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.8715,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.8714,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 5,
+      "role": "abandoned",
+      "status": null
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.5343,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.5343,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 4.3347,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 4.3347,
+          "retry_after_s": 0.0
+        }
+      ]
+    },
+    {
+      "setting": "slots=1+wait2000ms",
+      "k": 5,
+      "role": "wanted",
+      "served": true,
+      "seconds": 5.813,
+      "refusals": 0,
+      "note": null,
+      "attempts": [
+        {
+          "status": 200,
+          "seconds": 5.813,
+          "retry_after_s": 0.0
+        }
+      ]
+    }
+  ]
+}

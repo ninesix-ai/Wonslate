@@ -31,11 +31,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "script"))
 
 import diag_sidecar_batch as d  # noqa: E402
 
+# The module the probe actually calls to build a backend. Patching this object rather than a
+# re-imported copy is the difference between replacing what runs and replacing something nothing
+# reads.
+ct2_sidecar = d.ct2_sidecar
+
 
 def args(**over):
     """A run's arguments, with the defaults the modes expect."""
     base = dict(backend="mock", text="hello", src="en", tgt="zh", n=60, every=30,
-                corpus=None, out_json=None, started_at=time.time())
+                corpus=None, out_json=None, started_at=time.time(),
+                # gate-mode knobs; other modes ignore them. Small values keep the fake run
+                # seconds rather than minutes -- the fake is not a measurement (see GateModeTests).
+                per=2, burst=1, timeout=0.02, deadline=5.0, slots="1", queue_wait_ms=0)
     base.update(over)
     return types.SimpleNamespace(**base)
 
@@ -294,6 +302,175 @@ class RegistrationTests(unittest.TestCase):
         build_suites, ci_suites = self.suites()
         self.assertIn("test_diag_sidecar_batch.py", build_suites)
         self.assertIn("test_diag_sidecar_batch.py", ci_suites)
+
+
+class GateModeTests(unittest.TestCase):
+    """The `gate` mode compares settings honestly, on a fake that is not a measurement.
+
+    What is pinned is the shape of the comparison, never a ratio: a fake decode of 0.05 s makes
+    every millisecond figure below meaningless, the same way the mock made `load`'s ratio
+    meaningless (EvidenceKeepingTests says why). The claims that matter here hold regardless of
+    how fast the decode is -- that a control dose refuses nobody, that the gate refuses people
+    the control does not, that a retrying caller is still always served, and that the summary a
+    reader sees can be re-derived from the per-call records beside it.
+    """
+
+    DECODE_SECONDS = 0.05
+    _CACHE = {}
+    _dir = None
+    _corpus = None
+
+    class _Fake:
+        """A backend with a decode long enough to be abandoned on purpose."""
+
+        name = "fakedecode"
+
+        def translate(self, text, source, target, glossary=None):
+            time.sleep(GateModeTests.DECODE_SECONDS)
+            return "ok: " + target
+
+        def readiness(self):
+            return {"ready": True, "reason": None, "loaded": ["fake"]}
+
+    @classmethod
+    def setUpClass(cls):
+        # Class scope on purpose. A per-instance cache would be rebuilt for every test method --
+        # unittest constructs a fresh instance per test -- and four identical 6 s runs bought no
+        # extra evidence over one. The corpus and the patched factory are the run's inputs, so
+        # they live where the cached result lives.
+        cls._dir = pathlib.Path(tempfile.mkdtemp(prefix="diag-gate-"))
+        corpus = cls._dir / "pair.src"
+        # Distinct sentences: a run that repeats one makes "which decode was mine" ambiguous, and
+        # an ambiguous match would quietly credit the wrong call with the wasted seconds.
+        corpus.write_text("\n".join("sentence number %d" % i for i in range(60)) + "\n",
+                          encoding="utf-8")
+        cls._corpus = str(corpus)
+        cls._real_factory = ct2_sidecar.make_backend
+        ct2_sidecar.make_backend = lambda kind, model_dir=None: GateModeTests._Fake()
+
+    @classmethod
+    def tearDownClass(cls):
+        ct2_sidecar.make_backend = cls._real_factory
+        shutil.rmtree(cls._dir, ignore_errors=True)
+        cls._CACHE = {}
+
+    def setUp(self):
+        self.captured = io.StringIO()
+        redirect = contextlib.redirect_stdout(self.captured)
+        redirect.__enter__()
+        self.addCleanup(redirect.__exit__, None, None, None)
+
+    def _run(self, **over):
+        """One run per distinct configuration, shared by the tests asking the same question."""
+        key = repr(sorted(over.items()))
+        cached = self._CACHE.get(key)
+        if cached is not None:
+            return cached
+        out = self._dir / ("gate-%d.json" % len(self._CACHE))
+        merged = dict(backend="ct2", corpus=self._corpus, out_json=str(out),
+                      per=2, burst=1, timeout=0.01, deadline=5.0, slots="1",
+                      queue_wait_ms=0)
+        merged.update(over)
+        rc = d.run_gate(args(**merged))
+        self.assertEqual(0, rc, self.captured.getvalue()[-400:])
+        doc = json.loads(out.read_text(encoding="utf-8"))
+        self._CACHE[key] = doc
+        return doc
+
+    def test_the_control_dose_refuses_nobody_under_any_setting(self):
+        doc = self._run()
+        # The per-call records are the evidence; the summary beside them is what a reader quotes,
+        # so the control row has to be provably clean in the summary, not merely look plausible.
+        by_name = {s["setting"]: s for s in doc["settings"]}
+        self.assertIn("off", by_name)
+        self.assertIn("slots=1", by_name)
+        self.assertEqual(["off", "slots=1"], [s["setting"] for s in doc["settings"]])
+        for name, rec in by_name.items():
+            zero = next(dose for dose in rec["doses"] if dose["k"] == 0)
+            self.assertEqual(0, zero["refusals"],
+                             "%s k=0 was refused: groups are bleeding into each other" % name)
+            self.assertEqual(0, zero["lost_if_no_retry"], name)
+
+    def test_a_gate_refuses_work_the_ungated_service_would_decode(self):
+        doc = self._run()
+        by_name = {s["setting"]: s for s in doc["settings"]}
+        off = by_name["off"]
+        gated = by_name["slots=1"]
+        self.assertEqual(0, sum(d["never_started"] for d in off["doses"]),
+                         "the ungated service must never turn work away")
+        self.assertEqual(0, sum(d["refusals"] for d in off["doses"]),
+                         "the off row is the control; a refusal there invalidates every ratio")
+        self.assertGreater(sum(d["never_started"] for d in gated["doses"]), 0,
+                           "with one slot and abandoned decodes in flight, something must be "
+                           "refused -- if nothing is, the gate did not engage")
+        # The warning column has to say something, or it reads as reassurance.
+        self.assertGreater(sum(d["lost_if_no_retry"] for d in gated["doses"]), 0,
+                           "a one-slot gate does cost a client that never retries; if the "
+                           "column is always zero, no reader learns that today's Rust client "
+                           "would degrade instead of waiting")
+        self.assertEqual(0, sum(d["lost_if_no_retry"] for d in off["doses"]),
+                         "the control must show slowdowns only, never lost calls")
+        # the compute a gate saves is the point of the whole column
+        self.assertLess(sum(d["wasted_decode_s"] for d in gated["doses"]),
+                        sum(d["wasted_decode_s"] for d in off["doses"]),
+                        "a gate that wastes as much compute as no gate is not a gate")
+
+    def test_a_retrying_caller_is_always_served_honouring_the_hint(self):
+        doc = self._run()
+        for rec in doc["settings"]:
+            for dose in rec["doses"]:
+                self.assertEqual(0, dose["unserved"],
+                                 "%s k=%d left a caller unserved: the retry loop gave up"
+                                 % (rec["setting"], dose["k"]))
+        refused = [a for call in doc["records"] if call["role"] == "wanted"
+                   for a in call["attempts"] if a.get("slept_s")]
+        self.assertTrue(refused, "no refused call slept on a Retry-After, so the slept column "
+                                 "is zero by construction rather than by measurement")
+        for attempt in refused:
+            self.assertGreaterEqual(attempt["retry_after_s"], 1,
+                                    "a hint of 0 seconds would read as 'hammer me'")
+
+    def test_the_summary_can_be_rederived_from_the_per_call_records(self):
+        doc = self._run()
+        wanted = [c for c in doc["records"] if c["role"] == "wanted"]
+        self.assertTrue(wanted)
+        for rec in doc["settings"]:
+            for dose in rec["doses"]:
+                group = [c for c in wanted if c["setting"] == rec["setting"]
+                         and c["k"] == dose["k"]]
+                served = [c["seconds"] for c in group if c["served"]]
+                if not served:
+                    self.assertEqual(0, dose["mean_s"])
+                    continue
+                again = sum(served) / len(served)
+                self.assertAlmostEqual(again, dose["mean_s"], places=3,
+                                       msg="%s k=%d: the printed mean does not come from the "
+                                           "records beside it" % (rec["setting"], dose["k"]))
+
+    def test_the_record_file_describes_the_calls_it_actually_made(self):
+        doc = self._run()
+        # A relationship pin, not a restatement: `run_meta` fills fields that describe a `--n`
+        # driven mode, and the first version of `gate` shipped `requested_calls: 60` while having
+        # made some other number of calls. Reverting that line would fail here rather than quietly
+        # publish a header that contradicts its own records.
+        self.assertEqual(len(doc["records"]), doc["requested_calls"])
+        self.assertNotEqual(60, doc["requested_calls"], "the header came back from --n")
+        self.assertEqual("gate", doc["mode"])
+        self.assertEqual([0, 1, 2, 4], sorted({c["k"] for c in doc["records"] if c["k"] is not None}),
+                         "the doses in the header should match the doses in the records")
+        for rec in doc["settings"]:
+            for dose in rec["doses"]:
+                self.assertIn(dose["k"], [0, 1, 2, 4])
+
+    def test_mock_is_refused_before_a_checkpoint_is_wasted(self):
+        # A fake decode makes the structural assertions above meaningful and nothing else; the
+        # mode must say so rather than print millisecond ratios that look like measurements.
+        self.assertEqual(1, d.run_gate(args(backend="mock", corpus=self._corpus)))
+        self.assertIn("scheduling noise", self.captured.getvalue())
+
+    def test_no_candidate_slots_is_refused_rather_than_comparing_nothing(self):
+        self.assertEqual(1, d.run_gate(args(backend="ct2", corpus=self._corpus, slots="")))
+        self.assertIn("nothing to compare", self.captured.getvalue())
 
 
 if __name__ == "__main__":
