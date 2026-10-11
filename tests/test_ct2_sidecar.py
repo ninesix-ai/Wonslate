@@ -699,6 +699,37 @@ class HealthSignalsTests(unittest.TestCase):
         self.assertEqual(payload["latency_samples"], 0)
         self.assertIsNone(payload["last_latency_p99"])
 
+    def test_health_reports_wasted_writes_to_gone_clients(self):
+        # D30 item 2, option A's other half: the service already counts, per
+        # `_send`, an answer written to a caller that had hung up (`answers` = a decode
+        # paid for and thrown away, the 004 waste; `refusals` = a message into the void,
+        # no compute). Those counts lived only behind `writes_to_gone_clients()`, reachable
+        # by the diag tool but not by a monitoring poll. REQ-B2 now governs this channel and
+        # "waste nobody can see" is exactly what item 004 complained about, so they surface
+        # on /health too -- as cumulative totals, and kept separate from `requests_served`
+        # (a decode nobody waited for is not a served translation).
+        srv, port = serve_in_thread(_StubBackend(), host="127.0.0.1", port=0)
+        self.servers.append(srv)
+        _, before = self._get(port, "/health")
+        self.assertEqual(0, before["answers_to_gone_clients"])
+        self.assertEqual(0, before["refusals_to_gone_clients"])
+        srv.signals.record_gone_write(refusal=False)
+        srv.signals.record_gone_write(refusal=False)
+        srv.signals.record_gone_write(refusal=True)
+        _, after = self._get(port, "/health")
+        self.assertEqual(2, after["answers_to_gone_clients"],
+                         "answers written to callers who left must be countable on /health")
+        self.assertEqual(1, after["refusals_to_gone_clients"],
+                         "refusals must not be merged into the answers tally (measured 36 vs 11 "
+                         "in one run -- a different order of waste)")
+        self.assertEqual(0, after["requests_served"],
+                         "a write to a gone caller is not a served translation; the two tallies "
+                         "must not be conflated")
+        # and reading health must not itself change the counters it reports
+        _, again = self._get(port, "/health")
+        self.assertEqual((2, 1),
+                         (again["answers_to_gone_clients"], again["refusals_to_gone_clients"]))
+
 
 class LanguagesEndpointTests(unittest.TestCase):
     """Answer the capability question before a request spends a translation."""
@@ -2587,8 +2618,11 @@ class GoneClientTests(unittest.TestCase):
                          % (signals.writes_to_gone_clients(),))
 
     def test_healthy_traffic_leaves_the_counters_and_the_endpoint_alone(self):
-        # A control, and a scope pin: exposing these numbers on /health is still an open
-        # decision (`docs/tech/16` section 7), so nothing may appear there quietly.
+        # A control. Exposing these numbers on /health was an open decision and is now
+        # made (2026-10-11, `docs/tech/16` section 7), so the fields DO appear -- but a
+        # normal request that the caller waited for must not spuriously inflate them: they
+        # stay 0. That is the real guarantee here, and it is stronger than the old
+        # assertNotIn, which only froze a now-superseded decision.
         class _Instant:
             name = "instant"
 
@@ -2606,8 +2640,9 @@ class GoneClientTests(unittest.TestCase):
         conn.request("GET", "/health")
         health = json.loads(conn.getresponse().read().decode("utf-8"))
         conn.close()
-        self.assertNotIn("answers_to_gone_clients", health,
-                         "the self-report is a pending decision, not a free addition")
+        self.assertEqual(0, health["answers_to_gone_clients"],
+                         "a waited-for answer is not a write to a gone caller")
+        self.assertEqual(0, health["refusals_to_gone_clients"])
         self.assertIn("decodes_in_flight", health)
 
     def _post(self, port, text):

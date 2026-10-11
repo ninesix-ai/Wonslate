@@ -28,7 +28,8 @@ tests/mock_sidecar_server.py):
                          refusal rather than a queue because a queued caller is still waiting
                          behind the timeout of text nobody wants any more.
     GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>","requests_served",...,
-                         "decodes_in_flight":N,"decodes_queued":N,"requests_until_exit":N|null}
+                         "decodes_in_flight":N,"decodes_queued":N,"requests_until_exit":N|null,
+                         "answers_to_gone_clients":N,"refusals_to_gone_clients":N}
                          (LIVENESS only)
                          requests_until_exit is null unless the process was started with
                          --max-requests; it never invents a countdown it will not honour.
@@ -41,9 +42,15 @@ tests/mock_sidecar_server.py):
                          decodes ahead of a caller. The queued caller has not yet been counted
                          in decodes_in_flight (incremented only after the slot is granted) nor
                          in requests_served (incremented after the full decode completes).
-                         Answers written to callers who had left are counted too, but only
-                         in-process (signals.writes_to_gone_clients) -- whether /health should
-                         publish them is still an open decision, so they are not on the wire.
+                         answers_to_gone_clients / refusals_to_gone_clients (published 2026-10-11,
+                         the open decision now made): cumulative counts, since this process
+                         started, of responses that reached a caller already hung up. An *answer*
+                         here is a decode paid for and thrown away (the waste item 004 measured);
+                         a *refusal* is only a message into the void and cost no compute, which is
+                         why they are two fields, not one. They are TOTALS not a rate, and reset
+                         on restart, so a big number after a long batch is not by itself a fault --
+                         read it as "how much did this process waste over its life". They never
+                         overlap requests_served: a write to a gone caller is not a served answer.
     GET  /readyz      -> 200 {"status":"ready","backend",...} | 503 {"status":"warming","error":"not_ready","reason":...}
                          501 {"error":"readiness_unknown"} when the backend cannot say
     GET  /languages   -> 200 {"backend","pairs","target_codes","complete","note"}
@@ -343,6 +350,8 @@ class HealthSignals:
             served = self._served
             decodes = self._decodes
             queued = self._queued
+            gone_answers = self._gone_answers
+            gone_refusals = self._gone_refusals
             ordered = sorted(self._latencies)
             remaining = (None if self._max_requests is None
                          else max(0, self._max_requests - served))
@@ -350,6 +359,8 @@ class HealthSignals:
                 "requests_until_exit": remaining,
                 "decodes_in_flight": decodes,
                 "decodes_queued": queued,
+                "answers_to_gone_clients": gone_answers,
+                "refusals_to_gone_clients": gone_refusals,
                 "latency_samples": len(ordered),
                 "last_latency_p50": _percentile(ordered, 0.50),
                 "last_latency_p99": _percentile(ordered, 0.99),
