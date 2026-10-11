@@ -198,7 +198,15 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
      timeout -- and none of this fires at all unless somebody starts the service with
      `--decode-slots`, which is why a non-zero default budget is still zero behaviour change.
      So the switch remains opt-in for callers outside this repo. `python
-     script/diag_sidecar_batch.py gate` is what re-measures it, and it must be
+     script/diag_sidecar_batch.py gate` is what re-measures the service side, and
+     `python tests/test_sidecar_busy_e2e.py` is what re-proves the caller side on the real
+     checkpoint: it holds the single slot with a real decode, then runs the Rust engine twice
+     under the same conditions -- once with the shipped budget, once with
+     `LT_SIDECAR_RETRY_MS=0`, which is the pre-existing behaviour -- and asserts the pair, not
+     just the success (only the refusal-then-wait episode may recover a translation; the other
+     must lose it to demo). Two services running the same checkpoint answer with identical
+     bytes, so which one answered is established from `requests_served` deltas, not from the
+     text: see rule 17. Re-measuring the gate itself must be
      run **in both setting orders**: per-setting baselines at k=0 differ by up to 1.4 s on this
      host even though nothing is contended there, and the slow slot moved with the order, not
      with the setting. Absolute seconds across settings are therefore not comparable; only
@@ -281,6 +289,30 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     `python script/diag_sidecar_batch.py abandon`, which prints both. Neither number is on
     `/health` yet -- publishing a service's own waste is an open decision, and a field that
     appears in a contract by accident is hard to take back out.
+
+17. **A new environment knob must enter the hermetic table, and a suite must pin every slot it
+    could dial.** `tests/hermetic/mod.rs::KNOBS` is the one list of knobs an integration suite
+    pins or clears, and `tests/env_pin_coverage.rs` compares it against every `LT_*` /
+    `WONSLATE_*` name in `src/` and fails the build when they disagree. The gate exists because
+    of **D45**: the caller-side wait budget shipped with behaviour, unit tests, public docs and a
+    decision record, and nothing noticed it was missing from the table -- one export in a shell
+    would have decided how long every Rust suite may wait, on a machine CI does not have, both
+    green. The same class then caught the suite that measured that feature: its first draft
+    pinned `LT_ARGOS_URL` and the AI slot but **not `LT_MADLAD_URL`**, so the Rust engine
+    translated against the developer's long-lived **ungated** sidecar on 11436 while the gated
+    child under test only ever saw probe traffic. Every "the wait recovered the translation"
+    assertion passed -- against a service that had no gate at all. Three rules follow.
+
+    * Pin **both spellings of every network slot** a suite could reach, including the one you
+      think it does not use; the prefix chain does not care what a suite meant.
+    * Where a claim depends on **which** service answered, prove it from the service's own
+      counters (`requests_served` deltas, `decodes_in_flight`) rather than from the answer text:
+      two MADLAD instances return byte-identical translations, so the text cannot tell them
+      apart, while a served-request delta can also show that the engine's own request was
+      refused rather than never gated.
+    * A script-style suite must skip **exactly** the names it would have passed. Reporting one
+      name twice makes the CI total disagree with the local one for a reason that has nothing to
+      do with the product (this suite's skip path did that on the way out).
 
 ## 4. Conventions and invariants
 
