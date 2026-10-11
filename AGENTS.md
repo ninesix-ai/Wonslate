@@ -228,7 +228,7 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
          a 25 s wait. "a step is the service's own p50" reads as "a step is the decode" only while
          every decode is the same size, which is exactly the condition that run satisfied and this
          one breaks.
-       * **a queued caller pays no rounding.** The cell that recovered took 26.96 s against a
+       * **a queued caller pays no rounding.** The `W 45000` cell recovered in 26.96 s against a
          25.17 s decode in front of it and a 1.89 s decode of its own: -0.06 s of excess. That is
          the difference in kind, not in degree, between the two waiting mechanisms -- a queued
          caller is woken by the release instead of re-asking on a timer.
