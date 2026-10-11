@@ -42,8 +42,9 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 ///
 /// Where it stops being enough, measured: `Retry-After` is the ceiling of the service's own
 /// p50, so the budget is priced in *that* unit. `tests/test_sidecar_busy_e2e.py` holds the slot
-/// with a real decode and watches the engine recover: a 2.1 s occupancy was recovered in 5.05 s,
-/// a 7.3 s one in 11.03 s -- inside the budget, but only just. A workload whose decodes run
+/// with a real decode and watches the engine recover, printing its numbers on every run: a 2.4 s
+/// occupancy was recovered in 5.37 s, an 8.44 s one in 11.32 s -- inside the budget, but only
+/// just. A workload whose decodes run
 /// longer than about six seconds can therefore exhaust it, and the caller then gets the demo
 /// answer with `"engine 'madlad' produced no result, fell back to local demo"` rather than a
 /// silent wrong translation. Raising this number buys that regime at the cost of a longer UI
