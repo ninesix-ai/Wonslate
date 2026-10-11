@@ -700,8 +700,15 @@ def run_abandon(args):
                      last[1] / first[1] if first[1] else 0.0))
 
         rss, th, hd = sample()
+        gone = srv.signals.writes_to_gone_clients()
         print("\n  after the run: rss=%s threads=%s handles=%s; handler errors recorded=%s"
               % (mem(rss), fmt(th), fmt(hd), sorted(set(backend.errors)) or "none"))
+        # Read off the service's own tally rather than counted out of its stderr: the day the
+        # write to a gone caller stopped printing a traceback, log-scraping would have started
+        # reporting zero waste while the waste kept happening.
+        print("  answers the service wrote to callers who had already left: %d translation(s), "
+              "%d refusal(s); tracebacks printed for them: see stderr of this run"
+              % (gone["answers"], gone["refusals"]))
         if wasted:
             print("  compute spent on callers who had left: mean %.2fs of the %.2fs decode,"
                   " i.e. %.0f%% of a translation thrown away per abandoned call"
@@ -1056,7 +1063,13 @@ def run_race(args):
             backend._root = pathlib.Path(".")
             backend._translator = None
             srv, port = mod.serve_in_thread(backend)
-            srv.handle_error = lambda *_: None       # clients here hang up on purpose
+            srv.handle_error = lambda *_: None
+            # This mode runs a *checked-out revision*, and the historical one predates the
+            # sidecar's quiet accounting for a caller that hung up, so it would print one
+            # traceback per abandoned handler. Silencing it here is this probe declining to echo
+            # somebody else's log -- not the service hiding its own. The shipped code path is
+            # covered by GoneClientTests in tests/test_ct2_sidecar.py, which deliberately leaves
+            # handle_error alone.
             statuses = {}
             try:
                 def ask(timeout):
