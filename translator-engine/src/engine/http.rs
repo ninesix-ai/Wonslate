@@ -79,13 +79,71 @@ pub fn tcp_roundtrip(url: &str, request: &[u8], timeout: Duration) -> Option<Vec
 }
 
 /// Strip the status line and headers from a raw HTTP response, returning only the body text.
+/// 200 only: anything else is `None`, which is the right answer for a caller that can use an
+/// answer and nothing else. A caller that has to act on *why* it got no answer needs
+/// [`parse_http_reply`] instead, because this function cannot tell a refusal from a crash.
 pub fn response_body_from_http(response: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(response).ok()?;
-    if !text.starts_with("HTTP/1.1 200") && !text.starts_with("HTTP/1.0 200") {
+    let reply = parse_http_reply(response)?;
+    if reply.status != 200 {
         return None;
     }
-    let idx = text.find("\r\n\r\n")?;
-    Some(text[idx + 4..].to_string())
+    Some(reply.body)
+}
+
+/// One complete answer from a service, before anyone judges whether it succeeded.
+///
+/// `response_body_from_http` throws the status away and that is fine for ollama, which has no
+/// use for a refusal. It is not fine for the sidecar, which now has to tell "every decode slot
+/// is busy, come back in five seconds -- nothing was started for you" apart from "this target
+/// code is permanently unsupported": waiting on the first is cheap and recovers a translation,
+/// retrying the second only multiplies the latency in front of an honest fallback (defect D30
+/// item 2, external item 004). One header parser serves both views.
+#[derive(Debug)]
+pub struct HttpReply {
+    pub status: u16,
+    pub body: String,
+    headers: Vec<(String, String)>,
+}
+
+impl HttpReply {
+    /// A header value, matched case-insensitively because HTTP field names are.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        let wanted = name.to_ascii_lowercase();
+        self.headers.iter()
+            .find(|(key, _)| key.to_ascii_lowercase() == wanted)
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+/// Split raw response bytes into status, headers and body.
+///
+/// Only a response with a parsable status line and a header terminator is an answer at all. A
+/// truncated read or non-UTF-8 bytes give `None`: that is a transport failure, not something
+/// the service said, and collapsing the two is how a half-read connection would end up
+/// looking like a status that was never sent.
+pub fn parse_http_reply(response: &[u8]) -> Option<HttpReply> {
+    let text = std::str::from_utf8(response).ok()?;
+    let head_end = text.find("\r\n\r\n")?;
+    let mut lines = text[..head_end].split("\r\n");
+    let status = lines.next()?.split_whitespace().nth(1)?.parse::<u16>().ok()?;
+    let headers = lines.filter_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        Some((name.trim().to_string(), value.trim().to_string()))
+    }).collect();
+    Some(HttpReply { status, body: text[head_end + 4..].to_string(), headers })
+}
+
+/// POST a JSON and keep whatever the service answered, status included. Transport failures
+/// are still `None`.
+pub fn http_post_reply(
+    url: &str,
+    payload: &serde_json::Value,
+    timeout: Duration,
+) -> Option<HttpReply> {
+    let body = serde_json::to_vec(payload).ok()?;
+    let request = build_http_post(url, &body)?;
+    let response = tcp_roundtrip(url, &request, timeout)?;
+    parse_http_reply(&response)
 }
 
 /// Convenience wrapper: POST a JSON to url and return the parsed response JSON. Any step failing returns None.
@@ -151,5 +209,37 @@ mod tests {
     fn response_body_extracts_body_on_200() {
         let resp = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ok\":true}";
         assert_eq!(response_body_from_http(resp).as_deref(), Some("{\"ok\":true}"));
+    }
+
+    #[test]
+    fn a_reply_keeps_the_status_and_reads_headers_case_insensitively() {
+        let resp = b"HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\n\
+                    retry-after: 5\r\n\r\n{\"error\":\"busy\"}";
+        let reply = parse_http_reply(resp).expect("a status line and a body are an answer");
+        assert_eq!(429, reply.status);
+        assert_eq!(Some("5"), reply.header("Retry-After"),
+            "field names are case-insensitive on the wire; matching one spelling exactly \
+             would silently drop the promise the retry depends on");
+        assert_eq!("{\"error\":\"busy\"}", reply.body);
+    }
+
+    #[test]
+    fn a_reply_expresses_an_error_that_the_200_only_view_cannot() {
+        // The reason `HttpReply` exists rather than another bool: a 503 is a fact a caller may
+        // act on, and `None` cannot hold it.
+        let resp = b"HTTP/1.1 503 Service Unavailable\r\n\r\n{\"error\":\"backend_unavailable\"}";
+        assert!(response_body_from_http(resp).is_none(),
+            "the 200-only view must stay 200-only, or ollama starts reading error bodies as answers");
+        assert_eq!(503, parse_http_reply(resp).expect("a refusal is still an answer").status);
+    }
+
+    #[test]
+    fn bytes_that_are_not_an_answer_stay_a_transport_failure() {
+        // A truncated read, a status line without a code and non-UTF-8 noise are all `None`.
+        // Treating any of them as a refusal is what would let a half-open connection be
+        // retried for the whole budget.
+        assert!(parse_http_reply(b"HTTP/1.1 200 OK").is_none(), "no header terminator");
+        assert!(parse_http_reply(b"garbage\r\n\r\n").is_none(), "no status code");
+        assert!(parse_http_reply(&[0xff, 0xfe, 0x00]).is_none(), "not UTF-8");
     }
 }
