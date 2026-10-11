@@ -185,9 +185,20 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
      alternative that had to be measured rather than assumed. It is off by default for two
      measured reasons: at one or two abandoned decodes it makes a patient caller *slower*
      (`Retry-After` is whole seconds while a decode is a few), and a client that does not retry
-     -- which is what `engine/sidecar.rs` does with any non-200 today -- trades slowness for a
-     lost translation. So it is a switch for a caller that expects abandonment bursts, not a
-     default. `python script/diag_sidecar_batch.py gate` is what re-measures it, and it must be
+     trades slowness for a lost translation -- measured at one lost call per burst of three.
+     `engine/sidecar.rs` **does** retry it now, inside a budget (`WONSLATE_SIDECAR_RETRY_MS`,
+     legacy `LT_*` wins, 12 s by default because the worst `Retry-After` ever measured here is
+     5-6 s and one retry was always enough). Three clauses of that wait are pinned and are not
+     simplifications: only a 429 whose body says `"error":"busy"` is retried (a permanent 422
+     or a foreign 429 is not), a missing/zero/unparsable `Retry-After` means **no retry** rather
+     than a guessed interval, and a promised wait is skipped when the whole of it no longer
+     fits the remaining budget. A transport failure is a fourth case: an absent sidecar must not
+     be dialled once per second for the whole budget. Worst case wall time is deliberately
+     `busy_retry + timeout`, because a request that finally gets a slot still gets its own full
+     timeout -- and none of this fires at all unless somebody starts the service with
+     `--decode-slots`, which is why a non-zero default budget is still zero behaviour change.
+     So the switch remains opt-in for callers outside this repo. `python
+     script/diag_sidecar_batch.py gate` is what re-measures it, and it must be
      run **in both setting orders**: per-setting baselines at k=0 differ by up to 1.4 s on this
      host even though nothing is contended there, and the slow slot moved with the order, not
      with the setting. Absolute seconds across settings are therefore not comparable; only
@@ -314,8 +325,12 @@ the private umbrella repo. The open items worth knowing before picking a task �
 identifiers are stable anchors, the detail lives in the ledgers:
 
 - `D30` — half closed. `/health` now reports `requests_served`, a bounded latency window
-  and `rss_bytes`, so degradation is observable; what is still open is that a request the
-  client abandoned keeps decoding server-side, and there is no batch limit or reload.
+  and `rss_bytes`, so degradation is observable; a bounded batch (`--max-requests`) and a
+  reload that is not a restart (`POST /reload`) exist, and the abandoned-request work is
+  explained and measured. What is open is two decisions, not code: whether `--decode-slots`
+  ships on by default (its caller-side prerequisite -- waiting out a `429 busy` in
+  `engine/sidecar.rs` -- landed, so this is now a pricing question, see rule 15), and whether
+  the service's own waste goes on `/health`.
 - `D34` — closed 2026-10-08. A pack row that omitted `confidence` entered at the reader's
   0.90 default rather than the intended 1.0, so a seed pack could not displace the distilled
   rows it was written to override while still reporting `imported: N`. The stamp is now

@@ -371,7 +371,7 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
 | `POST /warmup` | 可选 `{"source":"en","target":"zh"}` | 就绪 `200 {"status":"ready","backend":…,"warmed":bool,"load_s":秒,"loaded":[…]}`；仍未就绪 `503 {"status":"warming","error":"not_ready"}`；后端不支持 `501 {"error":"warmup_unknown"}`；语言码不可用 `422 unsupported_target`（与 `/translate` 同一判定，区域码同样先折叠） |
 | `POST /reload` | 可选 `{"warm":true,"source","target"}` | `200 {"backend":…,"discarded":[…],"reloaded":bool,"status":"ready\|warming","requests_served":N,"load_s":秒}`；后端无可丢弃的东西 `501 {"error":"reload_unsupported"}`；带 `warm` 时语言码不可用仍走 `422`、依赖缺失仍走 `503`，**但响应里照样带着已经发生的 `discarded`** |
 
-两类失败**必须分开处理**：`422 unsupported_target` 是该引擎在这个语言码上**永久无解**，重试、重启、重载模型都不会改变，响应里的 `supported` 已给出可用集合，调用方应直接跳过该方向；`503 backend_unavailable` 才是可恢复故障（依赖或模型尚未就位），值得等待与重试。把两者混为 503 会让批量任务在冷门语言上白白付出「杀进程 → 等端口 → 重载」的整轮代价。
+两类失败**必须分开处理**：`422 unsupported_target` 是该引擎在这个语言码上**永久无解**，重试、重启、重载模型都不会改变，响应里的 `supported` 已给出可用集合，调用方应直接跳过该方向；`503 backend_unavailable` 才是可恢复故障（依赖或模型尚未就位），值得等待与重试。把两者混为 503 会让批量任务在冷门语言上白白付出「杀进程 → 等端口 → 重载」的整轮代价。`429 busy` 是第三类，也是唯一**不花钱**的那一类：它声明本次未开始任何解码，因此等 `Retry-After` 是安全的，而等待上限见 §8.1。
 
 **`/translate` 的 `text` 不会带出不该有的不可见字符**（外部审计条目 009：老挝语译文里混入一个零宽空格，屏幕上看不见，却会静默破坏下游一切字符串比较——去重、搜索、缓存键、本地化校验、diff 脚本）。规则分两类，**例外只存在于第一类**：
 
@@ -397,10 +397,10 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
 外部审计条目 004 的实测形状是：同一负载从 130 s → 280 s → >900 s 阶梯式变慢，期间每一次 `/translate` 都返回 200、`/health` 一直 `ok`——「失败才重启」在这种形状下**永远无法触发**，调用方只能 `taskkill` 并自己按语言重启（杀净 → 等端口释放 → 重启 → 用真实译文验证就绪）。现在这三个手段在 sidecar 侧：
 
 - **`--max-requests N`**：答完 N 个请求后自行退出。消耗最后一个配额的那次**照常拿到译文**，额外带 `"shutting_down":{"reason":"max_requests","requests_served":N,"note":"…"}`；进程**退出码为 0**（跑满配额是正常完成，不是故障），原因打印到 stdout，监听 socket 一并关闭所以端口立即可复用。默认不设上限：桌面客户端自己监督它拉起的 sidecar，未经预告的退出会被当成崩溃。`/health` 的 `requests_until_exit` 给剩余配额，**未设上限时恒为 `null`**。
-- **`--decode-slots N`（默认 0 = 不限）与 `--queue-wait-ms`（默认 0 = 立刻拒）**：限制同时进行的解码数，超出部分直接 `429 busy` 而不排队。**为什么默认关闭**：实测它不是免费的——两种设置顺序各跑一轮的结果是：无门限时一个调用方超时走后服务端仍平均白算**一次解码的 73%**，而在飞的被弃解码会拖慢“仍然被需要”的请求到均值 **2.50~2.72 倍**（最坏 4.93~5.63 倍）；`--decode-slots 1` 把这些压回 **0.54~0.83 倍**并把白算砍掉约 **87%**。但它有两个实测划出的适用边界：**被弃并发只有 1~2 时反而更贵**（因为 `Retry-After` 只能是整秒，而一次解码只有几秒），且**不重试的调用方会把“慢”变成“缺”**（每组爆发丢 1 次调用）——而桌面端的 Rust 客户端正是不重试的那一个，所以它只能给**知道自己在做什么的批量调用方显式开启**，不能常开。数据、口径与它不能证明什么：[`evidence/gate-decode-slots-madlad.json`](evidence/gate-decode-slots-madlad.json)；复跑：`python script/diag_sidecar_batch.py gate --backend madlad --corpus script/eval-data/av-zh-en --slots 1,2 --queue-wait-ms 2000 --out-json run.json`。
+- **`--decode-slots N`（默认 0 = 不限）与 `--queue-wait-ms`（默认 0 = 立刻拒）**：限制同时进行的解码数，超出部分直接 `429 busy` 而不排队。**为什么默认关闭**：实测它不是免费的——两种设置顺序各跑一轮的结果是：无门限时一个调用方超时走后服务端仍平均白算**一次解码的 73%**，而在飞的被弃解码会拖慢“仍然被需要”的请求到均值 **2.50~2.72 倍**（最坏 4.93~5.63 倍）；`--decode-slots 1` 把这些压回 **0.54~0.83 倍**并把白算砍掉约 **87%**。但它有两个实测划出的适用边界：**被弃并发只有 1~2 时反而更贵**（因为 `Retry-After` 只能是整秒，而一次解码只有几秒），且**不重试的调用方会把“慢”变成“缺”**（每组爆发丢 1 次调用）。本仓的 Rust 客户端会等这笔 `Retry-After`：只有当整段承诺还装得进剩余预算时才睡（睡一半必然还是被拒，却已经把耐心花掉了），预算用尽后仍按既有降级返回并如实声明，等待上限由 `LT_SIDECAR_RETRY_MS` / `WONSLATE_SIDECAR_RETRY_MS` 决定（默认值等于两次最坏实测等待，见 [hardware-requirements.md](hardware-requirements.md#4-配置入口环境变量)）；`429` 只在服务带 `--decode-slots` 启动时才会出现，所以这份等待对现有部署是零代价。它仍然不能常开，理由换成实测的两条：低剂量下它反而更贵；而**仓外的批量调用方未必重试**，对它们这个开关依旧会把慢变成缺。数据、口径与它不能证明什么：[`evidence/gate-decode-slots-madlad.json`](evidence/gate-decode-slots-madlad.json)；复跑：`python script/diag_sidecar_batch.py gate --backend madlad --corpus script/eval-data/av-zh-en --slots 1,2 --queue-wait-ms 2000 --out-json run.json`。
 - **`POST /reload`**：丢弃已驻留的检查点，进程与端口都留着。默认**只丢弃不重载**（本机实测：`/reload` 自身只花 0.16 s）；要在这次调用里把装载代价付掉就传 `{"warm":true}`。**为什么默认不热回**：重新装载本机实测 4.2–5.5 s，而客户端探活用的是 1500 ms HTTP 超时，同步重载会看起来像宕机。
 
-两个手段的**计数共用一个真相**：`requests_served`、`requests_until_exit` 与自退判定读同一个计数器，所以上面那个表里返回 `422` 的被拒绝语言码不会「一边被计数、一边被跳过」。
+两个手段的**计数共用一个真相**：`requests_served`、`requests_until_exit` 与自退判定读同一个计数器，所以上面那个表里返回 `422` 的被拒绝语言码不会「一边被计数、一边被跳过」。`429 busy` 两边都不计：它不是已经做的工作，也不消耗一个自退配额——否则一个忙着被拒的调用方可以把服务活活等到退出。
 
 关于内存，本文不写保证只写测量手段：`python script/diag_sidecar_batch.py reload --n 100 --every 25` 会报出每次重载归还了多少驻留内存、重载后首句付了多少秒。该模式把「只是翻译」的调用与「为重载买单」的那一次**分开统计**——混在一个均值里会把重载自己故意花的秒数当成退化，那正好是 004 需要被回答的那个问题的反面。本机一次实测：三次重载各归还 2848–2850 MB（约 97%），稳态均值在前半 4.593 s / 后半 4.503 s（比值 0.98）。
 

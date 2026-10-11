@@ -15,9 +15,13 @@ tests/mock_sidecar_server.py):
                       429 {"error":"busy","decode_slots":N,"decodes_in_flight":N,"waited_ms",
                          "note"} + Retry-After, only when --decode-slots is set: every slot is
                          decoding, so nothing was started for this request and retrying costs no
-                         translation work. It is opt-in because callers are not written to expect
-                         it, and it is a refusal rather than a queue because a queued caller is
-                         still waiting behind the timeout of text nobody wants any more.
+                         translation work. engine/sidecar.rs waits out that Retry-After inside a
+                         budget, so the refusal no longer costs an in-repo caller its answer; the
+                         switch stays opt-in because a caller that does *not* wait trades slowness
+                         for a lost translation, and because at one or two abandoned decodes the
+                         gate measurably costs a patient caller more than it saves. It is a
+                         refusal rather than a queue because a queued caller is still waiting
+                         behind the timeout of text nobody wants any more.
     GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>","requests_served",...,
                          "decodes_in_flight":N,"requests_until_exit":N|null}   (LIVENESS only)
                          requests_until_exit is null unless the process was started with
