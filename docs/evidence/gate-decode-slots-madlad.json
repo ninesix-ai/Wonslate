@@ -4,7 +4,7 @@
   "question_answered": "D30 item 2 said the limit has to be picked by measurement rather than by opinion. This is that measurement.",
   "commands": [
     "python script/diag_sidecar_batch.py gate --backend madlad --corpus script/eval-data/av-zh-en/av-zh-en.tgt --src en --tgt zh --per 3 --burst 5 --timeout 1 --slots 1,2 --queue-wait-ms 2000 --deadline 120",
-    "same again with --slots 2,1 (setting order reversed) and --out-json gate_real_rev.json"
+    "same again with --slots 2,1 (setting order reversed) and --out-json run.json"
   ],
   "workload": {
     "backend": "madlad (MADLAD-400 3B int8, CPU)",
@@ -861,11 +861,11 @@
     "abandoned_attempts_in_the_run": 60,
     "abandoned_attempts_turned_away_before_any_decode": 24,
     "why_the_numbers_do_not_line_up": "47 tracebacks are not 47 thrown-away translations: 36 are a finished translation written to a caller that left, 11 are a busy-refusal written to a caller that left while it waited in a queue variant past its 1s deadline. So option A's counter must separate 'answered a gone caller with a translation' from 'refused a gone caller': lumped together the number means nothing, and it is not equal to the compute wasted. A first draft of the decision note read the 47 as 'of the ungated 60' and then read the 11 as a post-handler flush; both were wrong and were corrected against the stacks.",
-    "counted_by": "python .mimosa/scratch/count_traceback_owners.py and attribute_the_other_eleven.py (scratch counters over the run's own stderr)",
+    "counted_by": "counted out of the run's own stderr, which the probe does not ship: 47 blocks of `Exception occurred during processing of request from`, all ConnectionAbortedError, split by stack shape into 36 answering a POST directly and 11 answering through the busy-refusal path. Reproduce by running the `gate` command above with stderr redirected to a file and counting those blocks; no script inside this repository is needed.",
     "note": "this is option A's evidence rather than the gate's: every abandoned caller currently costs a full traceback in the operator's log. Counted so that the fix can be verified by the same number falling to zero."
   },
   "environment_precondition": "Same host and same standing environment as retention-madlad-en-zh-1500.json: two long-lived sidecars (argos on 11435, madlad on 11436) resident since 2026-10-07 21:40, idle throughout. No other work was run during either measurement -- that is the lesson from the 1500-call run, where interleaved test suites inflated the early laps in the direction that makes a verdict pass.",
-  "records": "order B persisted 155 per-call records in gate_real_rev.json; order A was run without --out-json, so only its printed aggregates exist and are quoted as printed. A future re-run must pass --out-json in both orders.",
+  "records": "order B persisted 155 per-call records in gate-decode-slots-madlad-calls.json; order A was run without --out-json, so only its printed aggregates exist and are quoted as printed. A future re-run must pass --out-json in both orders.",
   "raw_meta_caveat": "the records file's `requested_calls` was stamped before the tool was corrected for this mode (it echoed --n, which `gate` does not read); the counts below are re-derived from the records themselves.",
   "call_counts_from_records": {
     "warm-up": 5,
