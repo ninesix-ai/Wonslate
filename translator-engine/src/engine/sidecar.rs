@@ -45,11 +45,16 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 /// grid is in `docs/evidence/busy-budget-sweep-madlad.json` (reproduce with
 /// `python tests/test_sidecar_busy_e2e.py --sweep`): with the step at 7 s, 8000 and 12000 ms
 /// each afforded one step and recovered nothing above ~6.2 s of occupancy, 20000 ms afforded
-/// two and recovered up to ~9.0 s, and 30000 ms reached ~26.7 s. Two consequences worth knowing
+/// two and recovered up to ~9.0 s, and 30000 ms reached ~26.7 s. Three consequences worth knowing
 /// before changing the number: a non-zero budget *below one step* waits zero seconds (it is
-/// equivalent to `0`, not to "a little patience" -- measured at 4000 ms), and no client budget
-/// sensibly reaches page-scale decodes, which belong to `--queue-wait-ms`. A caller who does run
-/// out gets the demo answer plus
+/// equivalent to `0`, not to "a little patience" -- measured at 4000 ms); the step describes the
+/// decodes that have **finished**, not the one you are blocked behind (behind a 25.18 s decode the
+/// service promised 2 s, because the window then held a 1.84 s sample while p99 was 25.18 s), so a
+/// budget sized by the step under-buys any mixed workload; and page-scale work is cheaper on
+/// `--queue-wait-ms`, which is woken by the release instead of re-asking -- the caller in
+/// `docs/evidence/queue-wait-madlad.json` (`python tests/test_sidecar_busy_e2e.py --queue`) came
+/// back 0.06 s *under* the sum of the two decodes it waited through, i.e. it paid no rounding at
+/// all. A caller who does run out gets the demo answer plus
 /// `"engine 'madlad' produced no result, fell back to local demo"`, never a silent wrong answer.
 const DEFAULT_BUSY_RETRY_MS: u64 = 12_000;
 

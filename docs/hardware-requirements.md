@@ -63,7 +63,9 @@ Get-Process python,ollama* | Select-Object ProcessName, @{n='RAM_MB';e={[math]::
 
 > 端口约定与 Rust 引擎侧 `translator-engine/src/engine/sidecar.rs` 对齐：argos=11435，madlad=11436，改动一侧必须同步另一侧。
 >
-> 上表两个 `*_SIDECAR_*_MS` 是引擎侧（Rust）读数，不是 sidecar 进程的启动参数；`--decode-slots` / `--max-requests` 这类才是 sidecar 自己的（见 [sdk.md](sdk.md#81-长批次不用猜的重载与自退)）。
+> 上表两个 `*_SIDECAR_*_MS` 是引擎侧（Rust）读数，不是 sidecar 进程的启动参数；`--decode-slots` / `--max-requests` / `--queue-wait-ms` 这类才是 sidecar 自己的（见 [sdk.md](sdk.md#81-长批次不用猜的重载与自退)）。
+>
+> `--queue-wait-ms` 有一条 **3600 s 上限**（超出会被夹到上限）：在这个旋钮上“更大 = 更宽容”并不成立——超过平台定时锁的表示范围后 CPython 不再等待而是抛 `OverflowError`，异常逃出 handler 后调用方看到的是**连接被断开**（登记为 D46，已于 2026-10-11 修）。配它的法则是 **W ≥ 排在该调用方前面的全部解码**（不是“一个解码”），且调用方自己的 HTTP 超时需要 ≥ `W + 单次解码`，否则服务还在排队而调用方已经先走。
 
 ## 5. 模型获取
 

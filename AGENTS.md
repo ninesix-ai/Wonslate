@@ -32,7 +32,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Build and start the GUI | `python script/build.py --run` |
 | XAML static lint + window-appears smoke | `verify.bat` / `verify.sh` |
 | Self-sign output so local smokes repeat | `sign.bat` |
-| Measure what a long batch actually costs (D24/D30 probes; `--help` for the seven modes; `reload` prices a self-reset, `abandon` prices work nobody waits for, `gate` picks the decode-slot limit, and `--corpus` drives a run with distinct sentences reported pass against pass) | `python script/diag_sidecar_batch.py load --corpus script/eval-data/av-zh-en --n 900 --out-json run.json` |
+| Measure what a long batch actually costs (D24/D30 probes; `--help` for the eight modes; `reload` prices a self-reset, `abandon` prices work nobody waits for, `gate` picks the decode-slot limit, `queue` sizes the queue a batch of waiters needs, and `--corpus` drives a run with distinct sentences reported pass against pass) | `python script/diag_sidecar_batch.py load --corpus script/eval-data/av-zh-en --n 900 --out-json run.json` |
 | Check an output for invisible characters, on either or both engine tiers (D42) | `python script/diag_invisible_chars.py both` |
 
 ## 3. Traps that have already cost someone a session
@@ -208,10 +208,41 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
      was 7 s for 21 of 24 cells (the first three saw 1 s and 5 s, because the latency window was
      still empty of long decodes: p50 climbed from 0 to 6.49 s), and at that step 12 s bought one
      and reached ~6.2 s of occupancy while 20 s bought two and reached ~9.0 s.
-     Page-scale decodes are out of reach of any
-     sane client budget; that workload is `--queue-wait-ms` territory, and this repo has not
-     measured a queue sized for it. `python
-     script/diag_sidecar_batch.py gate` is what re-measures the service side, and
+     Page-scale decodes are the other mechanism's job, and that is now measured instead of
+     assumed. Two entries, one variable each:
+
+     ```
+     python tests/test_sidecar_busy_e2e.py --queue --out-json docs/evidence/queue-wait-madlad.json
+     python script/diag_sidecar_batch.py queue --backend madlad --corpus
+       script/eval-data/av-zh-en/av-zh-en.tgt --slots 1 --waits 0,10000,30000 --waiters 1,3
+       --page-units 6 --out-json docs/evidence/queue-waiters-madlad.json
+     ```
+
+     The first runs the shipped Rust client behind a real ~25 s decode and ladders only
+     `--queue-wait-ms`; the second arrives behind that same shape with several callers at once.
+     Four readings, and a correction to the paragraph above them:
+       * **the step is not the decode you are waiting for.** Behind a 25.18 s decode the service
+         promised `Retry-After: 2`, because that number is a percentile of the decodes that have
+         *finished* (same instant: p50 1.84 s, p99 25.18 s). A budget spent in whole steps
+         therefore under-buys a mixed load: 12 s bought six steps and still gave up 10.01 s into
+         a 25 s wait. "a step is the service's own p50" reads as "a step is the decode" only while
+         every decode is the same size, which is exactly the condition that run satisfied and this
+         one breaks.
+       * **a queued caller pays no rounding.** The cell that recovered took 26.96 s against a
+         25.17 s decode in front of it and a 1.89 s decode of its own: -0.06 s of excess. That is
+         the difference in kind, not in degree, between the two waiting mechanisms -- a queued
+         caller is woken by the release instead of re-asking on a timer.
+       * **size it by everything in front of the caller, because an undersized queue is slower
+         *and* lost.** `--queue-wait-ms 20000` behind a 26.34 s decode spent the full 20.01 s and
+         then lost the translation, while `0` loses in 0.00 s. The service reports the time it held
+         each refused caller in `waited_ms`, which is what makes that claim checkable rather than
+         inferred (and it agreed with the configured wait in every row of both runs).
+       * **exactly-enough is not deterministic.** With three waiters and `W 30000`, one pass served
+         3/3 and the next refused the caller whose staircase landed at 31.25 s. A
+         `BoundedSemaphore` does not promise first-come-first-served, so a queue is sized with
+         margin rather than to the measured second, and which caller loses is not something a
+         client can plan around.
+     `python script/diag_sidecar_batch.py gate` is what re-measures the service side, and
      `python tests/test_sidecar_busy_e2e.py` is what re-proves the caller side on the real
      checkpoint: it holds the single slot with a real decode, then runs the Rust engine twice
      under the same conditions -- once with the shipped budget, once with
@@ -326,6 +357,26 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     * A script-style suite must skip **exactly** the names it would have passed. Reporting one
       name twice makes the CI total disagree with the local one for a reason that has nothing to
       do with the product (this suite's skip path did that on the way out).
+
+18. **A wait knob needs an upper bound, and a percentile describes finished work -- not the
+    request in flight.** Two lessons from one round, both measured rather than argued:
+
+    * `--queue-wait-ms` shipped with no ceiling. The mutation meant to prove the new suite could
+      see a unit error (`/1000` written as `*1000`) turned out to be a **real defect, D46**: past
+      CPython's limit a timed `Semaphore.acquire` raises `OverflowError`, the exception escapes the
+      handler, and the caller's connection closes with no response at all -- so the one setting
+      meant to be *more* patient than a refusal was the least honest thing the service could do
+      (this host turns over between 1,000,000 s and 20,000,000 s). Fixed with two guards: the
+      resolver clamps to `QUEUE_WAIT_CEILING_S`, and the handler answers a wait it cannot represent
+      as a refusal. Each has its own test row, because the second is reachable only when the first
+      is bypassed -- one shared test would let anyone delete the guard unnoticed.
+    * `Retry-After` is a percentile of the decodes that have **completed**. Behind a 25.18 s decode
+      the service promised `2`, because the window then held a 1.84 s sample while p99 was 25.18 s.
+      A caller that sizes itself by that promise under-waits any mixed workload; the queue is for
+      those, and a document that quotes a percentile has to say which one and of what.
+
+    The round also carries a method note: a mutation round can find a defect instead of confirming
+    a suite, which is the cheapest way one has ever paid for itself here.
 
 ## 4. Conventions and invariants
 
