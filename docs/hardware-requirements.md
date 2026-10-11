@@ -66,6 +66,16 @@ Get-Process python,ollama* | Select-Object ProcessName, @{n='RAM_MB';e={[math]::
 > 上表两个 `*_SIDECAR_*_MS` 是引擎侧（Rust）读数，不是 sidecar 进程的启动参数；`--decode-slots` / `--max-requests` / `--queue-wait-ms` 这类才是 sidecar 自己的（见 [sdk.md](sdk.md#81-长批次不用猜的重载与自退)）。
 >
 > `--queue-wait-ms` 有一条 **3600 s 上限**（超出会被夹到上限）：在这个旋钮上"更大 = 更宽容"并不成立——超过平台定时锁的表示范围后 CPython 不再等待而是抛 `OverflowError`，异常逃出 handler 后调用方看到的是**连接被断开**（登记为 D46，已于 2026-10-11 修）。配它的法则是 **W ≥ 排在该调用方前面的全部解码**（不是"一个解码"），且调用方自己的 HTTP 超时需要 ≥ `W + 单次解码`，否则服务还在排队而调用方已经先走。**队列深度可从 `GET /health` 的 `decodes_queued` 字段直接读出**（D47，2026-10-11 加入）：那是当时在 `acquire(timeout=W)` 里等待槽位的调用方人数，`--decode-slots` 与 `--queue-wait-ms` 任一未开启时恒为 `0`。
+>
+> **桌面端的超时链（2026-10-11 审计）**：桌面一次 `/translate` 经过三段超时，但**只有最后一段会被队列影响**：
+>
+> | 段 | 变量 / 默认 | 队列开大时会不会先撒手 |
+> |---|---|---|
+> | .NET 探活 HTTP（`/health` `/readyz` `/warmup`） | 内置 **1500 ms**（`SidecarManager.Http`） | **不会**：`/health` 与 `/readyz` 不走解码闸门，ThreadingHTTPServer 在独立线程应答，即使队列排满也照常秒回 |
+> | .NET 启动存活总预算 | `*_SIDECAR_HEALTH_TIMEOUT_MS`（默认 **5000 ms**） | **不会**：同上，且冷加载由 `/readyz` 单独门控为 Warming（不判失败） |
+> | **Rust→sidecar 的单次 `/translate`** | `*_SIDECAR_TIMEOUT_MS`（默认 **30000 ms**） | **会**：这是唯一兜得住队列的那一段 |
+>
+> 关键的一点：**排队等待不会回 `429`**（服务在 handler 里睡在信号量上、一个字节都不写），所以 `*_SIDECAR_RETRY_MS` 那个退避预算在这里**完全不参与**，也救不了调用方——能兜住一个队列的只有单次 `*_SIDECAR_TIMEOUT_MS`。所以桌面安全组合就是一条不等式：**`*_SIDECAR_TIMEOUT_MS ≥ W + 本句解码时长`**。桌面默认不开队列（`*_MADLAD_ARGS` / `*_ARGOS_ARGS` 不带 `--decode-slots`），故默认部署无风险；一旦操作员用 `WONSLATE_*_ARGS=--decode-slots N --queue-wait-ms W` 为批量场景开了队列，就必须同步把 `*_SIDECAR_TIMEOUT_MS` 抬到覆盖 W，否则桌面会在 W 未到之前 30 s 先撒手，服务接着为一个已关闭的连接白解码（即 004 的形状）。
 
 ## 5. 模型获取
 

@@ -383,6 +383,16 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
       `queue_wait_s > 0` so a zero-wait immediate refusal does not become a phantom queue entry),
       exposed as `decodes_queued`. The mutation proof must delete both halves: removing
       `queue_entered()` hides the caller; removing `queue_left()` leaks a permanent phantom.
+    * A server-side **queue hold is invisible to the retry budget**. A caller parked in
+      `acquire_decode` gets no `429` -- the handler writes nothing while it waits -- so the
+      `*_SIDECAR_RETRY_MS` budget never engages for a queued request and cannot rescue it. The
+      only thing that bounds such a call is the **per-attempt** `*_SIDECAR_TIMEOUT_MS` (30000 ms
+      default), which `tcp_roundtrip` applies as a socket read timeout. So the desktop safe combo
+      is `*_SIDECAR_TIMEOUT_MS >= W + the caller's own decode`, and the desktop's `.NET` probes
+      (1500 ms liveness, 5000 ms start budget) are **not** part of the hazard because `/health`
+      and `/readyz` do not take a gate slot. Locked by the pair `a_server_hold_longer/shorter_than
+      _the_timeout_*`, each killed by breaking the timeout in the opposite direction -- a single
+      one-sided test would pass whether the inequality held or not.
 
     The round also carries a method note: a mutation round can find a defect instead of confirming
     a suite, which is the cheapest way one has ever paid for itself here.

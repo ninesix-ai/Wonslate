@@ -25,6 +25,20 @@ const DEFAULT_ARGOS_URL: &str = "http://127.0.0.1:11435";
 /// Default service URL for the rare-language slot (MADLAD); same prefix chain.
 const DEFAULT_MADLAD_URL: &str = "http://127.0.0.1:11436";
 /// Default timeout in milliseconds; the sidecar runs locally, shorter than ollama.
+///
+/// This is a *per-attempt* socket read timeout, and it is the only thing that bounds a call the
+/// service has put in its queue. A `--queue-wait-ms` hold is not a `429`: the handler writes
+/// nothing while it waits, so the `busy_retry` budget below never engages and cannot rescue the
+/// caller either. Therefore, when this client talks to a service started with a queue, the
+/// inequality that keeps the translation is `timeout >= queue_wait + the caller's own decode`;
+/// if it does not hold, this call times out and the pipeline falls back to demo while the service
+/// goes on decoding for a socket that has already closed (the abandoned-work shape of external
+/// item 004, now countable via `/health`'s `decodes_queued`). The desktop default of 30000 ms is
+/// safe only because the desktop does not enable a queue unless an operator passes
+/// `WONSLATE_*_ARGS=--queue-wait-ms W` -- and an operator who does must raise `*_SIDECAR_TIMEOUT_MS`
+/// to cover W; see `docs/hardware-requirements.md`. Proven both ways by the two
+/// `a_server_hold_*_the_timeout_*` cases, each killed by breaking the timeout in the opposite
+/// direction.
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 /// How long a caller may wait behind a `429 busy` refusal before it falls back, in
 /// milliseconds.
@@ -541,6 +555,86 @@ mod tests {
     fn e_retry(url: String, timeout_ms: u64, busy_retry_ms: u64) -> SidecarTranslator {
         SidecarTranslator::with_retry("argos", url, Duration::from_millis(timeout_ms),
                                       Duration::from_millis(busy_retry_ms))
+    }
+
+    /// A service that accepts the connection, reads the request, **holds it silent**, and only
+    /// then answers -- the wire shape of a caller the service has put in its queue.
+    ///
+    /// This is what `--queue-wait-ms` does to `/translate`: the request is neither served nor
+    /// refused while it waits, the handler simply has written nothing yet. `spawn_scripted`
+    /// cannot express that, because it replies the instant it has read the body -- so a question
+    /// about the client's *read* timeout versus a server-side hold needs its own mock. Reading
+    /// the request first (not blocking on EOF) is what lets the hold be measured honestly:
+    /// `read_body` returns at the declared Content-Length, then the sleep starts.
+    fn spawn_slow_reply(hold: Duration, code: u16, payload: &'static str) -> MockSidecar {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let (h, b) = (hits.clone(), bodies.clone());
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                h.fetch_add(1, Ordering::SeqCst);
+                let request = read_body(&mut stream);
+                b.lock().unwrap().push(request);
+                // Hold first, answer second: no byte goes over the wire for `hold`, exactly as a
+                // queued request sees nothing until its slot frees.
+                std::thread::sleep(hold);
+                let mut reply = format!(
+                    "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\n", code, reason(code));
+                reply.push_str(&format!("Content-Length: {}\r\n\r\n{}", payload.len(), payload));
+                let _ = stream.write_all(reply.as_bytes());
+                let _ = stream.flush();
+                let _ = stream.shutdown(Shutdown::Both);
+            }
+        });
+        MockSidecar { url: format!("http://127.0.0.1:{}", port), hits, bodies }
+    }
+
+    #[test]
+    fn a_server_hold_longer_than_the_timeout_costs_the_translation_without_a_retry() {
+        // Desktop timeout-chain audit, stated as a wire behaviour. A service started with
+        // `--queue-wait-ms` holds a queued `/translate` on its semaphore and writes nothing until
+        // the slot frees -- it is NOT a `429`, so the busy-retry budget never engages and cannot
+        // rescue this caller. The only thing standing between a queued caller and a lost answer
+        // is the per-attempt read timeout: when the hold outruns it, `tcp_roundtrip` errors, the
+        // request returns None, and the pipeline falls back to demo. Lost, but never a *silent*
+        // wrong answer -- and exactly one dial, because re-asking would only queue a second
+        // caller behind the same slot the first just abandoned.
+        //
+        // Hold 900 ms, timeout 200 ms: the read fires long before the server would answer, and
+        // the 700 ms margin means a loaded CI runner cannot flip this by writing late -- the
+        // server writes no bytes at all until 900 ms.
+        let m = spawn_slow_reply(Duration::from_millis(900), 200, "{\"text\":\"迟到\"}");
+        let t = e_retry(m.url.clone(), 200, 12_000);
+        let started = Instant::now();
+        assert_eq!(None, t.translate("hello", "en", "zh"),
+            "a caller whose read timeout is shorter than the server's hold must give up rather \
+             than block forever; this is the desktop's LT_SIDECAR_TIMEOUT_MS vs --queue-wait-ms \
+             coupling, and the fallback must be None (-> demo), not the late text");
+        assert_eq!(1, m.calls(),
+            "the hold never returned a 429, so the retry budget must not fire -- a second dial \
+             would only re-queue behind the slot the first caller walked away from");
+        assert!(started.elapsed() < Duration::from_millis(900),
+            "gave up at the timeout (200 ms), not after the server's full hold ({:?}) -- if it \
+             waited for the answer the per-attempt timeout is not being honoured", started.elapsed());
+    }
+
+    #[test]
+    fn a_server_hold_shorter_than_the_timeout_is_waited_out_and_answers() {
+        // The safe side of the same combination, and the reason the rule is an inequality rather
+        // than "keep timeouts small": when the per-attempt timeout covers the hold (queue wait +
+        // this request's own decode), the queued answer arrives on the first connection and no
+        // server work is wasted. `busy_retry` is still not involved -- the caller simply waits on
+        // the socket the service is already holding for it.
+        //
+        // Hold 300 ms, timeout 3000 ms: a 10x margin so this cannot flake on a loaded runner.
+        let m = spawn_slow_reply(Duration::from_millis(300), 200, "{\"text\":\"轮到你了\"}");
+        let t = e_retry(m.url.clone(), 3000, 12_000);
+        assert_eq!(t.translate("hello", "en", "zh").as_deref(), Some("轮到你了"),
+            "a timeout sized to cover the hold recovers the queued translation");
+        assert_eq!(1, m.calls(), "one connection, waited out; nothing to retry");
     }
 
     #[test]
