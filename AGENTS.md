@@ -204,8 +204,10 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
      (budget) on the real checkpoint. Two readings from the run that wrote that file: a non-zero
      budget **below one step waits 0.00 s** and so behaves exactly like no budget at all -- the
      price of never sleeping half a promise -- and recovery reaches a decode of up to
-     `k x Retry-After` for the largest affordable `k`, so 12 s covers a ~6 s occupancy while the
-     step sits at 5-6 s and stops covering anything above ~7 s once the step grows to 7 s.
+     `k x Retry-After` for the largest affordable `k` -- in the run that wrote that file the step
+     was 7 s for 21 of 24 cells (the first three saw 1 s and 5 s, because the latency window was
+     still empty of long decodes: p50 climbed from 0 to 6.49 s), and at that step 12 s bought one
+     and reached ~6.2 s of occupancy while 20 s bought two and reached ~9.0 s.
      Page-scale decodes are out of reach of any
      sane client budget; that workload is `--queue-wait-ms` territory, and this repo has not
      measured a queue sized for it. `python
