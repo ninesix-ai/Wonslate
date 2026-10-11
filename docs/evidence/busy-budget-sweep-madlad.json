@@ -1,0 +1,791 @@
+{
+  "what": "how long a caller must be allowed to wait behind a busy refusal, measured on the real MADLAD checkpoint",
+  "how": "python tests/test_sidecar_busy_e2e.py --sweep --out-json docs/evidence/busy-budget-sweep-madlad.json",
+  "policy_under_test": "engine/sidecar.rs: waits only a 429 whose body says error=busy; a sleep starts only if the whole Retry-After still fits the budget; a refused request is charged to no counter",
+  "preconditions": {
+    "backend": "madlad en->zh, real checkpoint, --decode-slots 1, own ephemeral port",
+    "client": "the shipped cdylib across FFI, engine_id=madlad, use_tm=False, identical input text in every cell",
+    "ambient_slots": "LT_/WONSLATE_ARGOS_URL, _OLLAMA_URL pinned dead and LT_/WONSLATE_MADLAD_URL pinned to this child, so a developer's long-lived sidecars cannot answer instead",
+    "engine_per_request_timeout_ms": 120000
+  },
+  "retry_after_is_load_dependent": [
+    1,
+    5,
+    7
+  ],
+  "cells": [
+    {
+      "retry_ms": 0,
+      "elapsed_s": 0.0,
+      "arrival_s": 0.08,
+      "occupier_s": 4.56,
+      "busy_before": 1,
+      "p50_before_s": null,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 1,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 12,
+      "predicted_recovered": false,
+      "steps": 0,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 0,
+      "elapsed_s": 0.0,
+      "arrival_s": 0.06,
+      "occupier_s": 6.49,
+      "busy_before": 1,
+      "p50_before_s": 4.555554,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 5,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 28,
+      "predicted_recovered": false,
+      "steps": 0,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 0,
+      "elapsed_s": 0.0,
+      "arrival_s": 0.05,
+      "occupier_s": 10.24,
+      "busy_before": 1,
+      "p50_before_s": 4.555554,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 5,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 55,
+      "predicted_recovered": false,
+      "steps": 0,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 0,
+      "elapsed_s": 0.0,
+      "arrival_s": 0.04,
+      "occupier_s": 30.18,
+      "busy_before": 1,
+      "p50_before_s": 6.490497,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 110,
+      "predicted_recovered": false,
+      "steps": 0,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 4000,
+      "elapsed_s": 0.0,
+      "arrival_s": 0.03,
+      "occupier_s": 4.22,
+      "busy_before": 1,
+      "p50_before_s": 6.490497,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 12,
+      "predicted_recovered": false,
+      "steps": 0,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 4000,
+      "elapsed_s": 0.0,
+      "arrival_s": 0.07,
+      "occupier_s": 6.32,
+      "busy_before": 1,
+      "p50_before_s": 6.490497,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 28,
+      "predicted_recovered": false,
+      "steps": 0,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 4000,
+      "elapsed_s": 0.0,
+      "arrival_s": 0.08,
+      "occupier_s": 9.25,
+      "busy_before": 1,
+      "p50_before_s": 6.302115,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 55,
+      "predicted_recovered": false,
+      "steps": 0,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 4000,
+      "elapsed_s": 0.0,
+      "arrival_s": 0.08,
+      "occupier_s": 26.83,
+      "busy_before": 1,
+      "p50_before_s": 6.490497,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 110,
+      "predicted_recovered": false,
+      "steps": 0,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 8000,
+      "elapsed_s": 8.94,
+      "arrival_s": 0.06,
+      "occupier_s": 4.11,
+      "busy_before": 1,
+      "p50_before_s": 6.490497,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 12,
+      "predicted_recovered": true,
+      "steps": 1,
+      "reached_s": 7.06,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 8000,
+      "elapsed_s": 8.92,
+      "arrival_s": 0.08,
+      "occupier_s": 6.21,
+      "busy_before": 1,
+      "p50_before_s": 6.302115,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 28,
+      "predicted_recovered": true,
+      "steps": 1,
+      "reached_s": 7.08,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 8000,
+      "elapsed_s": 7.0,
+      "arrival_s": 0.09,
+      "occupier_s": 8.91,
+      "busy_before": 1,
+      "p50_before_s": 6.190691,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 55,
+      "predicted_recovered": false,
+      "steps": 1,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 8000,
+      "elapsed_s": 7.0,
+      "arrival_s": 0.06,
+      "occupier_s": 27.2,
+      "busy_before": 1,
+      "p50_before_s": 6.302115,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 110,
+      "predicted_recovered": false,
+      "steps": 1,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 12000,
+      "elapsed_s": 8.92,
+      "arrival_s": 0.06,
+      "occupier_s": 4.06,
+      "busy_before": 1,
+      "p50_before_s": 6.302115,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 12,
+      "predicted_recovered": true,
+      "steps": 1,
+      "reached_s": 7.06,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 12000,
+      "elapsed_s": 8.92,
+      "arrival_s": 0.05,
+      "occupier_s": 6.19,
+      "busy_before": 1,
+      "p50_before_s": 6.190691,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 28,
+      "predicted_recovered": true,
+      "steps": 1,
+      "reached_s": 7.05,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 12000,
+      "elapsed_s": 7.0,
+      "arrival_s": 0.05,
+      "occupier_s": 8.86,
+      "busy_before": 1,
+      "p50_before_s": 6.190691,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 55,
+      "predicted_recovered": false,
+      "steps": 1,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 12000,
+      "elapsed_s": 7.0,
+      "arrival_s": 0.09,
+      "occupier_s": 26.51,
+      "busy_before": 1,
+      "p50_before_s": 6.192892,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 110,
+      "predicted_recovered": false,
+      "steps": 1,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 20000,
+      "elapsed_s": 8.95,
+      "arrival_s": 0.03,
+      "occupier_s": 4.14,
+      "busy_before": 1,
+      "p50_before_s": 6.192892,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 12,
+      "predicted_recovered": true,
+      "steps": 1,
+      "reached_s": 7.03,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 20000,
+      "elapsed_s": 8.95,
+      "arrival_s": 0.09,
+      "occupier_s": 6.2,
+      "busy_before": 1,
+      "p50_before_s": 6.190691,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 28,
+      "predicted_recovered": true,
+      "steps": 1,
+      "reached_s": 7.09,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 20000,
+      "elapsed_s": 15.93,
+      "arrival_s": 0.08,
+      "occupier_s": 8.98,
+      "busy_before": 1,
+      "p50_before_s": 6.190691,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 55,
+      "predicted_recovered": true,
+      "steps": 2,
+      "reached_s": 14.08,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 20000,
+      "elapsed_s": 14.01,
+      "arrival_s": 0.09,
+      "occupier_s": 26.93,
+      "busy_before": 1,
+      "p50_before_s": 6.190691,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 1,
+      "engine_served": 0,
+      "peak_in_flight": 1,
+      "recovered": false,
+      "invalid": false,
+      "words": 110,
+      "predicted_recovered": false,
+      "steps": 2,
+      "reached_s": null,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "demo",
+        "source": "fallback",
+        "chars": 46,
+        "message": "engine 'madlad' produced no result, fell back to local demo"
+      }
+    },
+    {
+      "retry_ms": 30000,
+      "elapsed_s": 8.9,
+      "arrival_s": 0.03,
+      "occupier_s": 4.08,
+      "busy_before": 1,
+      "p50_before_s": 6.192892,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 12,
+      "predicted_recovered": true,
+      "steps": 1,
+      "reached_s": 7.03,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 30000,
+      "elapsed_s": 8.89,
+      "arrival_s": 0.03,
+      "occupier_s": 6.12,
+      "busy_before": 1,
+      "p50_before_s": 6.190691,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 28,
+      "predicted_recovered": true,
+      "steps": 1,
+      "reached_s": 7.03,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 30000,
+      "elapsed_s": 15.91,
+      "arrival_s": 0.06,
+      "occupier_s": 8.7,
+      "busy_before": 1,
+      "p50_before_s": 6.113999,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 55,
+      "predicted_recovered": true,
+      "steps": 2,
+      "reached_s": 14.06,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    },
+    {
+      "retry_ms": 30000,
+      "elapsed_s": 30.06,
+      "arrival_s": 0.08,
+      "occupier_s": 26.67,
+      "busy_before": 1,
+      "p50_before_s": 6.113999,
+      "peek": {
+        "status": 429,
+        "retry_after_s": 7,
+        "served_instead": false,
+        "decodes_in_flight": 1
+      },
+      "served_delta": 2,
+      "engine_served": 1,
+      "peak_in_flight": 1,
+      "recovered": true,
+      "invalid": false,
+      "words": 110,
+      "predicted_recovered": true,
+      "steps": 4,
+      "reached_s": 28.08,
+      "predicted_vs_observed": true,
+      "answer": {
+        "engine": "madlad",
+        "source": "local",
+        "chars": 13,
+        "message": null
+      }
+    }
+  ],
+  "model": "simulate(): reachable moments are arrival + k*Retry-After for whole k with k*Retry-After <= budget; recovery needs one such moment at or after the occupier's measured duration",
+  "predicted_vs_observed_mismatches": [],
+  "invalid_cells": [],
+  "analysis": {
+    "worst_retry_after_s": 7,
+    "retry_after_formula_violations": [],
+    "model_disagreements": {
+      "ra_as_peeked": 0,
+      "ra_as_worst_met_in_run": 0
+    },
+    "per_budget": {
+      "0": {
+        "recovered_up_to_s": null,
+        "first_occupancy_lost_s": 4.56,
+        "max_wait_s": 0.0
+      },
+      "4000": {
+        "recovered_up_to_s": null,
+        "first_occupancy_lost_s": 4.22,
+        "max_wait_s": 0.0
+      },
+      "8000": {
+        "recovered_up_to_s": 6.21,
+        "first_occupancy_lost_s": 8.91,
+        "max_wait_s": 8.94
+      },
+      "12000": {
+        "recovered_up_to_s": 6.19,
+        "first_occupancy_lost_s": 8.86,
+        "max_wait_s": 8.92
+      },
+      "20000": {
+        "recovered_up_to_s": 8.98,
+        "first_occupancy_lost_s": 26.93,
+        "max_wait_s": 15.93
+      },
+      "30000": {
+        "recovered_up_to_s": 26.67,
+        "first_occupancy_lost_s": null,
+        "max_wait_s": 30.06
+      }
+    },
+    "budgets_that_waited_zero_seconds": [
+      4000
+    ],
+    "reading": "a budget below one Retry-After step never sleeps at all, so it behaves like 0; recovery is a whole number of steps of the *worst* promise met during the wait, not of the one met on arrival."
+  },
+  "what_this_does_not_show": [
+    "one caller only: with several waiting callers the slot is shared by whoever's retry lands first, so a bigger budget does not buy the same thing per caller",
+    "server-side queueing (--queue-wait-ms), which is a different mechanism with a different elapsed profile",
+    "argos: only the madlad slot was measured, because that is the slot whose decodes are seconds long",
+    "what the desktop UI should tolerate: this table says how long waiting recovers an answer, not how long a person will wait for one"
+  ]
+}
