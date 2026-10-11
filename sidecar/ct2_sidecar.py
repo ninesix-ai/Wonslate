@@ -25,6 +25,9 @@ tests/mock_sidecar_server.py):
                          decodes_in_flight is measured, not inferred: it is how many decodes are
                          running in this process right now, which is the thing item 004's ladder
                          was built from (work nobody waits for any more still holding the CPU).
+                         Answers written to callers who had left are counted too, but only
+                         in-process (signals.writes_to_gone_clients) -- whether /health should
+                         publish them is still an open decision, so they are not on the wire.
     GET  /readyz      -> 200 {"status":"ready","backend",...} | 503 {"status":"warming","error":"not_ready","reason":...}
                          501 {"error":"readiness_unknown"} when the backend cannot say
     GET  /languages   -> 200 {"backend","pairs","target_codes","complete","note"}
@@ -78,6 +81,13 @@ Design rules:
       the self-exit all read the same tally, so a refused language code cannot be
       counted by one and ignored by another. A busy refusal is charged to neither:
       it is a fact about this instant, not work that was done.
+    - A caller that hung up is an event to record, not a crash to print. Writing an
+      answer to a socket nobody is reading raises, and socketserver spends a whole
+      traceback on it -- 47 in one measured batch. _send swallows that one family
+      (ConnectionError: aborted, reset, broken pipe) and counts it apart by outcome,
+      because only a 2xx spent work. Anything else still escapes to the log: making
+      the noise go quiet by silencing handle_error would hide real faults too, and
+      GoneClientTests in tests/test_ct2_sidecar.py fails if anyone tries it.
     - The service binds 127.0.0.1 only (privacy: translated text never leaves
       the machine).
     - Licenses: deps ctranslate2(MIT)/sentencepiece(Apache); models
@@ -223,6 +233,8 @@ class HealthSignals:
         self._latencies = collections.deque(maxlen=window)
         self._served = 0
         self._decodes = 0
+        self._gone_answers = 0
+        self._gone_refusals = 0
         self._max_requests = max_requests
 
     def record_served(self):
@@ -252,6 +264,36 @@ class HealthSignals:
             # Never let this go below zero: an unmatched release would turn /health into a
             # counter that lies by omission, which is the failure this field exists to expose.
             self._decodes = max(0, self._decodes - 1)
+
+    def record_gone_write(self, refusal):
+        """An answer was written to a caller that had already hung up.
+
+        Split in two because the halves answer different questions. An *answer* written to nobody
+        is work paid for and thrown away -- on `/translate` that is a decode, which is the waste
+        item 004 measured; on `/warmup` it is a model load. A *refusal* cost no compute at all, it
+        is only a message into the void, and counting it with the first would overstate the waste
+        (measured: 36 answers and 11 refusals in one run, which is why this is not one tally).
+
+        The precise seconds are not claimed here on purpose: `diag_sidecar_batch.py gate` is what
+        measures them, per abandoned call, and a counter that says "an answer went nowhere" must
+        not be read as a duration it never measured.
+        """
+        with self._lock:
+            if refusal:
+                self._gone_refusals += 1
+            else:
+                self._gone_answers += 1
+
+    def writes_to_gone_clients(self):
+        """The two counts, as a dict so a caller cannot mix them up by position.
+
+        Deliberately not part of `snapshot()`: publishing a service's own waste to every client
+        is an outstanding decision (`docs/tech/16` section 7), and a number that appears in a
+        contract by accident is hard to take back out.
+        """
+        with self._lock:
+            return {"answers": self._gone_answers,
+                    "refusals": self._gone_refusals}
 
     def snapshot(self):
         with self._lock:
@@ -881,14 +923,30 @@ def sanitize_output(text, target, source=""):
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, obj, headers=None):
+        """Write one response, and treat a caller that has gone as a fact rather than a crash.
+
+        `socketserver` prints a full traceback for any exception that escapes a handler, so on a
+        long batch the ordinary end state of an abandoned request -- finish the work, find nobody
+        listening -- used to cost one stack trace per request (47 of them, 127 KB, in the run
+        that measured this). Silence is scoped to exactly that family: `ConnectionError` covers
+        aborted / reset / broken pipe and stops there, so a disk-full write or a bug still
+        reaches the log. Both outcomes are counted, apart, because only an answer spent any work
+        on somebody who was not there.
+        """
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        for name, value in (headers or {}).items():
-            self.send_header(name, value)
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
+            self.end_headers()
+            self.wfile.write(body)
+        except ConnectionError:
+            # Only a 2xx carried an answer; a 4xx/5xx is the service saying no, which cost no
+            # work to say. `code < 300` rather than `code == 200` so a future 204-style answer
+            # is not mis-filed as a refusal.
+            self.server.signals.record_gone_write(refusal=code >= 300)
 
     def do_GET(self):
         parsed = urlparse(self.path)

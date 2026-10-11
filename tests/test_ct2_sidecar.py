@@ -17,7 +17,9 @@ Pure stdlib unittest. Two layers are covered:
 
 Run:  python -m unittest tests.test_ct2_sidecar -v
 """
+import contextlib
 import http.client
+import io
 import json
 import os
 import pathlib
@@ -26,6 +28,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -914,11 +917,10 @@ class AbandonedRequestTests(unittest.TestCase):
         backend._translator = None
 
         srv, port = ct2_sidecar.serve_in_thread(backend)
-        # A handler that is still working when its client hung up gets a broken
-        # pipe while answering; that is the event under test, not a defect, so
-        # keep its traceback out of the suite output. handle_error lives on the
-        # server (socketserver.BaseServer), not on the request handler class.
-        srv.handle_error = lambda *_: None
+        # A handler that is still working when its client hung up used to print a traceback for
+        # it, and this test silenced `handle_error` to keep the suite output tidy -- which also
+        # silenced the defect option A is about. The service now records that write quietly, so
+        # the override is gone: if the noise ever comes back, this suite is where it shows.
         timeouts = 0
         built_at_last_timeout = None
         try:
@@ -2187,6 +2189,249 @@ class DecodeGateTests(unittest.TestCase):
         held.join(timeout=30)
         self.assertEqual(0, self._health(port)["decodes_in_flight"],
                          "the count leaked after the decode ended")
+
+
+# ---- Answers written to callers that already left (defect D30 item 2, option A) ----
+
+class _RaisingFile:
+    """A `wfile` that fails in one chosen way, to pin which write errors are swallowed."""
+
+    def __init__(self, error):
+        self.error = error
+        self.writes = 0
+
+    def write(self, data):
+        self.writes += 1
+        raise self.error
+
+    def flush(self):
+        return None
+
+
+class GoneClientTests(unittest.TestCase):
+    """A caller that hung up is a fact, not a stack trace -- and only that fact is quiet.
+
+    Measured before this existed: one `gate` run wrote 47 complete tracebacks (127 KB of stderr)
+    because `socketserver` treats any exception from a handler as a crash, and every one of them
+    was the service finishing an answer to a socket nobody was reading. On a long batch that is
+    not an incident per request, it is the ordinary end state of an abandoned one -- and the noise
+    is what hides the two numbers worth having: how much *finished translation* was thrown away,
+    and how many *refusals* went unlistened to. Those are counted apart because only the first
+    one cost a decode.
+
+    The guard that matters most here is the third test: silencing the wrong exception would make
+    the log quiet by making the service blind, so a real engine failure still has to print.
+    """
+
+    def setUp(self):
+        self.servers = []
+        self.captured = io.StringIO()
+        redirect = contextlib.redirect_stderr(self.captured)
+        redirect.__enter__()
+        self.addCleanup(redirect.__exit__, None, None, None)
+
+    def tearDown(self):
+        for srv in self.servers:
+            srv.shutdown()
+            srv.server_close()
+
+    def _serve(self, backend, **over):
+        srv, port = ct2_sidecar.serve_in_thread(backend, host="127.0.0.1", port=0, **over)
+        self.servers.append(srv)
+        # Note what is NOT done here: `handle_error` is left alone. Overriding it is how the
+        # abandoned-request test used to keep its output tidy, and that is exactly the
+        # silence-under-test.
+        return srv, port
+
+    def _counters(self, srv):
+        return srv.signals.writes_to_gone_clients()
+
+    def _leave_a_caller_behind(self, port, read_timeout, out):
+        """Send one request from a thread and hang up before the answer arrives.
+
+        Returns once the socket is provably closed, so the service's later write is the event
+        under test rather than a race against it.
+        """
+        def worker():
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=read_timeout)
+            try:
+                conn.request("POST", "/translate", json.dumps(
+                    {"text": "hello", "source": "en", "target": "zh"}),
+                    headers={"Content-Type": "application/json"})
+                conn.getresponse().read()
+                out["answered"] = True
+            except OSError:
+                out["answered"] = False            # the expected path: we gave up first
+            finally:
+                conn.close()
+                out["gone"].set()
+
+        t = threading.Thread(target=worker)
+        t.start()
+        return t
+
+    def test_a_finished_translation_written_to_a_gone_caller_is_counted_not_printed(self):
+        backend = _GatedBackend()
+        srv, port = self._serve(backend)
+        out = {"gone": threading.Event()}
+        caller = self._leave_a_caller_behind(port, 0.2, out)
+        backend.wait_for_entry()                   # the decode is genuinely in flight
+        caller.join(timeout=30)
+        self.assertTrue(out["gone"].wait(10), "the caller thread never closed its socket")
+        self.assertFalse(out.get("answered"),
+                         "the caller was answered, so nothing was abandoned and the assertion "
+                         "below would prove nothing")
+        # The socket is closed; now let the service finish the work nobody is waiting for.
+        backend.release.set()
+        deadline = time.monotonic() + 15.0
+        while self._counters(srv)["answers"] < 1 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        counts = self._counters(srv)
+        self.assertEqual(1, counts["answers"],
+                         "the write to the hung-up caller was not recorded: %r / stderr=%s"
+                         % (counts, self.captured.getvalue()[-400:]))
+        self.assertEqual(0, counts["refusals"], "a translation answer is not a refusal")
+        stderr = self.captured.getvalue()
+        self.assertNotIn("Traceback", stderr,
+                         "one abandoned caller still printed a traceback: %s" % stderr[-500:])
+
+    def test_a_refusal_written_to_a_gone_caller_is_counted_apart(self):
+        # This is the 11-of-47 case from the measurement: a queued caller gave up long before
+        # the gate stopped waiting, so the service spent a refusal on an empty socket. It carries
+        # no compute, and lumping it with thrown-away translations would inflate the waste.
+        backend = _GatedBackend()
+        srv, port = self._serve(backend, decode_slots=1, queue_wait_ms=600)
+        out = {"gone": threading.Event()}
+
+        results = {}
+        held = threading.Thread(target=lambda: results.setdefault(
+            "held", self._post(port, "the one holding the slot")))
+        held.start()
+        backend.wait_for_entry()
+        caller = self._leave_a_caller_behind(port, 0.15, out)
+        caller.join(timeout=30)
+        self.assertTrue(out["gone"].wait(10))
+        deadline = time.monotonic() + 15.0
+        while self._counters(srv)["refusals"] < 1 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        backend.release.set()
+        held.join(timeout=30)
+        counts = self._counters(srv)
+        self.assertEqual(1, counts["refusals"],
+                         "the busy answer never reached anyone and was not recorded: %r / %s"
+                         % (counts, self.captured.getvalue()[-400:]))
+        self.assertEqual(0, counts["answers"],
+                         "a refusal spent no decode, so it must not be counted as waste")
+        self.assertNotIn("Traceback", self.captured.getvalue())
+
+    def test_a_real_engine_failure_still_prints(self):
+        # The whole risk of this change is buying a quiet log with a blind one.
+        class _Crashing:
+            name = "crashing"
+
+            def translate(self, text, source, target, glossary=None):
+                raise ZeroDivisionError("a real defect in the engine")
+
+            def readiness(self):
+                return {"ready": True, "reason": None, "loaded": []}
+
+        srv, port = self._serve(_Crashing())
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("POST", "/translate", json.dumps(
+                {"text": "hello", "source": "en", "target": "zh"}),
+                headers={"Content-Type": "application/json"})
+            try:
+                conn.getresponse().read()
+            except OSError:
+                pass                              # the handler died mid-response; expected
+        finally:
+            conn.close()
+        stderr = self.captured.getvalue()
+        self.assertIn("Traceback", stderr,
+                      "an engine crash was silenced along with the hung-up callers")
+        self.assertIn("ZeroDivisionError", stderr)
+        self.assertEqual(self._counters(srv), {"answers": 0, "refusals": 0},
+                         "a crash is not a gone-client write; the counters must stay clean")
+
+    def test_only_the_hung_up_family_is_swallowed_when_writing(self):
+        # Both directions, without depending on how a given OS notices a closed socket.
+        class _Stub:
+            _send = ct2_sidecar.Handler._send
+
+            def __init__(self, error, signals):
+                self.wfile = _RaisingFile(error)
+                self.server = types.SimpleNamespace(signals=signals)
+
+            def send_response(self, code):
+                pass
+
+            def send_header(self, k, v):
+                pass
+
+            def end_headers(self):
+                pass
+
+        for error in (ConnectionAbortedError(10053, "aborted"),
+                      ConnectionResetError(10054, "reset"),
+                      BrokenPipeError(32, "broken pipe")):
+            signals = ct2_sidecar.HealthSignals()
+            _Stub(error, signals)._send(200, {"text": "x"})       # must not raise
+            self.assertEqual(1, signals.writes_to_gone_clients()["answers"],
+                             "%s is a caller that left and should be recorded quietly"
+                             % type(error).__name__)
+
+        for error in (OSError(28, "no space left on device"), ValueError("a bug")):
+            signals = ct2_sidecar.HealthSignals()
+            with self.assertRaises(type(error)):
+                _Stub(error, signals)._send(200, {"text": "x"})
+            self.assertEqual({"answers": 0, "refusals": 0},
+                             signals.writes_to_gone_clients(),
+                             "%s is not a hung-up caller and must not be swallowed" % type(error).__name__)
+
+        # Which side of 300 the code falls on is a claim, so it is pinned: an answer is an answer
+        # at 204 as much as at 200, and a 429/503 is a message that cost no work.
+        signals = ct2_sidecar.HealthSignals()
+        _Stub(ConnectionAbortedError(10053, "aborted"), signals)._send(204, {})
+        _Stub(ConnectionAbortedError(10053, "aborted"), signals)._send(503, {"error": "x"})
+        self.assertEqual({"answers": 1, "refusals": 1}, signals.writes_to_gone_clients(),
+                         "an empty 2xx is an answer and a 5xx is a refusal: %r"
+                         % (signals.writes_to_gone_clients(),))
+
+    def test_healthy_traffic_leaves_the_counters_and_the_endpoint_alone(self):
+        # A control, and a scope pin: exposing these numbers on /health is still an open
+        # decision (`docs/tech/16` section 7), so nothing may appear there quietly.
+        class _Instant:
+            name = "instant"
+
+            def translate(self, text, source, target, glossary=None):
+                return "ok: {0}".format(target)
+
+            def readiness(self):
+                return {"ready": True, "reason": None, "loaded": []}
+
+        srv, port = self._serve(_Instant())
+        status, body = self._post(port, "hello")
+        self.assertEqual(200, status, body)
+        self.assertEqual({"answers": 0, "refusals": 0}, self._counters(srv))
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request("GET", "/health")
+        health = json.loads(conn.getresponse().read().decode("utf-8"))
+        conn.close()
+        self.assertNotIn("answers_to_gone_clients", health,
+                         "the self-report is a pending decision, not a free addition")
+        self.assertIn("decodes_in_flight", health)
+
+    def _post(self, port, text):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("POST", "/translate", json.dumps(
+                {"text": text, "source": "en", "target": "zh"}),
+                headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":
