@@ -37,6 +37,7 @@ this file covers the registration side (every shipped package must be
 registered). Keep both in sync: run in CI (python-ffi job) and via
 script/build.py --ffi.
 """
+import ast
 import os
 import re
 import sys
@@ -61,8 +62,42 @@ PROV_RE = re.compile(r"(https?://|publisher|upstream|official)", re.I)
 # outside the standard library has to clear the same registration bar as NuGet.
 PY_DIRS = ("script", "sidecar", "tests")
 REQUIREMENTS_TXT = os.path.join(ROOT, "sidecar", "requirements.txt")
-IMPORT_RE = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_][\w.]*)", re.M)
 REQ_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*[=<>~]")
+
+
+def imported_modules(path):
+    """Top-level module names a file imports, or None when the file cannot be parsed.
+
+    Read from the syntax tree rather than from a text pattern. The first version scanned the
+    whole file with `^\\s*(import|from)\\s+(\\w+)`, which cannot tell code from English: a
+    docstring line beginning "from the service's own measured latency" was reported as an import
+    of a distribution named `the`, and the gate failed a sentence.
+
+    Measured against that pattern case by case, the parser also closes two real gaps -- a
+    same-line compound (`import os; import yaml`, where the pattern saw only `os`) and an inline
+    conditional (`if ok: import jsonschema`, where it saw nothing) -- and confirms two that were
+    assumed but are not real: a parenthesised multi-line import and an import nested in a block
+    were already caught, because the pattern allows leading whitespace.
+
+    Returning None rather than falling back to the regex is deliberate: a file the parser rejects
+    is a file whose dependencies are unknown, and "unknown" has to reach the report as a failure
+    instead of being audited by the method that just proved it unreliable.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            tree = ast.parse(fh.read(), filename=path)
+    except (SyntaxError, ValueError, UnicodeDecodeError):
+        return None
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            # `from . import x` (level >= 1) is intra-package by definition; a dotted absolute
+            # import counts by its top-level package, which is what PyPI calls a distribution.
+            names.append(node.module)
+    return sorted({name.split(".")[0] for name in names})
+
 
 # Import name -> PyPI distribution name, only where the two differ.
 DIST_OF_MODULE = {"comet": "unbabel-comet"}
@@ -157,8 +192,12 @@ def local_module_names():
     return names
 
 
-def python_third_party_imports():
-    """Map each shipped Python file to the third-party modules it imports."""
+def python_third_party_imports(unreadable=None):
+    """Map each shipped Python file to the third-party modules it imports.
+
+    `unreadable` collects the files that could not be read as Python at all, so the caller can
+    fail on them instead of auditing nothing and reporting success.
+    """
     known_local = local_module_names()
     std = set(getattr(sys, "stdlib_module_names", set()))
     found = {}
@@ -172,14 +211,13 @@ def python_third_party_imports():
                 if not f.endswith(".py"):
                     continue
                 path = os.path.join(dirpath, f)
-                with open(path, encoding="utf-8", errors="replace") as fh:
-                    text = fh.read()
-                mods = []
-                for raw in IMPORT_RE.findall(text):
-                    top = raw.split(".")[0]
-                    if top in known_local or top in std:
-                        continue
-                    mods.append(top)
+                names = imported_modules(path)
+                if names is None:
+                    if unreadable is not None:
+                        unreadable.append(os.path.relpath(path, ROOT))
+                    continue
+                mods = [top for top in names
+                        if top not in known_local and top not in std]
                 if mods:
                     found[os.path.relpath(path, ROOT)] = sorted(set(mods))
     return found
@@ -235,7 +273,14 @@ def run_checks():
     # Check 5: the PyPI layer. Every third-party import in the shipped scripts,
     # and every declared requirement, must be registered with an allowed license
     # and a provenance note. Unknown imports fail closed rather than pass quietly.
-    py_imports = python_third_party_imports()
+    unreadable = []
+    py_imports = python_third_party_imports(unreadable)
+    if unreadable:
+        # A file whose imports cannot be read is not a file with no imports. Reporting nothing
+        # here would let a syntax error silence the whole Python layer of this gate.
+        failures.append(
+            "these Python files could not be parsed, so their dependencies were not audited "
+            "(fail-closed): %s" % ", ".join(sorted(unreadable)))
     checked_dists = set()
     for rel, mods in sorted(py_imports.items()):
         for mod in mods:
