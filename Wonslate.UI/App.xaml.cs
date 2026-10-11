@@ -36,6 +36,10 @@ public partial class App : Application
         // The shell owns the ViewModel so it can push startup diagnostics into it,
         // and supplies the voice panel with the real audio player.
         _vm = new MainViewModel(new VoiceViewModel(playWav: PlayWavFile));
+        // The UI per-attempt timeout is env-overridable (LT_ > WONSLATE_ prefix chain) so an
+        // operator can raise it alongside a larger *_SIDECAR_TIMEOUT_MS or a queue; absent it
+        // stays at the shipped default. This is a .NET-side read only, not a Rust engine knob.
+        _vm.TranslateTimeout = MainViewModel.ResolveTranslateTimeout(System.Environment.GetEnvironmentVariable);
         // The engine named in each response decides which endpoint gets warmed;
         // the managers are created below, so this must tolerate them being absent.
         _vm.OnEngineUsed = WarmEndpointFor;

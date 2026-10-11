@@ -400,11 +400,47 @@ public sealed class MainViewModel : INotifyPropertyChanged
     internal Action<string>? OnEngineUsed { get; set; }
 
     /// <summary>Per-attempt timeout for the async path. The native call cannot be aborted,
-    /// so an overrun is abandoned (logical cancellation) rather than applied late.</summary>
-    public TimeSpan TranslateTimeout { get; set; } = TimeSpan.FromSeconds(20);
+    /// so an overrun is abandoned (logical cancellation) rather than applied late. The default
+    /// is a backstop, not a first line: it sits ABOVE the Rust client's own worst case
+    /// (`busy_retry 12 s + *_SIDECAR_TIMEOUT_MS 30 s = 42 s`) so the UI does not abandon a call
+    /// the engine is legitimately still waiting out (a measured page-scale madlad decode is
+    /// ~25 s). Env-overridable via <see cref="ResolveTranslateTimeout"/>; the abandoned native
+    /// call still keeps decoding, so this value does not cancel server work -- see the retry note.
+    /// </summary>
+    public TimeSpan TranslateTimeout { get; set; } = TimeSpan.FromMilliseconds(DefaultTranslateTimeoutMs);
 
-    /// <summary>Extra attempts after the first one; 1 = "retry once" (N-06).</summary>
-    public int TranslateRetries { get; set; } = 1;
+    /// <summary>Extra attempts after the first one. Default 0: a retry re-issues a whole native
+    /// call while the abandoned one is STILL decoding, and with the decode gate off by default the
+    /// two overlap and slow the work that is wanted (defect D30 item 2, measured 2.5x). The retry
+    /// is kept as an opt-in knob (tests pin it to 1) rather than a shipped amplifier.
+    /// </summary>
+    public int TranslateRetries { get; set; } = 0;
+
+    /// <summary>Shipped default for the outermost (UI) per-attempt timeout.</summary>
+    public const int DefaultTranslateTimeoutMs = 45_000;
+
+    /// <summary>
+    /// Resolve the UI per-attempt translate timeout from the environment, honoring the shared
+    /// LT_* (legacy) &gt; WONSLATE_* (brand) prefix chain. Absent, blank, unparsable or
+    /// non-positive all fall back to <see cref="DefaultTranslateTimeoutMs"/>: a typo must not
+    /// silently turn into an unbounded wait. The env reader is injected so resolution is hermetic
+    /// -- a unit test never depends on the host environment (the D36/D45 class of mistake). This
+    /// knob is read on the .NET side only; it is not a Rust engine config and so is deliberately
+    /// outside the Rust hermetic KNOBS table.
+    /// </summary>
+    public static TimeSpan ResolveTranslateTimeout(Func<string, string?> env)
+    {
+        static string? NonBlank(Func<string, string?> read, string key)
+        {
+            var value = read(key);
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        var raw = NonBlank(env, "LT_UI_TRANSLATE_TIMEOUT_MS")
+                  ?? NonBlank(env, "WONSLATE_UI_TRANSLATE_TIMEOUT_MS");
+        return int.TryParse(raw, out var ms) && ms > 0
+            ? TimeSpan.FromMilliseconds(ms)
+            : TimeSpan.FromMilliseconds(DefaultTranslateTimeoutMs);
+    }
 
     private CancellationTokenSource? _inFlight;
 

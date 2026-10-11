@@ -35,15 +35,17 @@ const DEFAULT_MADLAD_URL: &str = "http://127.0.0.1:11436";
 /// goes on decoding for a socket that has already closed (the abandoned-work shape of external
 /// item 004, now countable via `/health`'s `decodes_queued`). But this is only the RUST-side
 /// segment: a desktop `/translate` also has an OUTER .NET UI logical timeout
-/// (`MainViewModel.TranslateTimeout`, 20 s, retry once) that wraps this whole FFI call and fires
-/// BEFORE the 30 s here -- and it is not env-overridable. So covering W on the Rust side is
-/// necessary but not sufficient for the interactive desktop, which means `--queue-wait-ms` is
-/// really a knob for out-of-repo batch callers (who set their own single client timeout), not for
-/// the desktop. The desktop default is safe only because it does not enable a queue at all; a
-/// multi-line paste can still exceed the 20 s .NET timeout because the sidecar decodes lines
-/// sequentially on one slot. See `docs/hardware-requirements.md` for the four-layer chain. Proven
-/// both ways by the two `a_server_hold_*_the_timeout_*` cases, each killed by breaking the timeout
-/// in the opposite direction.
+/// (`MainViewModel.TranslateTimeout`) that wraps this whole FFI call and fires BEFORE the 30 s
+/// here. It shipped at 20 s with a retry that re-issued a full decode while the abandoned one
+/// still ran (the D30 item-2 overlap); the owner raised the default to 45 s -- above this client's
+/// own worst case of `busy_retry + timeout` -- made it env-overridable via
+/// `*_UI_TRANSLATE_TIMEOUT_MS`, and turned the auto-retry default off. So covering W on the Rust
+/// side is necessary but not sufficient on its own; the desktop's outer layer has to cover it too
+/// (it can now, and its default already exceeds this Rust segment's worst case). A multi-line
+/// paste can still be slow because the sidecar decodes lines sequentially on one slot. See
+/// `docs/hardware-requirements.md` for the four-layer chain. Proven both ways by the two
+/// `a_server_hold_*_the_timeout_*` cases, each killed by breaking the timeout in the opposite
+/// direction.
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 /// How long a caller may wait behind a `429 busy` refusal before it falls back, in
 /// milliseconds.

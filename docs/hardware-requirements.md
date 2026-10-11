@@ -60,6 +60,7 @@ Get-Process python,ollama* | Select-Object ProcessName, @{n='RAM_MB';e={[math]::
 | `WONSLATE_SIDECAR_RETRY_MS` | 引擎侧为一个 `429 busy` **最多等多久**（默认 12000 ms；`LT_SIDECAR_RETRY_MS` 旧拼写优先）。只在服务带 `--decode-slots` 启动时才会花到，因此对现有部署是零代价；它只封顶等待，不封顶翻译，所以最坏耗时是它加上上面那个超时。**预算是按整步 `Retry-After` 花的**（一步 = 服务自己 p50 的上取整，负载越重越大）：小于一步的非零值不会睡任何一秒，行为等同于 `0` | `0` = 不等，被拒即降级；`20000` ≈ 在 p50 升至 7 s 时还能等两步 |
 | `WONSLATE_OLLAMA_MODEL` | L3 升级模型（默认 `qwen3:8b`） | `qwen3:14b` |
 | `WONSLATE_OLLAMA_URL` | Ollama 地址（默认 127.0.0.1:11434） | — |
+| `WONSLATE_UI_TRANSLATE_TIMEOUT_MS` | **桌面 UI 侧**（.NET）一次翻译的逐次超时（默认 **45000 ms**；`LT_UI_TRANSLATE_TIMEOUT_MS` 旧拼写优先）。这是超时链**最外层**那一段（包住整个 `tt_translate_full` FFI 调用），不是引擎侧的 `*_SIDECAR_*_MS`。默认值取在 Rust 最坏耗时（`retry 12s + timeout 30s = 42s`）之上；超时后**不再自动重试**（重试会叠一个未中止的后台解码）。非正整数/脏值一律回落默认 | `60000`（给页面量级长粘贴留余量） |
 
 > 端口约定与 Rust 引擎侧 `translator-engine/src/engine/sidecar.rs` 对齐：argos=11435，madlad=11436，改动一侧必须同步另一侧。
 >
@@ -67,20 +68,20 @@ Get-Process python,ollama* | Select-Object ProcessName, @{n='RAM_MB';e={[math]::
 >
 > `--queue-wait-ms` 有一条 **3600 s 上限**（超出会被夹到上限）：在这个旋钮上"更大 = 更宽容"并不成立——超过平台定时锁的表示范围后 CPython 不再等待而是抛 `OverflowError`，异常逃出 handler 后调用方看到的是**连接被断开**（登记为 D46，已于 2026-10-11 修）。配它的法则是 **W ≥ 排在该调用方前面的全部解码**（不是"一个解码"），且调用方自己的 HTTP 超时需要 ≥ `W + 单次解码`，否则服务还在排队而调用方已经先走。**队列深度可从 `GET /health` 的 `decodes_queued` 字段直接读出**（D47，2026-10-11 加入）：那是当时在 `acquire(timeout=W)` 里等待槽位的调用方人数，`--decode-slots` 与 `--queue-wait-ms` 任一未开启时恒为 `0`。
 >
-> **桌面端 `/translate` 的超时链（2026-10-11 审计，同日订正补全）**：一次桌面翻译从点击到拿到结果，**串行走四层超时**（从外到内），队列只作在最内层：
+> **桌面端 `/translate` 的超时链（2026-10-11 审计 → 同日已改代码）**：一次桌面翻译从点击到拿到结果，**串行走四层超时**（从外到内）。最外层原本是固定 20 s 的代码常量，现已抬到 45 s 默认、可环境变量覆盖、且不再自动重试：
 >
 > | 层 | 变量 / 默认 | 是否可配 | 作用 |
 > |---|---|---|---|
-> | ① **.NET UI 逐次逻辑超时** | `MainViewModel.TranslateTimeout` 内置 **20 s**，超时**自动重试 1 次**（`TranslateRetries=1`） | 代码常量，**无环境变量开关** | 包住整个 `tt_translate_full` FFI 调用；超时时原生调用**仍在后台跑完、结果被丢弃**，而重试会**再发一次**（即第二次解码叠在第一个之后） |
+> | ① **.NET UI 逐次逻辑超时** | `MainViewModel.TranslateTimeout` 默认 **45 s**（`*_UI_TRANSLATE_TIMEOUT_MS`）；超时**不再自动重试**（`TranslateRetries` 默认 0） | **是**（env 可配） | 包住整个 `tt_translate_full` FFI 调用；超时时原生调用**仍在后台跑完、结果被丢弃**（不可中止） |
 > | ② .NET 探活 HTTP（`/health` `/readyz` `/warmup`） | 内置 **1500 ms** | 否 | 不包 `/translate`；因 `/health`/`/readyz` 不走解码闸门而**不受队列影响** |
 > | ③ Rust→sidecar 单次读超时 | `*_SIDECAR_TIMEOUT_MS` 默认 **30000 ms**（+ 429 退避预算 12 s） | 是 | `tcp_roundtrip` 的 socket 读超时；**唯一能兜住服务端的队列与解码**的那一段 |
 > | ④ sidecar 排队 | `--queue-wait-ms W`（0=立即拒） | 启动参数 | 只在 `--decode-slots` 开启时存在 |
 >
-> **两个直接后果**（均由代码读实，非推测）：
-> - **① 比 ③ 更先生效**。上一版本本节列过“三段超时、只有 Rust 那一段兜得住队列”，**遗漏了最外层的 .NET 20 s**，现已补上。于是 `*_SIDECAR_TIMEOUT_MS ≥ W + 本句解码` 仍是必要条件、但对桌面**不够**：即使 ③ 盖住了 W，① 也会在 20 s 先撒手。**且 `TranslateTimeout` 目前不走环境变量**，开大队列的人无法靠配置抬高它（要改代码），所以 `--queue-wait-ms` 对**交互式桌面基本不适用**，它是给仓外批量调用方的。
-> - **页面量级粘贴本就会撞 ①**：sidecar 对多行输入是**逐行串行解码、整份请求只占一个槽**（`_translate_lines`），所以多行粘贴的服务端耗时 ≈ 各行之和。一轮实测 madlad 110 词单条就 ~25 s（见 `docs/evidence/queue-wait-madlad.json`），已超 20 s。此时默认无闸门（`--decode-slots` 关），① 重试的第二次解码会与第一次未中止的后台解码**重叠**——正是 D30② 量过的“被弃解码拖慢仍被需要的请求”。
+> **为何默认是 45 s 而不是随便抬大**：① 包住的是整个原生调用，而 Rust 侧一次 `/translate` 本身最坏可合法地花 `busy_retry 12s + timeout 30s = 42s`（正当等 `429` 退避时）。旧 20 s 会在引擎做对事的中途就撒手；45 s 恰好高于这个 42s 最坏值，使外层不再抢在内层前面。
 >
-> 安全组合（批量调用方，含仓外）：**`min(客户端逐次超时) ≥ W + 本句解码`**，桌面的“客户端逐次超时”是①的 20 s 而非③的 30 s；③ 需 ≥ ① 才有意义。退避预算 `*_SIDECAR_RETRY_MS` **对排队完全不参与**（排队等待不回 `429`，handler 在信号量上睡着、一个字节都不写）。行为本身诚实：① 超时会在 UI 显式报“翻译超时（20s）”、从不假成成功（REQ-B2 未破）；但重试叠加解码是产品待定的取舍（是否抬高 20 s / 是否抑制会对未中止解码重叠的重试）。
+> **为何关掉自动重试**：原生调用不可中断，重试会再发一个全新解码叠在未中止的后台解码上；默认无闸门（`--decode-slots` 关）时两者重叠、拖慢仍被需要的请求（D30② 量到 2.5x）。重试机制保留为显式可配（测试钉 `TranslateRetries=1`），不再是出厂放大器。
+>
+> **两个仍成立的链事实**（代码读实）：① `*_SIDECAR_TIMEOUT_MS ≥ W + 本句解码` 对桌面只是必要条件——外层①也得盖住（现已默认 45 s 且可调）；且多行粘贴在服务端**逐行串行、整份只占一槽**（`_translate_lines`），耗时≈各行之和，实测 madlad 110 词单条 ~25 s（`docs/evidence/queue-wait-madlad.json`），仍在 45 s 内可拿回，超长需分段或调大①。② 退避预算 `*_SIDECAR_RETRY_MS` **对排队完全不参与**（排队等待不回 `429`）。行为诚实：① 超时会显式报“翻译超时（45s）”、从不假成成功（REQ-B2 未破）。
 
 ## 5. 模型获取
 

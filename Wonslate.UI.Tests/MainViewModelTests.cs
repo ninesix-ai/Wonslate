@@ -463,7 +463,7 @@ public class MainViewModelTests
     [Fact]
     public async Task TranslateAsync_Timeout_RetriesOnceThenReportsTimeout()
     {
-        var vm = new MainViewModel { Input = "hello", TranslateTimeout = TimeSpan.FromMilliseconds(400) };
+        var vm = new MainViewModel { Input = "hello", TranslateTimeout = TimeSpan.FromMilliseconds(400), TranslateRetries = 1 };
         int calls = 0;
         var started = new TaskCompletionSource();
         var release = new ManualResetEventSlim(false);
@@ -495,7 +495,7 @@ public class MainViewModelTests
     [Fact]
     public async Task TranslateAsync_FirstAttemptTooSlow_RetrySucceeds()
     {
-        var vm = new MainViewModel { Input = "hello", TranslateTimeout = TimeSpan.FromMilliseconds(400) };
+        var vm = new MainViewModel { Input = "hello", TranslateTimeout = TimeSpan.FromMilliseconds(400), TranslateRetries = 1 };
         int calls = 0;
         var firstStarted = new TaskCompletionSource();
         var releaseFirst = new ManualResetEventSlim(false);
@@ -523,6 +523,97 @@ public class MainViewModelTests
         finally
         {
             releaseFirst.Set();
+        }
+    }
+
+    // ---- Shipped defaults for the outermost timeout (audit: four layers, .NET is first) ----
+
+    [Fact]
+    public void DefaultTranslateTimeout_CoversTheRustWorstCase()
+    {
+        // The Rust sidecar client can legitimately take up to `busy_retry (12 s) +
+        // *_SIDECAR_TIMEOUT_MS (30 s)` = 42 s while it waits out a `429` budget, and a measured
+        // page-scale madlad decode is ~25 s (`docs/evidence/queue-wait-madlad.json`). The UI
+        // timeout shipped at 20 s and abandoned both mid-flight -- then the retry re-issued a
+        // whole decode while the abandoned one still ran (defect D30 item 2). The default is now
+        // a backstop above the Rust worst case, so the UI does not give up before the layer that
+        // is doing the right thing has finished.
+        Assert.Equal(TimeSpan.FromSeconds(45), new MainViewModel().TranslateTimeout);
+    }
+
+    [Fact]
+    public void DefaultTranslateRetries_IsZero_NoOverlappingRetry()
+    {
+        // Retry-on-timeout re-dials a full native call while the abandoned one is still decoding;
+        // with the gate OFF by default that second decode overlaps the first and slows the work
+        // still wanted (measured 2.5x). The mechanism stays configurable (the two retry tests
+        // above pin `TranslateRetries = 1`), but the shipped default no longer amplifies a slow
+        // engine on its own.
+        Assert.Equal(0, new MainViewModel().TranslateRetries);
+    }
+
+    [Fact]
+    public async Task TranslateAsync_TimeoutByDefault_SingleAttemptNoRetry()
+    {
+        var vm = new MainViewModel { Input = "hello", TranslateTimeout = TimeSpan.FromMilliseconds(400) };
+        // deliberately NOT setting TranslateRetries: this asserts the shipped default.
+        int calls = 0;
+        var started = new TaskCompletionSource();
+        var release = new ManualResetEventSlim(false);
+        vm.InvokeTranslate = _ =>
+        {
+            Interlocked.Increment(ref calls);
+            started.TrySetResult();
+            release.Wait(TimeSpan.FromSeconds(10));
+            return OkJson;
+        };
+        try
+        {
+            var task = vm.TranslateAsync();
+            await started.Task;
+            await task;
+            Assert.Equal(1, calls);              // no retry at the new default
+            Assert.Equal("超时", vm.EngineLabel);
+            Assert.Contains("超时", vm.Output);
+            Assert.False(vm.IsBusy);
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    // ---- The outermost timeout is env-overridable so an operator can align it with the queue ----
+
+    [Fact]
+    public void ResolveTranslateTimeout_ReadsTheEnvAndHonorsThePrefixChain()
+    {
+        // Absent -> shipped default; the brand spelling is honored; the legacy LT_ prefix wins
+        // when both are present (the same precedence chain as the rest of the config layer).
+        Assert.Equal(TimeSpan.FromSeconds(45), MainViewModel.ResolveTranslateTimeout(_ => null));
+        Assert.Equal(TimeSpan.FromSeconds(60),
+            MainViewModel.ResolveTranslateTimeout(k =>
+                k == "WONSLATE_UI_TRANSLATE_TIMEOUT_MS" ? "60000" : null));
+        Assert.Equal(TimeSpan.FromSeconds(90),
+            MainViewModel.ResolveTranslateTimeout(k => k switch
+            {
+                "LT_UI_TRANSLATE_TIMEOUT_MS" => "90000",
+                "WONSLATE_UI_TRANSLATE_TIMEOUT_MS" => "60000",
+                _ => null,
+            }));
+    }
+
+    [Fact]
+    public void ResolveTranslateTimeout_GarbageOrNonPositive_FallsBackToDefault()
+    {
+        // A typo must not silently disable the timeout: `0` or negative would mean "never time
+        // out" (the native call has no other bound), and unparsable text is not a duration. Both
+        // fall back to the shipped default rather than to an unbounded wait.
+        foreach (var bad in new[] { "not-a-number", "", "   ", "0", "-1" })
+        {
+            var resolved = MainViewModel.ResolveTranslateTimeout(k =>
+                k == "LT_UI_TRANSLATE_TIMEOUT_MS" ? bad : null);
+            Assert.Equal(TimeSpan.FromSeconds(45), resolved);
         }
     }
 

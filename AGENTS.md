@@ -391,22 +391,26 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
       `a_server_hold_longer/shorter_than_the_timeout_*`, each killed by breaking the timeout in
       the opposite direction -- a single one-sided test would pass whether the inequality held or
       not.
-    * **Correction the same day (I under-counted the desktop chain).** That bullet framed the
-      desktop combo as `*_SIDECAR_TIMEOUT_MS >= W + decode` and called the .NET 1500 ms / 5000 ms
-      values the only outer layers. Both were wrong: a desktop `/translate` crosses **four**
-      timeouts, and the outermost is `MainViewModel.TranslateTimeout` = **20 s** with
-      `TranslateRetries = 1` -- a UI logical timeout that wraps the whole `tt_translate_full` FFI
-      call, is **not env-overridable**, and fires **before** the Rust 30 s. The abandoned native
-      call keeps decoding; the retry re-issues a second decode. Two consequences: the Rust-side
-      inequality is necessary but not sufficient for the desktop (so `--queue-wait-ms` is really
-      for out-of-repo batch callers, not the interactive desktop), and a multi-line paste already
-      exceeds 20 s because the sidecar decodes lines **sequentially on one slot** (sum of lines;
-      a measured 110-word madlad decode is ~25 s). With no gate the retry then overlaps the
-      still-running first decode -- the D30-2 amplification, reached without anyone enabling the
-      queue. Not a defect to silently change: the 20 s honestly reports "翻译超时（20s）" (REQ-B2
-      intact); whether to raise it or suppress an overlapping retry is a **product decision, left
-      to the owner**. The pair of hermetic tests still holds -- they measure the Rust->sidecar
-      read-timeout segment, which is real; they just do not stand for the whole chain.
+    * **Correction the same day, then fixed (I under-counted the desktop chain).** The bullet
+      above framed the desktop combo as `*_SIDECAR_TIMEOUT_MS >= W + decode` and treated the .NET
+      1500 ms / 5000 ms values as the only outer layers. Both were wrong: a desktop `/translate`
+      crosses **four** timeouts, and the outermost is `MainViewModel.TranslateTimeout`, a UI
+      logical timeout that wraps the whole `tt_translate_full` FFI call and fires **before** the
+      Rust 30 s -- so the Rust-side inequality is necessary but not sufficient for the desktop.
+      It shipped at a hardcoded 20 s with `TranslateRetries = 1`, and that retry re-issued a whole
+      decode while the abandoned one was still running: with the gate off by default the two
+      overlap and slow the work still wanted (the D30 item-2 amplification, measured 2.5x), which
+      a multi-line paste hits easily because the sidecar decodes lines **sequentially on one slot**
+      (sum of lines; a measured 110-word madlad decode is ~25 s). **The owner's decision, now
+      implemented:** the default was raised to **45 s** -- chosen because it sits above the Rust
+      client's own worst case (`busy_retry 12 s + timeout 30 s = 42 s`), so the UI no longer
+      abandons a call the engine is legitimately waiting out -- made env-overridable via
+      `*_UI_TRANSLATE_TIMEOUT_MS` (the `LT_` > `WONSLATE_` chain, read on the .NET side, injected
+      in tests so they never depend on the host env), and the auto-retry default set to **0** (the
+      mechanism stays, pinned to 1 by two unit tests). This was not a silent defect: the 20 s had
+      honestly reported "翻译超时（20s）" (REQ-B2 intact); the change was a UX call, made by the
+      owner. The pair of `a_server_hold_*` hermetic tests still pins the Rust->sidecar segment --
+      real, but not the whole chain.
 
     The round also carries a method note: a mutation round can find a defect instead of confirming
     a suite, which is the cheapest way one has ever paid for itself here.
