@@ -12,10 +12,19 @@ tests/mock_sidecar_server.py):
                          the caller's line count (a blob makes the decoder emit repeated tokens
                          with no source content in it - external item 007). "failed_lines" names
                          the positions that came back unanswered; blank lines are structure.
+                      429 {"error":"busy","decode_slots":N,"decodes_in_flight":N,"waited_ms",
+                         "note"} + Retry-After, only when --decode-slots is set: every slot is
+                         decoding, so nothing was started for this request and retrying costs no
+                         translation work. It is opt-in because callers are not written to expect
+                         it, and it is a refusal rather than a queue because a queued caller is
+                         still waiting behind the timeout of text nobody wants any more.
     GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>","requests_served",...,
-                         "requests_until_exit":N|null}   (LIVENESS only)
+                         "decodes_in_flight":N,"requests_until_exit":N|null}   (LIVENESS only)
                          requests_until_exit is null unless the process was started with
                          --max-requests; it never invents a countdown it will not honour.
+                         decodes_in_flight is measured, not inferred: it is how many decodes are
+                         running in this process right now, which is the thing item 004's ladder
+                         was built from (work nobody waits for any more still holding the CPU).
     GET  /readyz      -> 200 {"status":"ready","backend",...} | 503 {"status":"warming","error":"not_ready","reason":...}
                          501 {"error":"readiness_unknown"} when the backend cannot say
     GET  /languages   -> 200 {"backend","pairs","target_codes","complete","note"}
@@ -67,7 +76,8 @@ Design rules:
       on a cold model load. Say that on /readyz instead.
     - One request counter, one budget. /health's requests_served, the countdown and
       the self-exit all read the same tally, so a refused language code cannot be
-      counted by one and ignored by another.
+      counted by one and ignored by another. A busy refusal is charged to neither:
+      it is a fact about this instant, not work that was done.
     - The service binds 127.0.0.1 only (privacy: translated text never leaves
       the machine).
     - Licenses: deps ctranslate2(MIT)/sentencepiece(Apache); models
@@ -202,12 +212,17 @@ class HealthSignals:
     `max_requests` belongs here rather than on the server because the countdown has
     to be read off the same counter that /health already publishes. Two tallies would
     eventually disagree about whether a refused language code cost anything.
+
+    `decodes_in_flight` lives here for the same reason: it is the number that makes the
+    mechanism behind item 004 visible (abandoned decodes keep running and slow down the work
+    that is still wanted), so the gate and /health must read one tally, not two.
     """
 
     def __init__(self, window=_LATENCY_WINDOW, max_requests=None):
         self._lock = threading.Lock()
         self._latencies = collections.deque(maxlen=window)
         self._served = 0
+        self._decodes = 0
         self._max_requests = max_requests
 
     def record_served(self):
@@ -227,18 +242,58 @@ class HealthSignals:
         with self._lock:
             self._latencies.append(float(seconds))
 
+    def decode_started(self):
+        """A decode is running in this process now (gate on or off)."""
+        with self._lock:
+            self._decodes += 1
+
+    def decode_finished(self):
+        with self._lock:
+            # Never let this go below zero: an unmatched release would turn /health into a
+            # counter that lies by omission, which is the failure this field exists to expose.
+            self._decodes = max(0, self._decodes - 1)
+
     def snapshot(self):
         with self._lock:
             served = self._served
+            decodes = self._decodes
             ordered = sorted(self._latencies)
             remaining = (None if self._max_requests is None
                          else max(0, self._max_requests - served))
         return {"requests_served": served,
                 "requests_until_exit": remaining,
+                "decodes_in_flight": decodes,
                 "latency_samples": len(ordered),
                 "last_latency_p50": _percentile(ordered, 0.50),
                 "last_latency_p99": _percentile(ordered, 0.99),
                 "rss_bytes": process_rss_bytes()}
+
+
+def resolve_decode_slots(raw):
+    """Normalise a concurrent-decode limit: a positive int, or None for "no gate".
+
+    Zero and negatives mean *no gate* rather than "allow nobody", for the same reason
+    `resolve_max_requests` treats 0 as unbounded: a flag left at its default must never
+    silently change how a working service behaves. The gate is off by default because the
+    desktop client is not written to expect a 429, and serialising decodes without being asked
+    to would raise every latency in the product (defect D30 item 2).
+    """
+    if raw is None:
+        return None
+    value = int(raw)
+    return value if value > 0 else None
+
+
+def resolve_queue_wait_ms(raw):
+    """How long a caller may wait for a slot before being refused. Negative means zero.
+
+    The default is no waiting: a caller that is queued is still waiting on the other side of
+    its own timeout, which is the failure the gate exists to stop. Waiting is offered because
+    it is a real alternative and the choice needs measurement, not opinion.
+    """
+    if raw is None:
+        return 0.0
+    return max(0.0, float(raw) / 1000.0)
 
 
 def resolve_max_requests(raw):
@@ -825,11 +880,13 @@ def sanitize_output(text, target, source=""):
 # ---- HTTP service ----------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
-    def _send(self, code, obj):
+    def _send(self, code, obj, headers=None):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -1021,6 +1078,13 @@ class Handler(BaseHTTPRequestHandler):
         folded_source_lang, folded_target, echoes = self._fold_codes(
             str(req.get("source") or ""), str(req.get("target") or ""))
         started = time.perf_counter()
+        if not self.server.acquire_decode():
+            # Every slot is decoding. Answered rather than queued, and answered without
+            # charging the request budget: a refusal is a fact about this moment, not work
+            # that was done, and a caller retrying into a busy service must not be able to
+            # spend it out of existence (defect D30 item 2).
+            self._send_busy(time.perf_counter() - started)
+            return
         try:
             answers, failed_lines = self._translate_lines(
                 flat, folded_source_lang, folded_target, req.get("glossary"))
@@ -1038,6 +1102,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(503, self._mark_exit({"error": "backend_unavailable",
                                              "message": str(e)}, spent))
             return
+        finally:
+            self.server.release_decode()
         # Counted and sampled together only on this path: an error is fast, and
         # letting it into the percentile would report a healthy engine at the
         # exact moment the engine is failing.
@@ -1070,6 +1136,29 @@ class Handler(BaseHTTPRequestHandler):
                             % (len(failed_units), "entries" if as_array else "lines"))
         body.update(echoes)
         self._send(200, self._mark_exit(body, spent))
+
+    def _send_busy(self, waited_s):
+        """Tell a caller the engine is busy without pretending the request was served.
+
+        Three things this answer has to get right. It says *nothing was started*, so the
+        caller can retry cheaply instead of assuming a lost answer. It names how many decodes
+        hold the slots, so the mechanism behind item 004 (work nobody wants any more still
+        running) is visible from outside instead of inferred. And it carries a Retry-After taken
+        out of the service's own measured latency rather than a constant -- with no completed
+        decode yet there is nothing to read, so it says one second rather than invent a number,
+        and never zero, which would read as "hammer me".
+        """
+        report = self.server.signals.snapshot()
+        in_flight = report["decodes_in_flight"]
+        p50 = report["last_latency_p50"]
+        retry_after = max(1, int(math.ceil(p50))) if p50 else 1
+        body = {"error": "busy",
+                "decode_slots": self.server.decode_slots,
+                "decodes_in_flight": in_flight,
+                "waited_ms": round(waited_s * 1000.0, 1),
+                "note": "every decode slot is working on other text; nothing was started for "
+                        "this request, so retrying costs no translation work"}
+        self._send(429, body, {"Retry-After": str(retry_after)})
 
     def _mark_exit(self, body, spent_last_permit):
         """Announce a scheduled exit inside the answer that caused it.
@@ -1259,21 +1348,60 @@ class SidecarServer(ThreadingHTTPServer):
             threading.Thread(target=self.shutdown, daemon=True).start()
         return True
 
+    def acquire_decode(self):
+        """Take permission to start a decode; False means "someone else is already busy".
 
-def build_server(backend, host="127.0.0.1", port=0, max_requests=None):
+        With no gate the answer is always yes, and it is the *same code path* the service ran
+        before the gate existed -- the flag must not cost a caller anything it did not ask for.
+        With a gate, a caller may wait up to `queue_wait_s`; waiting past that is refused
+        rather than left hanging, because a queued caller is still sitting behind the timeout
+        of the request nobody wants any more (defect D30 item 2, external item 004).
+        """
+        if self.decode_gate is None:
+            self.signals.decode_started()
+            return True
+        if self.decode_gate.acquire(timeout=self.queue_wait_s):
+            self.signals.decode_started()
+            return True
+        return False
+
+    def release_decode(self):
+        """Give the slot back. Called from a finally block, so it must never raise."""
+        self.signals.decode_finished()
+        if self.decode_gate is None:
+            return
+        try:
+            self.decode_gate.release()
+        except ValueError:
+            # A BoundedSemaphore refuses an extra release. That would mean an unmatched
+            # acquire, which is a bug in this file -- but the slot is already accounted for in
+            # the tally, and raising from a finally would replace a correct answer with a
+            # broken connection.
+            pass
+
+
+def build_server(backend, host="127.0.0.1", port=0, max_requests=None,
+                 decode_slots=0, queue_wait_ms=0):
     srv = SidecarServer((host, port), Handler)
     srv.backend = backend
     srv.max_requests = resolve_max_requests(max_requests)
+    srv.decode_slots = resolve_decode_slots(decode_slots)
+    srv.queue_wait_s = resolve_queue_wait_ms(queue_wait_ms)
+    # None, not a wide semaphore: "off" has to be provably the old path, not a new path that
+    # happens to behave like the old one while a lock sits in it.
+    srv.decode_gate = (threading.BoundedSemaphore(srv.decode_slots)
+                       if srv.decode_slots else None)
     srv.signals = HealthSignals(max_requests=srv.max_requests)
     srv.exit_requested = False
     srv.exit_reason = None
     return srv
 
 
-def serve_in_thread(backend, host="127.0.0.1", port=0, max_requests=None):
+def serve_in_thread(backend, host="127.0.0.1", port=0, max_requests=None,
+                    decode_slots=0, queue_wait_ms=0):
     """Start the service on a background thread (for tests / embedding);
     returns (server, bound_port)."""
-    srv = build_server(backend, host, port, max_requests)
+    srv = build_server(backend, host, port, max_requests, decode_slots, queue_wait_ms)
     bound = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -1292,15 +1420,32 @@ def main():
                          "(0, the default, means unbounded); the request that spends the "
                          "budget is answered normally and carries shutting_down, so a batch "
                          "caller can relaunch on schedule rather than by taskkill")
+    ap.add_argument("--decode-slots", type=int, default=0,
+                    help="run at most this many decodes at once (0, the default, means no "
+                         "limit). Measured reason: a request whose caller timed out keeps "
+                         "decoding, and each one still running slows the work that is wanted "
+                         "(up to 4.61x at five in flight, defect D30 item 2). Overflow is "
+                         "refused with 429 busy rather than queued, and refuses fast so a "
+                         "caller that already gave up does not wait for the decode it gave up "
+                         "on")
+    ap.add_argument("--queue-wait-ms", type=int, default=0,
+                    help="with --decode-slots, how long a caller may wait for a slot before "
+                         "being refused (0, the default, refuses immediately)")
     args = ap.parse_args()
 
     if args.port is None:
         args.port = DEFAULT_MADLAD_PORT if args.backend == "madlad" else DEFAULT_ARGOS_PORT
     backend = make_backend(args.backend, args.model_dir)
-    srv = build_server(backend, args.host, args.port, max_requests=args.max_requests)
+    srv = build_server(backend, args.host, args.port, max_requests=args.max_requests,
+                       decode_slots=args.decode_slots, queue_wait_ms=args.queue_wait_ms)
     budget = "unbounded" if srv.max_requests is None else "{} requests".format(srv.max_requests)
-    print("sidecar[{}] listening on http://{}:{}/translate (budget: {})"
-          .format(backend.name, args.host, args.port, budget))
+    # Spelled out the same way the budget is: an operator who starts a service with a gate has
+    # to be able to see it in the log, and one who did not must see that it is off rather than
+    # wonder which of the two they are looking at.
+    gate = ("no limit" if srv.decode_slots is None else
+            "{0} slot(s), waiting {1:.0f} ms".format(srv.decode_slots, srv.queue_wait_s * 1000.0))
+    print("sidecar[{0}] listening on http://{1}:{2}/translate (budget: {3}; decodes: {4})"
+          .format(backend.name, args.host, args.port, budget, gate))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

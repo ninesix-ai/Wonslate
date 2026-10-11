@@ -1936,5 +1936,258 @@ class RealMadladReloadTests(unittest.TestCase):
         self.assertTrue(self.backend.readiness()["ready"])
 
 
+# ---- Concurrent-decode gate (defect D30 item 2) -----------------------------
+
+class _GatedBackend:
+    """A backend whose decode the test can hold open.
+
+    A gate is only observable if a decode is provably still running when the next request
+    arrives. Blocking on an event the test controls is what makes that checkable: sleeping
+    would turn the suite into a bet on how fast the machine happens to be, which is how the
+    "flat on a busy host" mistake in the batch probe was made.
+    """
+
+    name = "gated"
+
+    def __init__(self, fail=False):
+        self.entered = threading.Semaphore(0)
+        self.release = threading.Event()
+        self.fail = fail
+        self._lock = threading.Lock()
+        self.live = 0
+        self.peak = 0
+        self.calls = 0
+
+    def wait_for_entry(self, count=1):
+        """Block until `count` decodes have actually started (never guess a schedule)."""
+        for _ in range(count):
+            self.entered.acquire(timeout=30)
+
+    def translate(self, text, source, target, glossary=None):
+        with self._lock:
+            self.calls += 1
+            self.live += 1
+            self.peak = max(self.peak, self.live)
+        self.entered.release()
+        self.release.wait(30)
+        with self._lock:
+            self.live -= 1
+        if self.fail:
+            raise ct2_sidecar.MissingDependency("model went away")
+        return "ok: {0}".format(target)
+
+    def readiness(self):
+        return {"ready": True, "reason": None, "loaded": ["gated"]}
+
+
+class DecodeGateTests(unittest.TestCase):
+    """Bound the number of decodes running at once, and say so instead of queueing.
+
+    Measured cause (D30 item 2, `docs/tech/16`): a request whose caller timed out keeps
+    decoding -- 73% of a full decode is still spent after the caller is gone -- and every
+    one of those abandoned decodes slows the work that is still wanted, up to 4.61x at five
+    in flight. That is the positive feedback item 004 reported as a ladder; "restart per
+    language" only worked because it killed the in-flight decodes with the process.
+
+    Choosing the limit needs measurements, so the gate ships switchable and OFF by default:
+    an unrequested serialisation would change latency for every existing caller, and the
+    desktop client is not built to expect a 429. Overflow is refused rather than queued by
+    default because a queued caller is still waiting on the other side of its own timeout --
+    which is the exact failure this gate exists to stop.
+    """
+
+    def setUp(self):
+        self.servers = []
+
+    def tearDown(self):
+        for srv in self.servers:
+            srv.shutdown()
+            srv.server_close()
+
+    def _serve(self, backend, decode_slots=0, queue_wait_ms=0, max_requests=None):
+        srv, port = ct2_sidecar.serve_in_thread(backend, host="127.0.0.1", port=0,
+                                               max_requests=max_requests,
+                                               decode_slots=decode_slots,
+                                               queue_wait_ms=queue_wait_ms)
+        self.servers.append(srv)
+        return srv, port
+
+    def _post(self, port, text="hello", timeout=20):
+        started = time.monotonic()
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+        try:
+            conn.request("POST", "/translate", json.dumps(
+                {"text": text, "source": "en", "target": "zh"}),
+                headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            body = json.loads(resp.read().decode("utf-8"))
+            headers = dict(resp.getheaders())
+        finally:
+            conn.close()
+        return resp.status, body, headers, time.monotonic() - started
+
+    def _health(self, port):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("GET", "/health")
+            resp = conn.getresponse()
+            return json.loads(resp.read().decode("utf-8"))
+        finally:
+            conn.close()
+
+    def test_no_gate_is_the_default_and_overlapping_decodes_both_run(self):
+        backend = _GatedBackend()
+        _srv, port = self._serve(backend)
+        done = {}
+        first = threading.Thread(target=lambda: done.setdefault("a", self._post(port)))
+        first.start()
+        backend.wait_for_entry()
+        second = threading.Thread(target=lambda: done.setdefault("b", self._post(port)))
+        second.start()
+        backend.wait_for_entry(1)          # the second decode really started too
+        backend.release.set()
+        first.join(timeout=30)
+        second.join(timeout=30)
+        self.assertEqual(2, backend.peak,
+                         "without a gate the service must still run decodes concurrently")
+        self.assertEqual([200, 200], [done["a"][0], done["b"][0]])
+
+    def test_one_slot_turns_the_second_caller_away_while_the_first_decodes(self):
+        backend = _GatedBackend()
+        _srv, port = self._serve(backend, decode_slots=1)
+        results = {}
+        held = threading.Thread(target=lambda: results.setdefault("slow", self._post(port)))
+        held.start()
+        backend.wait_for_entry()
+        status, body, headers, seconds = self._post(port)
+        # The rejection came back while the first decode is still blocked -- a caller that
+        # timed out must not have to wait out the work it already gave up on.
+        self.assertEqual(1, backend.live,
+                         "the rejection arrived after the held decode finished, so it waited")
+        self.assertEqual(429, status, body)
+        self.assertEqual("busy", body["error"])
+        self.assertEqual(1, body["decode_slots"])
+        self.assertEqual(1, body["decodes_in_flight"],
+                         "the answer has to name what is holding the engine")
+        self.assertIn("Retry-After", headers,
+                      "a rejection without a retry hint teaches callers to hammer")
+        self.assertLess(seconds, 5.0, "busy must be answered fast, not after a queue: %.2fs" % seconds)
+        self.assertNotIn("text", body, "a refused request must not look like an empty translation")
+        backend.release.set()
+        held.join(timeout=30)
+        self.assertEqual(200, results["slow"][0], results["slow"][1])
+
+    def test_two_slots_run_two_decodes_and_refuse_the_third(self):
+        backend = _GatedBackend()
+        _srv, port = self._serve(backend, decode_slots=2)
+        results = {}
+        threads = [threading.Thread(target=lambda i=i: results.setdefault(
+            i, self._post(port, "sentence %d" % i))) for i in (0, 1)]
+        for t in threads:
+            t.start()
+        backend.wait_for_entry(2)
+        # The third is asked from the main thread: both slots are provably held already, so a
+        # refusal must come back at once. Waiting for it to "enter" a decode would be waiting
+        # for something the gate is designed to prevent -- which is exactly how a first draft of
+        # this test hung for 30 s and then reported a timeout as if it were the product's.
+        results[2] = self._post(port, "third")
+        self.assertEqual(429, results[2][0], results[2][1])
+        self.assertEqual(2, results[2][1]["decodes_in_flight"])
+        self.assertEqual(2, backend.peak, "two slots must allow two decodes, not one")
+        backend.release.set()
+        for t in threads:
+            t.join(timeout=30)
+        self.assertEqual([200, 200], [results[0][0], results[1][0]],
+                         "a held decode ended badly: %r %r" % (results[0][1], results[1][1]))
+
+    def test_a_waiting_caller_gets_served_when_a_slot_opens(self):
+        backend = _GatedBackend()
+        _srv, port = self._serve(backend, decode_slots=1, queue_wait_ms=10000)
+        results = {}
+        held = threading.Thread(target=lambda: results.setdefault("slow", self._post(port)))
+        held.start()
+        backend.wait_for_entry()
+        waiter = threading.Thread(target=lambda: results.setdefault("wait", self._post(port)))
+        waiter.start()
+        # Free the slot rather than wait for the waiter to be refused: whether it had already
+        # reached the gate or reaches it a moment later, either way it must be served, and the
+        # peak below is what proves it never decoded alongside the first.
+        backend.release.set()
+        held.join(timeout=30)
+        waiter.join(timeout=30)
+        self.assertEqual(200, results["wait"][0],
+                         "a queueing caller was asked to give up too early: %r" % results["wait"][1])
+        self.assertEqual(1, backend.peak,
+                         "a one-slot gate let two decodes run at once (peak %d)" % backend.peak)
+
+    def test_a_decode_that_fails_gives_its_slot_back(self):
+        # A leaked permit would be the worst kind of regression here: the service would look
+        # healthy on /health and refuse everything forever after one broken model.
+        backend = _GatedBackend(fail=True)
+        _srv, port = self._serve(backend, decode_slots=1)
+        results = {}
+        held = threading.Thread(target=lambda: results.setdefault("bad", self._post(port)))
+        held.start()
+        backend.wait_for_entry()
+        backend.release.set()
+        held.join(timeout=30)
+        self.assertEqual(503, results["bad"][0], results["bad"][1])
+        ok = _GatedBackend()
+        ok.release.set()
+        _srv.backend = ok
+        status, body, _headers, _t = self._post(port)
+        self.assertEqual(200, status, "the slot was not returned after a failure: %r" % body)
+
+    def test_a_busy_rejection_does_not_spend_the_request_budget(self):
+        # The budget exists to retire a degrading process. Charging it for work that never
+        # happened would let a busy service exit while still healthy -- and a caller retrying
+        # into it would be killing the engine it is waiting for.
+        backend = _GatedBackend()
+        _srv, port = self._serve(backend, decode_slots=1, max_requests=2)
+        results = {}
+        held = threading.Thread(target=lambda: results.setdefault("slow", self._post(port)))
+        held.start()
+        backend.wait_for_entry()
+        # The held decode has not finished, so nothing is charged yet; the number to compare a
+        # refusal against is the one beside it, not a guess about when the first gets counted.
+        before = self._health(port)["requests_served"]
+        status, _body, _h, _t = self._post(port)
+        self.assertEqual(429, status)
+        self.assertEqual(before, self._health(port)["requests_served"],
+                         "a refusal was counted as a served request")
+        self.assertFalse(_srv.exit_requested, "a busy answer must not retire a healthy process")
+        backend.release.set()
+        held.join(timeout=30)
+        self.assertEqual(200, results["slow"][0], results["slow"][1])
+        self.assertEqual(before + 1, self._health(port)["requests_served"],
+                         "the decode that did run should be the only one charged")
+
+    def test_zero_slots_means_no_gate_not_a_service_that_serves_nothing(self):
+        # Same shape as the budget rule: a flag left at its default, or set to a nonsense
+        # value, must never quietly change how a working service behaves.
+        self.assertIsNone(ct2_sidecar.resolve_decode_slots(0))
+        self.assertIsNone(ct2_sidecar.resolve_decode_slots(None))
+        self.assertIsNone(ct2_sidecar.resolve_decode_slots(-3))
+        self.assertEqual(2, ct2_sidecar.resolve_decode_slots(2))
+        self.assertEqual(0.0, ct2_sidecar.resolve_queue_wait_ms(None))
+        self.assertEqual(0.0, ct2_sidecar.resolve_queue_wait_ms(-1))
+        self.assertEqual(2.5, ct2_sidecar.resolve_queue_wait_ms(2500))
+
+    def test_in_flight_is_measured_and_never_invented(self):
+        backend = _GatedBackend()
+        _srv, port = self._serve(backend)          # gate off: the count still has to be true
+        self.assertEqual(0, self._health(port)["decodes_in_flight"])
+        results = {}
+        held = threading.Thread(target=lambda: results.setdefault("slow", self._post(port)))
+        held.start()
+        backend.wait_for_entry()
+        self.assertEqual(1, self._health(port)["decodes_in_flight"],
+                         "/health must show the decode that is running right now")
+        backend.release.set()
+        held.join(timeout=30)
+        self.assertEqual(0, self._health(port)["decodes_in_flight"],
+                         "the count leaked after the decode ended")
+
+
 if __name__ == "__main__":
     unittest.main()
