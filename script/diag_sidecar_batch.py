@@ -27,10 +27,17 @@ Run from the repository root. Five modes, one variable each:
           how many translators a cold burst builds. Answers "was the reported
           slowdown a duplicated 2.95 GB checkpoint?" No real model is loaded, so
           it is fast and deterministic.
+  abandon call with a deadline shorter than one decode, then watch what the service
+          still spends after the caller has gone, whether that still-running work
+          slows the requests that are still wanted, and what the abandoned handlers
+          leave behind (defect D30 item 2 -- the half of item 004 nobody has
+          measured). Needs a real backend; on mock a decode is milliseconds and the
+          ratios would be noise.
 
 Nothing here runs in CI: `load` and `reload` now state a verdict against the retention
 line (exit code 0 or 1), but they need a real model and tens of minutes, so the verdict
-is for whoever is deciding a release, not for a gate. `rotate`, `hard` and `race` only
+is for whoever is deciding a release, not for a gate. `rotate`, `hard`, `abandon` and
+`race` only
 measure. Numbers printed by `load`, `rotate` and `reload` are environment-dependent by
 design -- the ledger's counting rule keeps a runtime-precondition column for exactly that
 reason (REQ-F3), and the environment a verdict was reached in belongs with the verdict.
@@ -47,6 +54,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -508,6 +516,190 @@ def run_reload(args):
         srv.server_close()
 
 
+def run_abandon(args):
+    """What a request nobody is waiting for still costs, and who else it costs it on.
+
+    D30 item 2 is the part of item 004 nobody has measured yet: a client that times out has
+    not stopped the work. `ThreadingHTTPServer` gives every connection its own thread, and
+    ctranslate2's decode call is C++ with no Python-visible way to interrupt it, so the
+    handler runs to completion and then discovers the caller is gone. This measures three
+    things a design decision needs: how much is spent after the caller leaves, whether that
+    overlapping work slows the requests that are still wanted, and whether the abandoned
+    handlers leave anything behind.
+
+    Needs a real backend. On mock the whole decode is milliseconds, so the numbers would be
+    a measurement of scheduling noise -- and a number that looks like a measurement but is
+    not one is the thing this file keeps having to protect against.
+    """
+    if args.backend == "mock":
+        # Before building anything: refusing a mode is no reason to load a checkpoint.
+        print("  abandon measures a decode that takes seconds; on mock it takes milliseconds,"
+              " so the ratios would be noise. Run --backend madlad or --backend ct2.")
+        return 1
+    inner = ct2_sidecar.make_backend(args.backend)
+
+    class _Timestamped:
+        """Records what each decode was, and when it actually started and finished."""
+
+        def __init__(self, wrapped):
+            self._inner = wrapped
+            self._lock = threading.Lock()
+            self.spans = []
+            self.errors = []
+
+        def translate(self, text, source, target, glossary=None):
+            started = time.perf_counter()
+            try:
+                out = self._inner.translate(text, source, target, glossary)
+            except BaseException as exc:          # noqa: BLE001 - recorded, then re-raised
+                with self._lock:
+                    self.errors.append(type(exc).__name__)
+                raise
+            with self._lock:
+                self.spans.append((text[:24], started, time.perf_counter()))
+            return out
+
+        def finished_of(self, key, at_least):
+            """The end clock-reading of the newest decode of this sentence, or None.
+
+            Matched by sentence rather than taking the last entry: several handlers can be
+            decoding at once, so "the newest span" belongs to whichever finished first, not to
+            the call this loop is asking about.
+            """
+            with self._lock:
+                hits = [s for s in self.spans if s[0] == key]
+            if len(hits) < at_least:
+                return None
+            return hits[-1][1], hits[-1][2], len(hits)
+
+        def __getattr__(self, name):        # the rest of the duck-typed backend contract
+            return getattr(self._inner, name)
+
+    backend = _Timestamped(inner)
+    srv, port = serve_in_thread(backend)
+
+    def call(timeout, sentence):
+        """One request with a caller-side deadline.
+
+        Returns (gave_up, seconds_spent_waiting, moment_the_caller_left_as_a_clock_reading).
+        The last one is an absolute reading on purpose: a duration and a clock reading are not
+        the same kind of number, and subtracting one from the other produced "908850 s still
+        spent" on the first run of this probe -- a figure absurd enough to be caught by eye,
+        which is exactly why the units are named in the signature.
+        """
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+        started = time.perf_counter()
+        try:
+            conn.request("POST", "/translate",
+                         json.dumps({"text": sentence, "source": args.src, "target": args.tgt}),
+                         headers={"Content-Type": "application/json"})
+            conn.getresponse().read()
+            return False, time.perf_counter() - started, time.perf_counter()
+        except OSError:
+            # The caller is gone at this instant; the service may still be working.
+            return True, time.perf_counter() - started, time.perf_counter()
+        finally:
+            conn.close()
+
+    sentences = corpus_lines(args.corpus) or [args.text]
+    try:
+        print("  warm-up (also loads the checkpoint)")
+        gave_up, warm_t, _left = call(600.0, sentences[0])
+        print("  first call %.2fs, gave up=%s" % (warm_t, gave_up))
+
+        base = []
+        base_gave_up = 0
+        for i in range(args.per):
+            gave_up, took, _left = call(600.0, sentences[i % len(sentences)])
+            base_gave_up += 1 if gave_up else 0
+            base.append(took)
+        quiet = statistics.mean(base)
+        print("\n  baseline: %d patient calls, mean %.2fs, gave up on %d"
+              % (len(base), quiet, base_gave_up))
+        if base_gave_up:
+            # A baseline containing abandoned calls is not a baseline: every ratio below would
+            # be computed against a number that already includes the thing being measured.
+            print("  the baseline itself timed out, so these ratios mean nothing; raise"
+                  " --timeout or run on a quieter machine")
+            return 1
+
+        # The waste: give up mid-decode and watch what the service still spends.
+        print("\n  abandoning %d calls at a %.2fs deadline (a decode costs ~%.1fs)"
+              % (args.n, args.timeout, quiet))
+        wasted = []
+        decode_times = []
+        for i in range(args.n):
+            sentence = sentences[i % len(sentences)]
+            key = sentence[:24]
+            seen = len([s for s in backend.spans if s[0] == key])
+            gave_up, took, left = call(args.timeout, sentence)
+            if not gave_up:
+                print("    call %d answered within the deadline; lower --timeout to abandon"
+                      % (i + 1))
+                continue
+            deadline = time.perf_counter() + 600.0
+            span = None
+            while time.perf_counter() < deadline:
+                span = backend.finished_of(key, seen + 1)
+                if span:
+                    break
+                time.sleep(0.05)
+            if not span:
+                print("    call %d never finished inside 600 s -- that is itself the finding"
+                      % (i + 1))
+                continue
+            started, finished = span[0], span[1]
+            spent_after = finished - left          # both are clock readings, not durations
+            wasted.append(max(0.0, spent_after))
+            decode_times.append(finished - started)
+            print("    abandoned call %d: caller left at %.2fs, service decoded %.2fs in total"
+                  " and kept going %.2fs after the caller was gone"
+                  % (i + 1, took, finished - started, max(0.0, spent_after)))
+
+        # Does work nobody wants slow the work somebody does? Measured as a dose-response
+        # curve with a k=0 control, because a single reading of "the next call was slower" is
+        # an anecdote -- this repo has already been burned once by treating one observation as
+        # a reproducible effect. Same run, same machine, same baseline: only k changes.
+        print("\n  interference: how much does work still in flight slow the calls that are")
+        print("    wanted? k = abandoned calls launched just before a group of patient ones")
+        curve = []
+        for k in sorted({0, 1, 2, min(4, max(1, args.burst)), max(4, args.burst)}):
+            for i in range(k):
+                call(args.timeout, sentences[(i + 11) % len(sentences)])
+            group = []
+            for i in range(args.per):
+                gave_up, took, _l = call(600.0, sentences[(i + 23 + k) % len(sentences)])
+                group.append(took)
+            mean = statistics.mean(group)
+            worst = max(group)
+            curve.append((k, mean, worst))
+            print("    k=%-2d mean=%5.2fs worst=%5.2fs  ratio mean=%.2f worst=%.2f%s"
+                  % (k, mean, worst, mean / quiet, worst / quiet,
+                     "   <-- past the line" if mean > quiet * RETENTION_LIMIT else ""))
+
+        if len(curve) > 1:
+            first, last = curve[0], curve[-1]
+            print("  dose response: k=%d mean %.2fs -> k=%d mean %.2fs (%.2fx the control)"
+                  % (first[0], first[1], last[0], last[1],
+                     last[1] / first[1] if first[1] else 0.0))
+
+        rss, th, hd = sample()
+        print("\n  after the run: rss=%s threads=%s handles=%s; handler errors recorded=%s"
+              % (mem(rss), fmt(th), fmt(hd), sorted(set(backend.errors)) or "none"))
+        if wasted:
+            print("  compute spent on callers who had left: mean %.2fs of the %.2fs decode,"
+                  " i.e. %.0f%% of a translation thrown away per abandoned call"
+                  % (statistics.mean(wasted), statistics.mean(decode_times),
+                     100.0 * statistics.mean(wasted) / statistics.mean(decode_times)))
+        print("  note: a handler that finished writing to a closed socket is the normal end"
+              " state here -- the decode is C++ and has no Python-visible interrupt, so the"
+              " disconnect only becomes visible afterwards.")
+        return 0
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
 class _Result:
     """A ctranslate2 batch result: this path only reads .hypotheses[0]."""
 
@@ -649,7 +841,7 @@ def run_race(args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("mode", choices=["load", "rotate", "hard", "reload", "race"])
+    ap.add_argument("mode", choices=["load", "rotate", "hard", "reload", "race", "abandon"])
     ap.add_argument("--backend", default="madlad", choices=["mock", "ct2", "madlad"])
     ap.add_argument("--text", default=SENTENCE)
     ap.add_argument("--src", default="en")
@@ -668,12 +860,16 @@ def main():
     ap.add_argument("--out-json", default=None,
                     help="write every per-request record here, so a verdict can be re-checked"
                          " rather than trusted")
+    ap.add_argument("--timeout", type=float, default=1.0,
+                    help="abandon: caller-side deadline shorter than one decode, so the"
+                         " client gives up while the service is still working")
     args = ap.parse_args()
     args.started_at = time.time()          # stamped here so a record says when the run began
     # A verdict, not just a printout: a caller scripting a release decision needs an exit code
     # to branch on, and modes that only measure return None, which becomes 0.
     sys.exit({"load": run_load, "rotate": run_rotate, "hard": run_hard,
-              "reload": run_reload, "race": run_race}[args.mode](args) or 0)
+              "reload": run_reload, "race": run_race, "abandon": run_abandon}[args.mode](args)
+              or 0)
 
 
 if __name__ == "__main__":
