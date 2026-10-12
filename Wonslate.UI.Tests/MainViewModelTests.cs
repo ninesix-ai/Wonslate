@@ -355,18 +355,37 @@ public class MainViewModelTests
     }
 
     [Fact]
-    public void GlossaryDeleteGuard_RefusesARowTheEngineCannotAim()
+    public void GlossaryDeleteKey_CarriesTheSelectedRowsOwnDomain()
     {
-        // D50: the delete key has no domain segment. With a generic twin of the same term
-        // present, sending the click would remove the OTHER row, so the UI must refuse.
+        // The regression this pins is invisible to the compiler: dropping the last argument at
+        // the call site still builds, and the delete then lands on the generic row of the same
+        // term -- which is exactly the D50 bug, just moved from the engine into the client.
+        var domainRow = new GlossaryEntryDto("音色", "zh", "speaker timbre", "en", 1.0f, 1, "av", "seed:av", null);
+
+        Assert.Equal(new[] { "音色", "zh", "en", "av" }, MainViewModel.GlossaryDeleteKey(domainRow));
+
+        var genericRow = new GlossaryEntryDto("音色", "zh", "speaker timbre", "en", 1.0f, 1, "", "manual", null);
+        Assert.Equal(new[] { "音色", "zh", "en", "" }, MainViewModel.GlossaryDeleteKey(genericRow));
+    }
+
+    [Fact]
+    public void GlossaryDeleteMessage_NamesTheRowItCouldNotFind()
+    {
+        // D50 closed the "cannot aim at a domain row" gap, so a refusal now means "that row
+        // is not in the store" -- and the message has to say WHICH row it tried, because a
+        // term can exist twice (generic and domain) and the two are different rows.
         var domainRow = new GlossaryEntryDto("音色", "zh", "speaker timbre", "en", 1.0f, 1, "av", "seed:av", null);
         var genericRow = new GlossaryEntryDto("音色", "zh", "speaker timbre", "en", 1.0f, 1, "", "manual", null);
+        var notRemoved = new AckDto(true, null, null, null, false);
 
-        var refusal = MainViewModel.GlossaryDeleteGuard(domainRow);
-        Assert.NotNull(refusal);
-        Assert.Contains("av", refusal);
-        Assert.DoesNotContain("已删除", refusal);
-        Assert.Null(MainViewModel.GlossaryDeleteGuard(genericRow));
+        var dm = MainViewModel.GlossaryDeleteMessage(notRemoved, domainRow);
+        Assert.Contains("av", dm);
+        Assert.Contains("领域行", dm);
+        Assert.DoesNotContain("已删除", dm);
+
+        var gm = MainViewModel.GlossaryDeleteMessage(notRemoved, genericRow);
+        Assert.Contains("通用行", gm);
+        Assert.DoesNotContain("领域行", gm);
     }
 
     [Fact]

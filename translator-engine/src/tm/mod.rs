@@ -178,14 +178,25 @@ pub fn glossary_records(
         .glossary_records(source_lang, target_lang, domain, limit)
 }
 
-/// `true` when a row was actually removed. The UI's delete has no domain argument, so a
-/// domain-scoped row survives it -- which the caller must be told, not shown a success.
+/// `true` when a row was actually removed. The three-argument form addresses the generic
+/// row only, so a domain-scoped row survives it -- which the caller must be told.
 pub fn glossary_delete(
     source_term: &str,
     source_lang: &str,
     target_lang: &str,
 ) -> Result<bool, EngineError> {
+    glossary_delete_with_domain(source_term, source_lang, target_lang, "")
+}
+
+/// The domain-aware form (D50): the primary key includes the domain, so this is the only
+/// way to remove a row that lives inside a seed-pack domain.
+pub fn glossary_delete_with_domain(
+    source_term: &str,
+    source_lang: &str,
+    target_lang: &str,
+    domain: &str,
+) -> Result<bool, EngineError> {
     TmStore::instance()
         .ok_or_else(|| EngineError::TmError("not initialized".into()))?
-        .glossary_delete(source_term, source_lang, target_lang)
+        .glossary_delete(source_term, source_lang, target_lang, domain)
 }

@@ -272,6 +272,55 @@ fn a_keyless_delete_reaches_the_generic_twin_and_leaves_the_domain_row() {
         "and the row the user actually selected is the one still there (D50)");
 }
 
+/// D50's fix, half one: the domain is part of the primary key, so addressing it must remove
+/// the row the caller named and leave the generic twin of the same term alone.
+#[test]
+fn deleting_with_a_domain_reaches_that_row_and_not_the_generic_twin() {
+    ensure_init();
+    tm::glossary_upsert(&with_target(row("aimme", 1.0, "", "distill"), "generic twin")).unwrap();
+    import(&pack("aim", &[("aimme", "domain row", None)]));
+
+    let removed = tm::glossary_delete_with_domain("aimme", "uzh", "uen", "aim").unwrap();
+
+    assert!(removed, "the domain-scoped row must be reachable by its own key");
+    // A scoped read returns generic UNION domain rows, so "the term is still listed" cannot
+    // be the test -- the generic twin is supposed to be there. Discriminate on the row's own
+    // domain segment instead, which is the thing the delete key names.
+    let left: Vec<(String, String)> = tm::glossary_records("uzh", "uen", "aim", 200).unwrap()
+        .iter().filter(|r| r.entry().source_term == "aimme")
+        .map(|r| (r.entry().target_term.clone(), r.entry().domain.clone())).collect();
+    assert!(!left.iter().any(|(_, d)| d == "aim"),
+        "the `aim` row must be gone, got {:?}", left);
+    assert_eq!(vec![("generic twin".to_string(), String::new())], left,
+        "and the generic twin the caller did not name must be the only survivor");
+}
+
+/// D50's fix, half two: a domain that holds no such row removes nothing and says so -- the
+/// same "do not report a write that did not happen" rule the machine path reports through.
+#[test]
+fn deleting_with_an_unmatched_domain_reports_no_removal() {
+    ensure_init();
+    tm::glossary_upsert(&with_target(row("lonely", 1.0, "", "distill"), "generic only")).unwrap();
+
+    assert!(!tm::glossary_delete_with_domain("lonely", "uzh", "uen", "nosuch").unwrap(),
+        "there is no `nosuch` row, so nothing may be reported as removed");
+    assert!(tm::glossary_records("uzh", "uen", "", 200).unwrap().iter()
+            .any(|r| r.entry().source_term == "lonely"),
+        "and the generic row must survive an attempt aimed at another domain");
+}
+
+/// Guard: the empty-domain form must keep addressing the generic row, so the new export is
+/// a superset rather than a change of meaning for existing callers.
+#[test]
+fn an_empty_domain_is_the_generic_form() {
+    ensure_init();
+    tm::glossary_upsert(&with_target(row("eqform", 1.0, "", "distill"), "generic value")).unwrap();
+
+    assert!(tm::glossary_delete_with_domain("eqform", "uzh", "uen", "").unwrap(),
+        "domain=\"\" must reach the generic row exactly like the three-argument export");
+    assert!(!tm::glossary_delete("eqform", "uzh", "uen").unwrap(), "and it is gone for both");
+}
+
 // ---- the machine rule stays the machine rule -----------------------------------------
 
 /// Guard against over-correction: none of the above may relax the rule that keeps a

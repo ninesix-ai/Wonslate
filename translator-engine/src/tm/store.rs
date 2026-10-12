@@ -431,14 +431,18 @@ impl TmStore {
         Ok(GlManual { user_locked })
     }
 
+    /// Remove one glossary row. The `domain` is part of the primary key, so an empty
+    /// string addresses the generic row and `"av"` addresses that domain's row.
+    /// `false` means no row matched that exact key -- reported rather than a bare success.
+    ///
+    /// D50: before this, the key was always built with an empty domain, so a seed-pack row
+    /// could be listed (S11 made listings domain-aware) but never removed, and a delete that
+    /// named a term present in both shapes removed the *generic* one -- the wrong row, with no
+    /// error to see. Measured on the released binary before the fix.
     pub fn glossary_delete(
-        &self, source_term: &str, source_lang: &str, target_lang: &str,
+        &self, source_term: &str, source_lang: &str, target_lang: &str, domain: &str,
     ) -> Result<bool, EngineError> {
-        // S11: the UI delete removes the *generic* row only. Removing a specific
-        // domain row goes through a follow-up task (S11 successor) once the UI
-        // exposes a domain filter per row; widening this signature now would
-        // ripple through the FFI for no user-visible gain.
-        let key = gl_key(source_term, source_lang, target_lang, "");
+        let key = gl_key(source_term, source_lang, target_lang, domain);
         let removed = {
             let mut idx = self.gl_index.write()
                 .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;

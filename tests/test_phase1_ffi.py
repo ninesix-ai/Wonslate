@@ -141,6 +141,10 @@ class Engine:
         self.lib.tt_glossary_upsert.restype = ctypes.c_void_p
         self.lib.tt_glossary_delete.argtypes = [ctypes.c_char_p] * 3
         self.lib.tt_glossary_delete.restype = ctypes.c_void_p
+        # D50: the domain-aware delete. It is the 19th export, so the census below requires
+        # this file to actually call it -- declaring argtypes is not a call.
+        self.lib.tt_glossary_delete_with_domain.argtypes = [ctypes.c_char_p] * 4
+        self.lib.tt_glossary_delete_with_domain.restype = ctypes.c_void_p
         self.lib.tt_config_json.argtypes = []
         self.lib.tt_config_json.restype = ctypes.c_void_p
         self.lib.tt_engines.argtypes = []
@@ -149,7 +153,7 @@ class Engine:
         self.lib.tt_health.restype = ctypes.c_void_p
         # S11's two newest exports. They had a .NET caller and a dedicated loader
         # suite, so nothing shipped broken -- but this file is the one the CI job
-        # names as the FFI smoke test while reaching 16 of the 18 exports.
+        # names as the FFI smoke test while reaching every export it declares.
         self.lib.tt_glossary_list_with_domain.argtypes = [
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
         self.lib.tt_glossary_list_with_domain.restype = ctypes.c_void_p
@@ -227,6 +231,11 @@ class Engine:
     def glossary_delete(self, term: str, src: str, tgt: str) -> dict:
         return json.loads(self._take(self.lib.tt_glossary_delete(
             term.encode("utf-8"), src.encode("utf-8"), tgt.encode("utf-8")
+        )) or "{}")
+
+    def glossary_delete_with_domain(self, term: str, src: str, tgt: str, domain: str) -> dict:
+        return json.loads(self._take(self.lib.tt_glossary_delete_with_domain(
+            term.encode("utf-8"), src.encode("utf-8"), tgt.encode("utf-8"), domain.encode("utf-8")
         )) or "{}")
 
     def engines(self) -> list:
@@ -535,6 +544,29 @@ def test_user_edit_lands_and_the_acks_say_what_happened(eng: Engine, ck: Checker
         ck.fail("the refused delete must leave the row in place", "domain row vanished")
         return
     ck.ok("the refused delete left the locked row exactly where it was")
+
+    # D50's own export: the domain is part of the primary key, so this is the only way to
+    # remove a seed-pack row. The generic term must survive it -- that is the whole point.
+    aimed = eng.glossary_delete_with_domain(domain_term, src, tgt, domain)
+    if aimed.get("ok") is not True or aimed.get("removed") is not True:
+        ck.fail("deleting a domain row through its own key", f"ack={aimed}")
+        return
+    if listed(domain, domain_term):
+        ck.fail("the domain row must be gone after a keyed delete",
+                f"listed={listed(domain, domain_term)}")
+        return
+    survivors = listed("")
+    if not survivors or survivors[0].get("target_term") != "SECOND":
+        ck.fail("a keyed delete must not touch the generic row of another name",
+                f"listed={survivors}")
+        return
+    ck.ok("the 19th export removes exactly the row its key names, and no other")
+
+    miss = eng.glossary_delete_with_domain("ffi49neverwritten", src, tgt, domain)
+    if miss.get("ok") is not True or miss.get("removed") is not False:
+        ck.fail("deleting a key nobody wrote must report removed=false", f"ack={miss}")
+        return
+    ck.ok("an unmatched domain key is refused with removed=false")
 
 
 def test_malformed_glossary_payload_is_structured(eng: Engine, ck: Checker):

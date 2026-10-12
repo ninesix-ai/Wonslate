@@ -319,19 +319,50 @@ pub extern "C" fn tt_glossary_upsert(entry_json: *const c_char) -> *mut c_char {
 }
 
 /// Delete one glossary term by its (source_term, source_lang, target_lang) key.
-/// The key has no domain segment, so a domain-scoped row is not removable this way
-/// (S11 successor); the ack then says `removed: false` rather than a bare success.
+///
+/// That key addresses the **generic** row only. New callers should use
+/// `tt_glossary_delete_with_domain`; this one is kept because the export surface is a frozen
+/// contract ("add only, never change or remove within a major version") and widening its arity
+/// in place would be silently wrong for embedders compiled against it -- measured: a call that
+/// omits the new parameter still returns a plausible answer, it just aims at another row.
+/// The ack says `removed: false` when no row matched, rather than a bare success.
 #[no_mangle]
 pub extern "C" fn tt_glossary_delete(
     source_term: *const c_char,
     source_lang: *const c_char,
     target_lang: *const c_char,
 ) -> *mut c_char {
+    delete_impl(source_term, source_lang, target_lang, None)
+}
+
+/// D50: delete one glossary row by its full primary key, which includes the domain. The
+/// listing has been domain-scoped since S11 (`tt_glossary_list_with_domain`), so a row that
+/// came from a seed pack could be seen but not removed; this is the symmetric entry point.
+/// An empty `domain` is exactly `tt_glossary_delete`.
+#[no_mangle]
+pub extern "C" fn tt_glossary_delete_with_domain(
+    source_term: *const c_char,
+    source_lang: *const c_char,
+    target_lang: *const c_char,
+    domain: *const c_char,
+) -> *mut c_char {
+    let d = unsafe { read_cstr(domain) }.unwrap_or_default();
+    delete_impl(source_term, source_lang, target_lang, Some(d))
+}
+
+fn delete_impl(
+    source_term: *const c_char, source_lang: *const c_char, target_lang: *const c_char,
+    domain: Option<String>,
+) -> *mut c_char {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let term = unsafe { read_cstr(source_term) }.unwrap_or_default();
         let s = unsafe { read_cstr(source_lang) }.unwrap_or_default();
         let t = unsafe { read_cstr(target_lang) }.unwrap_or_default();
-        match tm::glossary_delete(&term, &s, &t) {
+        let removed = match domain {
+            None => tm::glossary_delete(&term, &s, &t),
+            Some(d) => tm::glossary_delete_with_domain(&term, &s, &t, &d),
+        };
+        match removed {
             Ok(removed) => serde_json::to_string(&serde_json::json!({
                 "ok": true, "removed": removed,
             })).unwrap_or_else(|_| OK_JSON.to_string()),

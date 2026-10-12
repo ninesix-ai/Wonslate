@@ -80,4 +80,22 @@ public class DomainGlossaryTests
         // adds an "error" sibling. Both are FFI-shape guarantees, not behaviours.
         Assert.Contains("\"ok\"", ack);
     }
+
+    /// <summary>
+    /// ⑪ D50: `tt_glossary_delete_with_domain` must resolve from .NET and marshal a UTF-8
+    /// domain across the boundary. Like ⑧ and ⑩ this does not initialise the store (that would
+    /// race other tests in the same process), so the ack is the store-refused shape -- which is
+    /// still proof the 19th export exists under that exact name and that a four-pointer call
+    /// does not corrupt the stack. The behaviour itself lives in the Rust suite and in
+    /// `tests/test_phase1_ffi.py`, which is where the FFI census requires it to be called.
+    /// </summary>
+    [Fact]
+    public void GlossaryDeleteWithDomain_ResolvesAcrossTheBoundary()
+    {
+        string ack = EngineNative.GlossaryDelete("语段", "zh", "en", "领域不存在的行");
+
+        Assert.NotNull(ack);
+        Assert.StartsWith("{", ack);
+        Assert.Contains("\"ok\"", ack);
+    }
 }

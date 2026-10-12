@@ -335,26 +335,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _ => "该术语已解锁：蒸馏与术语包可以再次更新它",
     };
 
-    /// <summary>What the status line says after a delete. The FFI key has no domain segment,
-    /// so a domain-scoped row is not removable through it -- and `removed:false` must not be
-    /// rendered as a deletion (measured: it used to say "术语已删除" over a row still on
-    /// screen).</summary>
+    /// <summary>What the status line says after a delete. The engine's `removed` flag is the
+    /// only reason to claim a deletion; `false` means the row the user selected was not there
+    /// (already deleted, or the store was reloaded from elsewhere between the list and the
+    /// click), and saying "已删除" over that is what D49 was about.</summary>
     public static string GlossaryDeleteMessage(AckDto ack, GlossaryEntryDto row) => ack.Ok switch
     {
         false => $"术语删除失败：{ack.Message}",
         true when ack.Removed == false =>
-            $"未删除：「{row.SourceTerm}」属于领域 {row.Domain}，当前删除只作用于通用行",
+            $"未删除：库里已找不到「{row.SourceTerm}」{(row.Domain.Length == 0 ? "的通用行" : "的 " + row.Domain + " 领域行")}",
         _ => "术语已删除",
     };
 
-    /// <summary>Refusal for a delete the engine cannot aim (D50). The FFI delete key carries
-    /// no domain segment, so a domain-scoped row is out of its reach -- and when the same
-    /// term also exists as a generic row, that other row is what would be removed. Saying no
-    /// is the honest half; the signature that aims at a domain row is a contract change.
-    /// Returns null when the delete may go ahead.</summary>
-    public static string? GlossaryDeleteGuard(GlossaryEntryDto row) =>
-        row.Domain.Length == 0 ? null
-            : $"未删除：「{row.SourceTerm}」属于领域 {row.Domain}，当前删除只作用于通用行";
+    /// <summary>The key a delete must use: the selected row's OWN domain (D50). Kept as a pure
+    /// function because the regression this guards is invisible at the type level — dropping the
+    /// last argument still compiles, it just addresses the generic row instead (and removes a
+    /// different row when both exist).</summary>
+    public static string[] GlossaryDeleteKey(GlossaryEntryDto row) =>
+        new[] { row.SourceTerm, row.SourceLang, row.TargetLang, row.Domain };
 
     /// <summary>Reload the TM list for the selected language pair.</summary>
     public void RefreshTm()
@@ -451,10 +449,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (SelectedGlossaryEntry is null) { StatusMessage = "请先选择一条术语"; return; }
         var e = SelectedGlossaryEntry;
-        var guard = GlossaryDeleteGuard(e);
-        if (guard is not null) { StatusMessage = guard; return; }
-        var ack = AckDto.FromJson(
-            EngineNative.GlossaryDelete(e.SourceTerm, e.SourceLang, e.TargetLang));
+        // D50: the row's own domain goes into the key, so selecting a seed-pack row deletes
+        // that row instead of a same-named generic one (which is what the three-argument FFI
+        // delete would have done).
+        var key = GlossaryDeleteKey(e);
+        var ack = AckDto.FromJson(EngineNative.GlossaryDelete(key[0], key[1], key[2], key[3]));
         StatusMessage = GlossaryDeleteMessage(ack, e);
         if (ack.Ok && ack.Removed != false) { SelectedGlossaryEntry = null; RefreshGlossary(); }
     }

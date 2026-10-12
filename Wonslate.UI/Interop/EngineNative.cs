@@ -67,6 +67,12 @@ internal static partial class EngineNative
     [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
     private static partial IntPtr tt_glossary_delete(string sourceTerm, string sourceLang, string targetLang);
 
+    // D50: the primary key includes the domain, so this is the only export that can remove a
+    // seed-pack row. The three-argument one above addresses the generic row only.
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr tt_glossary_delete_with_domain(
+        string sourceTerm, string sourceLang, string targetLang, string domain);
+
     [LibraryImport(DllName)]
     private static partial IntPtr tt_config_json();
 
@@ -189,10 +195,20 @@ internal static partial class EngineNative
         finally { tt_free_string(raw); }
     }
 
-    /// <summary>Delete one glossary term by key (JSON ack).</summary>
+    /// <summary>Delete one glossary term by its key (JSON ack). Generic row only -- see the
+    /// overload that takes a domain.</summary>
     public static string GlossaryDelete(string sourceTerm, string sourceLang, string targetLang)
     {
         IntPtr raw = tt_glossary_delete(sourceTerm, sourceLang, targetLang);
+        try { return Marshal.PtrToStringUTF8(raw) ?? "{}"; }
+        finally { tt_free_string(raw); }
+    }
+
+    /// <summary>Delete one glossary row by its full key including the domain (D50). An empty
+    /// domain is the generic row, matching <see cref="GlossaryDelete"/>.</summary>
+    public static string GlossaryDelete(string sourceTerm, string sourceLang, string targetLang, string domain)
+    {
+        IntPtr raw = tt_glossary_delete_with_domain(sourceTerm, sourceLang, targetLang, domain);
         try { return Marshal.PtrToStringUTF8(raw) ?? "{}"; }
         finally { tt_free_string(raw); }
     }

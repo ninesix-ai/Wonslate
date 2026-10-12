@@ -150,8 +150,8 @@ pub fn scoped_note(
     None
 }
 
-/// User-removed term pair. `false` means the key matched no removable row -- the delete
-/// key has no domain segment, so a domain-scoped row reports this rather than a success.
+/// User-removed term pair (the generic row). `false` means the key matched no removable row.
+/// A domain-scoped row needs `tm::glossary_delete_with_domain` (D50).
 pub fn delete(source_term: &str, source_lang: &str, target_lang: &str) -> Result<bool, EngineError> {
     tm::glossary_delete(source_term, source_lang, target_lang)
 }

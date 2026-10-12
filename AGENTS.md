@@ -430,9 +430,11 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     keep: whenever a call can be accepted and still change nothing, the response must say which of
     the two happened -- `ok` is about the request, not about the store. A lock is a shield against
     machines only: a locked row must stay editable by the person who locked it, or the feature
-    recreates D49 with the labels swapped. One shape is still open: the delete key carries no
-    domain segment, so a domain row that has a generic twin is unreachable and the *twin* is what
-    gets removed (**D50**); the UI refuses that delete rather than performing the wrong one.
+    recreates D49 with the labels swapped. Deletes go through the full primary key now: a
+    seed-pack row is removable by `tt_glossary_delete_with_domain` (D50), while the original
+    three-argument `tt_glossary_delete` keeps addressing the generic row -- widening an existing
+    export's arity was measured to be worse than adding one, because a caller compiled against
+    the old signature gets no error at all, just a plausible answer aimed at another row.
 
 ## 4. Conventions and invariants
 
@@ -497,9 +499,10 @@ identifiers are stable anchors, the detail lives in the ledgers:
 - `D49` — closed 2026-10-12 (same round as D35, same code site): a user edit at equal confidence
   silently replaced nothing while the ack said `ok`. See rule 19 for the two-door rule that
   replaced it and for the accounting the write endpoints now give back.
-- `D50` — open. `tt_glossary_delete`'s key has no domain segment, so a domain row is unreachable
-  and a same-term generic twin is what a delete actually removes. The UI refuses the case; a fix
-  needs a contract decision (domain-aware delete), not a patch.
+- `D50` — closed 2026-10-12. The delete key now includes the domain
+  (`tt_glossary_delete_with_domain`, the 19th export). The 3-argument export keeps its exact
+  meaning -- generic row only, `removed:false` when nothing matched -- because the frozen
+  contract allows adding but never changing, and an arity change fails no caller loudly.
 - `REQ-B2` — scope decided 2026-10-11: the no-silent-degradation invariant now covers the
   sidecar's public HTTP channel as well as the Rust pipeline (008 followed as D48).
 - `S12` — closed as **a small but statistically supported gain**, once D32 was fixed and both arms were
