@@ -10,6 +10,7 @@ use crate::error::EngineError;
 use crate::types::{GlossaryEntry, TmEntry};
 
 pub use store::TmStore;
+pub use store::{GlImportReport, GlManual, GlWrite, GlossaryRecord};
 
 /// Initialize (call once at app start; order: cache -> store -> warmup)
 pub fn init(data_dir: &std::path::Path, cache_size: usize, warmup_n: usize) -> Result<(), EngineError> {
@@ -141,23 +142,49 @@ pub fn glossary_list(
 /// S11: seed-pack importer. The `pack_json` must carry a non-empty `domain`; a
 /// mixed-domain or untagged file is refused so a caller cannot silently seed
 /// the generic table via what looks like a domain-scoped import.
-pub fn glossary_import_pack(pack_json: &str) -> Result<u32, EngineError> {
+pub fn glossary_import_pack(pack_json: &str) -> Result<GlImportReport, EngineError> {
     TmStore::instance()
         .ok_or_else(|| EngineError::TmError("not initialized".into()))?
         .glossary_import_pack(pack_json)
 }
 
-pub fn glossary_upsert(entry: &GlossaryEntry) -> Result<(), EngineError> {
+/// A machine write (distillation, seed-pack import): the stored row wins unless the
+/// newcomer is strictly better, and a locked row never moves.
+pub fn glossary_upsert(entry: &GlossaryEntry) -> Result<GlWrite, EngineError> {
     TmStore::instance()
         .ok_or_else(|| EngineError::TmError("not initialized".into()))?
         .glossary_upsert(entry)
 }
 
+/// A user edit, with the lock state the caller means (`None`: leave the lock as the row
+/// has it). This is the entry point D35 was missing.
+pub fn glossary_upsert_manual(
+    entry: &GlossaryEntry, lock: Option<bool>,
+) -> Result<GlManual, EngineError> {
+    TmStore::instance()
+        .ok_or_else(|| EngineError::TmError("not initialized".into()))?
+        .glossary_upsert_manual(entry, lock)
+}
+
+/// Full records behind a listing, so a caller can see the lock as well as the term.
+pub fn glossary_records(
+    source_lang: &str,
+    target_lang: &str,
+    domain: &str,
+    limit: usize,
+) -> Result<Vec<GlossaryRecord>, EngineError> {
+    TmStore::instance()
+        .ok_or_else(|| EngineError::TmError("not initialized".into()))?
+        .glossary_records(source_lang, target_lang, domain, limit)
+}
+
+/// `true` when a row was actually removed. The UI's delete has no domain argument, so a
+/// domain-scoped row survives it -- which the caller must be told, not shown a success.
 pub fn glossary_delete(
     source_term: &str,
     source_lang: &str,
     target_lang: &str,
-) -> Result<(), EngineError> {
+) -> Result<bool, EngineError> {
     TmStore::instance()
         .ok_or_else(|| EngineError::TmError("not initialized".into()))?
         .glossary_delete(source_term, source_lang, target_lang)

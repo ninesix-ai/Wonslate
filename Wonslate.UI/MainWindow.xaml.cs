@@ -58,6 +58,10 @@ public partial class MainWindow : Window
 
     private void SaveGlossaryButton_Click(object sender, RoutedEventArgs e) => _vm.SaveGlossaryTerm();
 
+    private void LockGlossaryButton_Click(object sender, RoutedEventArgs e) => _vm.SetSelectedGlossaryLock(true);
+
+    private void UnlockGlossaryButton_Click(object sender, RoutedEventArgs e) => _vm.SetSelectedGlossaryLock(false);
+
     private void DeleteGlossaryButton_Click(object sender, RoutedEventArgs e) => _vm.DeleteSelectedGlossaryTerm();
 
     private void RefreshGlossaryButton_Click(object sender, RoutedEventArgs e) => _vm.RefreshGlossary();

@@ -308,8 +308,13 @@ internal static partial class EngineNative
 // Top-level (not nested in EngineNative) because the ViewModel exposes them as public
 // properties for WPF binding, while the interop class itself stays internal.
 
-/// <summary>Response of the write-only endpoints: {"ok":true} or {"ok":false,"error":..,"message":..}.</summary>
-public sealed record AckDto(bool Ok, string? Error, string? Message)
+/// <summary>Response of the write-only endpoints: {"ok":true} or {"ok":false,"error":..,"message":..}.
+/// The write endpoints also echo what they did: <paramref name="UserLocked"/> comes from a
+/// glossary save (the lock state the row is in now), <paramref name="Removed"/> from a
+/// glossary delete (whether a row actually went away). Both are null where the endpoint has
+/// nothing to say -- "the caller did not tell me" must not be rendered as a success.</summary>
+public sealed record AckDto(bool Ok, string? Error, string? Message,
+                           bool? UserLocked = null, bool? Removed = null)
 {
     public static AckDto FromJson(string json)
     {
@@ -347,10 +352,18 @@ public sealed record TmEntryDto(
 /// <summary>One glossary term as reported by tt_glossary_list.</summary>
 /// <param name="Source">Provenance (N-08): "distill" / "manual" / "tm"; null for records
 /// written before the field existed. Machine-extracted terms are the ones worth reviewing.</param>
+/// <param name="UserLocked">True when distillation and seed-pack import must leave this row
+/// alone. Null means the engine did not report the flag -- an older library, so the row is
+/// shown as unknown rather than as unlocked (D35: the flag existed and nothing could set or
+/// display it).</param>
 public sealed record GlossaryEntryDto(
     string SourceTerm, string SourceLang, string TargetTerm, string TargetLang,
-    float Confidence, uint Frequency, string Domain, string? Source)
+    float Confidence, uint Frequency, string Domain, string? Source, bool? UserLocked = null)
 {
+    /// <summary>Grid text for the lock column. A row nobody locked is the normal case and
+    /// gets an empty cell, so the locked marker stays the only thing that draws the eye.</summary>
+    public string LockMark => UserLocked == true ? "已锁定" : string.Empty;
+
     public static IReadOnlyList<GlossaryEntryDto> ListFromJson(string json)
     {
         try

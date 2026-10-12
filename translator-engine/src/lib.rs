@@ -281,22 +281,36 @@ pub extern "C" fn tt_tm_list(
     to_c_string(&result.unwrap_or_else(|_| "[]".to_string()))
 }
 
-/// Insert or update one glossary term (user edit; the caller's confidence wins).
-/// entry_json shape: {"source_term":"...","source_lang":"zh","target_term":"...","target_lang":"en","confidence":1.0,"frequency":1,"domain":""}
+/// Insert or update one glossary term as a user edit.
+///
+/// entry_json shape: {"source_term":"...","source_lang":"zh","target_term":"...",
+/// "target_lang":"en","confidence":1.0,"frequency":1,"domain":"","user_locked":true?}
+///
+/// Unlike a machine write (distillation, seed-pack import), which the store may keep,
+/// a user edit always lands: what the person typed is what the glossary says, whatever
+/// confidence the stored row carries (defect D49 -- this path used to obey the
+/// strictly-higher rule, so a second edit of the same term silently changed nothing
+/// while the ack answered `ok`). `user_locked` is optional: absent means "leave the
+/// lock as the row has it", present means "set it to that" (D35: the flag existed in
+/// the store and nothing could reach it). The ack echoes the resulting lock state, so a
+/// UI can show the lock without guessing.
 #[no_mangle]
 pub extern "C" fn tt_glossary_upsert(entry_json: *const c_char) -> *mut c_char {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let raw = unsafe { read_cstr(entry_json) }.unwrap_or_default();
         match serde_json::from_str::<serde_json::Value>(&raw) {
             Ok(v) => {
-                let mut entry = types::GlossaryEntry::from_json(&v);
-                // Provenance is decided here, not by the caller: anything arriving through
-                // this endpoint is a user edit and must be distinguishable from a
-                // machine-extracted term when the glossary is reviewed.
-                entry.source = "manual".into();
-                tm::glossary_upsert(&entry)
-                    .map(|_| OK_JSON.to_string())
-                    .unwrap_or_else(|e| e.to_json().to_string())
+                let lock = v.get("user_locked").and_then(|x| x.as_bool());
+                let entry = types::GlossaryEntry::from_json(&v);
+                // Provenance is stamped by the store's manual door, not here: exactly one
+                // place decides that a row reaching this endpoint was written by a person,
+                // so a payload claiming `distill` cannot survive it.
+                match tm::glossary_upsert_manual(&entry, lock) {
+                    Ok(state) => serde_json::to_string(&serde_json::json!({
+                        "ok": true, "user_locked": state.user_locked,
+                    })).unwrap_or_else(|_| OK_JSON.to_string()),
+                    Err(e) => e.to_json().to_string(),
+                }
             }
             Err(e) => EngineError::InvalidInput(e.to_string()).to_json().to_string(),
         }
@@ -305,6 +319,8 @@ pub extern "C" fn tt_glossary_upsert(entry_json: *const c_char) -> *mut c_char {
 }
 
 /// Delete one glossary term by its (source_term, source_lang, target_lang) key.
+/// The key has no domain segment, so a domain-scoped row is not removable this way
+/// (S11 successor); the ack then says `removed: false` rather than a bare success.
 #[no_mangle]
 pub extern "C" fn tt_glossary_delete(
     source_term: *const c_char,
@@ -316,7 +332,9 @@ pub extern "C" fn tt_glossary_delete(
         let s = unsafe { read_cstr(source_lang) }.unwrap_or_default();
         let t = unsafe { read_cstr(target_lang) }.unwrap_or_default();
         match tm::glossary_delete(&term, &s, &t) {
-            Ok(())  => OK_JSON.to_string(),
+            Ok(removed) => serde_json::to_string(&serde_json::json!({
+                "ok": true, "removed": removed,
+            })).unwrap_or_else(|_| OK_JSON.to_string()),
             Err(e)  => e.to_json().to_string(),
         }
     }));
@@ -359,8 +377,10 @@ pub extern "C" fn tt_glossary_list(
         // what every pre-S11 glossary contained, so this stays visually identical for
         // existing users. Callers that want a domain-scoped view go through
         // `tt_glossary_list_with_domain`.
-        let entries = tm::glossary_list(&s, &t, "", 500).unwrap_or_default();
-        let vals: Vec<serde_json::Value> = entries.iter().map(|e| e.to_json()).collect();
+        // Rows are serialized as full records, so `user_locked` travels with them: a UI
+        // cannot show a lock it cannot read (D35).
+        let rows = tm::glossary_records(&s, &t, "", 500).unwrap_or_default();
+        let vals: Vec<serde_json::Value> = rows.iter().map(|r| r.to_value()).collect();
         serde_json::to_string(&vals).unwrap_or_else(|_| "[]".into())
     }));
     to_c_string(&result.unwrap_or_else(|_| "[]".to_string()))
@@ -381,8 +401,8 @@ pub extern "C" fn tt_glossary_list_with_domain(
         let t = unsafe { read_cstr(target_lang) }.unwrap_or_default();
         let d = unsafe { read_cstr(domain) }.unwrap_or_default();
         let cap = if limit == 0 { 500usize } else { limit as usize };
-        let entries = tm::glossary_list(&s, &t, &d, cap).unwrap_or_default();
-        let vals: Vec<serde_json::Value> = entries.iter().map(|e| e.to_json()).collect();
+        let rows = tm::glossary_records(&s, &t, &d, cap).unwrap_or_default();
+        let vals: Vec<serde_json::Value> = rows.iter().map(|r| r.to_value()).collect();
         serde_json::to_string(&vals).unwrap_or_else(|_| "[]".into())
     }));
     to_c_string(&result.unwrap_or_else(|_| "[]".to_string()))
@@ -391,16 +411,22 @@ pub extern "C" fn tt_glossary_list_with_domain(
 /// S11: import one seed pack in a single call. `pack_json` shape:
 /// `{"domain":"av","version":"...","entries":[{source_term,target_term,confidence?},...]}`.
 /// A non-empty pack-level domain is mandatory; every entry inherits that domain
-/// and the source tag `seed:<domain>`. Returns `{"ok":true,"imported":N}` or an
+/// and the source tag `seed:<domain>`. Returns
+/// `{"ok":true,"imported":N,"written":W,"skipped_locked":L,"skipped_not_higher":K}` or an
 /// `{"ok":false,"error":"..."}` shape so a caller can distinguish "no data" from
-/// "schema wrong".
+/// "schema wrong". `imported` is the number of entries the pack carried -- the value it
+/// has always had, so a released installer keeps reading it; the three counters beside it
+/// say what the store did with them (D49: before, a pack that displaced nothing still
+/// answered `imported: N`).
 #[no_mangle]
 pub extern "C" fn tt_glossary_import_pack(pack_json: *const c_char) -> *mut c_char {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let raw = unsafe { read_cstr(pack_json) }.unwrap_or_default();
         match tm::glossary_import_pack(&raw) {
-            Ok(n) => serde_json::to_string(&serde_json::json!({"ok": true, "imported": n}))
-                .unwrap_or_else(|_| "{\"ok\":true}".into()),
+            Ok(r) => serde_json::to_string(&serde_json::json!({
+                "ok": true, "imported": r.rows, "written": r.written,
+                "skipped_locked": r.skipped_locked, "skipped_not_higher": r.skipped_not_higher,
+            })).unwrap_or_else(|_| "{\"ok\":true}".into()),
             Err(e) => e.to_json().to_string(),
         }
     }));

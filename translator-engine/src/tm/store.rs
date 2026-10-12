@@ -39,13 +39,20 @@ impl TmRecord {
 }
 
 #[derive(Clone)]
-struct GlossaryRecord {
+pub struct GlossaryRecord {
     entry: GlossaryEntry,
     user_locked: bool,
 }
 
 impl GlossaryRecord {
-    fn to_value(&self) -> Value {
+    /// The term row itself. Read-only by design: the lock belongs to the record, not to
+    /// whoever holds a reference, so it cannot be flipped behind the store's back.
+    pub fn entry(&self) -> &GlossaryEntry { &self.entry }
+
+    /// Whether distillation and seed-pack import must leave this row alone.
+    pub fn user_locked(&self) -> bool { self.user_locked }
+
+    pub fn to_value(&self) -> Value {
         let mut v = self.entry.to_json();
         v["user_locked"] = json!(self.user_locked);
         v
@@ -56,6 +63,37 @@ impl GlossaryRecord {
             user_locked: v.get("user_locked").and_then(|x| x.as_bool()).unwrap_or(false),
         }
     }
+}
+
+/// What a machine write (distillation, seed-pack import) actually did to one row.
+/// D49: the store has always made three different decisions here and reported all of
+/// them as `Ok(())`, so a caller could not tell "written" from "refused by a lock" or
+/// "kept the better row it already had". The ack on the FFI is built from this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlWrite {
+    /// The row was created, or its term/confidence moved to the newcomer.
+    Written,
+    /// A `user_locked` row refused the newcomer. Protection working as documented.
+    Locked,
+    /// The stored row is at least as good, so the newcomer lost. Not a lock.
+    NotHigher,
+}
+
+/// What a user edit left the row's lock at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GlManual {
+    pub user_locked: bool,
+}
+
+/// Per-pack write accounting. `rows` keeps the meaning `imported` already had on the
+/// wire (how many entries the pack carried), so a released installer that reads that
+/// number keeps working; the three counters say what actually happened to them.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GlImportReport {
+    pub rows: u32,
+    pub written: u32,
+    pub skipped_locked: u32,
+    pub skipped_not_higher: u32,
 }
 
 // ---- TmStore (core struct)------------------------------------------------
@@ -249,9 +287,9 @@ impl TmStore {
 
     // ---- Glossary operations ----------------------------------------------------
 
-    pub fn glossary_list(
+    pub fn glossary_records(
         &self, source_lang: &str, target_lang: &str, domain: &str, limit: usize,
-    ) -> Result<Vec<GlossaryEntry>, EngineError> {
+    ) -> Result<Vec<GlossaryRecord>, EngineError> {
         // S11: "generic ∪ specific" per D-S11.2. When `domain` is empty only
         // generic rows survive. When `domain` is non-empty, generic rows are
         // still visible (they never contradict a specific request) and specific
@@ -300,45 +338,116 @@ impl TmStore {
         v.sort_by(|a, b| b.1.entry.confidence.partial_cmp(&a.1.entry.confidence)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.0.cmp(&b.0)));
-        Ok(v.into_iter().take(limit).map(|(_, r)| r.entry.clone()).collect())
+        Ok(v.into_iter().take(limit).map(|(_, r)| r.clone()).collect())
     }
 
-    pub fn glossary_upsert(&self, entry: &GlossaryEntry) -> Result<(), EngineError> {
+    /// The same window as `glossary_records`, projected down to the term rows. The
+    /// injection path and the pipeline read this; an FFI listing reads the records, so a
+    /// caller can see which rows are locked (D35: the flag existed, nothing reported it).
+    pub fn glossary_list(
+        &self, source_lang: &str, target_lang: &str, domain: &str, limit: usize,
+    ) -> Result<Vec<GlossaryEntry>, EngineError> {
+        Ok(self.glossary_records(source_lang, target_lang, domain, limit)?
+            .into_iter().map(|r| r.entry).collect())
+    }
+
+    /// A machine write (distillation, seed-pack import): the stored row gives way only
+    /// to a strictly better newcomer, and a `user_locked` row never moves. D49 left this
+    /// rule alone -- it is what keeps a shuffled table from being rewritten by every
+    /// equal-confidence candidate -- and only made the three outcomes reportable.
+    pub fn glossary_upsert(&self, entry: &GlossaryEntry) -> Result<GlWrite, EngineError> {
         let key = gl_key(&entry.source_term, &entry.source_lang, &entry.target_lang, &entry.domain);
-        {
+        let outcome = {
             let mut idx = self.gl_index.write()
                 .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
             match idx.get_mut(&key) {
                 Some(existing) if !existing.user_locked => {
+                    existing.entry.frequency += 1;
                     if entry.confidence > existing.entry.confidence {
                         existing.entry.target_term = entry.target_term.clone();
                         existing.entry.confidence = entry.confidence;
+                        GlWrite::Written
+                    } else {
+                        GlWrite::NotHigher
                     }
-                    existing.entry.frequency += 1;
                 }
                 None => {
                     idx.insert(key, GlossaryRecord { entry: entry.clone(), user_locked: false });
+                    GlWrite::Written
                 }
-                _ => {}   // user_locked=true: distillation must not overwrite
+                Some(_) => GlWrite::Locked,   // user_locked: distillation must not overwrite
             }
+        };
+        // A refused write dirtied nothing, so it must not schedule a flush. Seed-pack
+        // re-imports over an untouched store are all refusals, and counting them would
+        // turn a no-op import into a full rewrite of glossary.json.
+        if outcome != GlWrite::Locked {
+            self.bump_gl_dirty()?;
         }
-        self.bump_gl_dirty()
+        Ok(outcome)
+    }
+
+    /// A user edit, and the entry point D35 was missing for the lock.
+    ///
+    /// The stored row always gives way, whatever its confidence: what a person typed *is*
+    /// the glossary. This path used to share the machine rule above, so correcting a term
+    /// a second time changed nothing while the ack answered `ok` and the UI printed
+    /// "saved" (D49, measured on the released binary: three edits in a row left the first
+    /// value in place and only lifted the frequency).
+    ///
+    /// `lock` is the caller's opinion about the lock: `Some(true)` sets it ("my edit is
+    /// final"), `Some(false)` clears it, `None` leaves whatever the row had -- so an
+    /// embedder that does not know this field cannot move it by accident. A locked row
+    /// stays editable here: a lock that locked out the person who set it would recreate
+    /// D49 with the labels swapped.
+    pub fn glossary_upsert_manual(
+        &self, entry: &GlossaryEntry, lock: Option<bool>,
+    ) -> Result<GlManual, EngineError> {
+        let key = gl_key(&entry.source_term, &entry.source_lang, &entry.target_lang, &entry.domain);
+        let user_locked = {
+            let mut idx = self.gl_index.write()
+                .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
+            // Provenance is stamped here, not by the caller: this is the door a person
+            // walks through, so the row must read `manual` even if the payload claimed
+            // otherwise. `docs/sdk.md` promised this on an update while the old code only
+            // set it for a brand-new row.
+            let mut stamped = entry.clone();
+            stamped.source = "manual".into();
+            match idx.get_mut(&key) {
+                Some(existing) => {
+                    stamped.frequency = existing.entry.frequency + 1;
+                    existing.entry = stamped;
+                    if let Some(want) = lock { existing.user_locked = want; }
+                    existing.user_locked
+                }
+                None => {
+                    let want = lock.unwrap_or(false);
+                    idx.insert(key, GlossaryRecord { entry: stamped, user_locked: want });
+                    want
+                }
+            }
+        };
+        self.bump_gl_dirty()?;
+        Ok(GlManual { user_locked })
     }
 
     pub fn glossary_delete(
         &self, source_term: &str, source_lang: &str, target_lang: &str,
-    ) -> Result<(), EngineError> {
+    ) -> Result<bool, EngineError> {
         // S11: the UI delete removes the *generic* row only. Removing a specific
         // domain row goes through a follow-up task (S11 successor) once the UI
         // exposes a domain filter per row; widening this signature now would
         // ripple through the FFI for no user-visible gain.
         let key = gl_key(source_term, source_lang, target_lang, "");
-        {
+        let removed = {
             let mut idx = self.gl_index.write()
                 .map_err(|e| EngineError::TmError(format!("lock: {}", e)))?;
-            idx.remove(&key);
+            idx.remove(&key).is_some()
+        };
+        if removed {
+            self.bump_gl_dirty()?;
         }
-        self.bump_gl_dirty()
+        Ok(removed)
     }
 
     // ---- Glossary import (S11) ---------------------------------------------------
@@ -352,7 +461,7 @@ impl TmStore {
     /// entry values still win if set, so a pack can carry a mostly-uniform pair
     /// while overriding the odd row. This is the format `docs/glossary-packs/*.json`
     /// uses -- the language pair is a property of the pack, not of each term.
-    pub fn glossary_import_pack(&self, pack_json: &str) -> Result<u32, EngineError> {
+    pub fn glossary_import_pack(&self, pack_json: &str) -> Result<GlImportReport, EngineError> {
         let v: Value = serde_json::from_str(pack_json)
             .map_err(|e| EngineError::InvalidInput(format!("pack json: {}", e)))?;
         let domain = v.get("domain").and_then(|x| x.as_str()).unwrap_or("");
@@ -393,12 +502,18 @@ impl TmStore {
             if raw.get("confidence").is_none() { entry.confidence = 1.0; }
             staged.push(entry);
         }
-        let mut imported = 0u32;
+        let mut report = GlImportReport { rows: staged.len() as u32, ..Default::default() };
         for entry in &staged {
-            self.glossary_upsert(entry)?;
-            imported += 1;
+            // D49: the store makes three decisions per row and used to be asked to report
+            // only a total. `imported` kept its old meaning (entries in the pack) so a
+            // released installer still reads it; these counters say what happened.
+            match self.glossary_upsert(entry)? {
+                GlWrite::Written => report.written += 1,
+                GlWrite::Locked => report.skipped_locked += 1,
+                GlWrite::NotHigher => report.skipped_not_higher += 1,
+            }
         }
-        Ok(imported)
+        Ok(report)
     }
 
     // ---- Dirty flush ------------------------------------------------

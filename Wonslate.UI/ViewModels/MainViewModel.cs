@@ -277,9 +277,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
             domain      = "",
         }, EngineNative.SnakeCase);
 
-    /// <summary>Serialized glossary term for a user edit (pure; unit-tested).</summary>
+    /// <summary>Serialized glossary term for a user edit (pure; unit-tested).
+    /// <paramref name="locked"/> travels as an explicit opinion: "saving a term means I
+    /// own it" only holds if the payload says so, and the engine reads an absent key as
+    /// "leave the lock as it is".</summary>
     public static string BuildGlossaryEntryJson(
-        string sourceTerm, string sourceLang, string targetTerm, string targetLang) =>
+        string sourceTerm, string sourceLang, string targetTerm, string targetLang,
+        string domain = "", bool locked = false) =>
         System.Text.Json.JsonSerializer.Serialize(new
         {
             source_term = sourceTerm,
@@ -288,8 +292,69 @@ public sealed class MainViewModel : INotifyPropertyChanged
             target_lang = targetLang,
             confidence  = 1.0,
             frequency   = 1,
-            domain      = "",
+            domain,
+            user_locked = locked,
         }, EngineNative.SnakeCase);
+
+    /// <summary>Payload that re-saves a listed row with a new lock opinion (pure; unit-tested).
+    /// Every other field is carried over from the row itself -- including its domain, so
+    /// locking a seed-pack row addresses that row instead of creating a generic twin (D35).
+    /// The engine stamps provenance as `manual`; this is a user action by definition.</summary>
+    public static string BuildGlossaryLockJson(GlossaryEntryDto row, bool locked) =>
+        System.Text.Json.JsonSerializer.Serialize(new
+        {
+            source_term = row.SourceTerm,
+            source_lang = row.SourceLang,
+            target_term = row.TargetTerm,
+            target_lang = row.TargetLang,
+            confidence  = row.Confidence,
+            frequency   = row.Frequency,
+            domain      = row.Domain,
+            user_locked = locked,
+        }, EngineNative.SnakeCase);
+
+    /// <summary>What the status line says after a glossary save, read from the engine's own
+    /// echo rather than assumed: the row is locked only if the store says it is.</summary>
+    public static string GlossarySaveMessage(AckDto ack) => ack.Ok switch
+    {
+        false => $"术语保存失败：{ack.Message}",
+        true when ack.UserLocked == true => "术语已保存并锁定",
+        _ => "术语已保存",
+    };
+
+    /// <summary>What the status line says after a lock/unlock click, from the engine's echo.
+    /// "已锁定" is the promise that matters to the user, so it must not be printed when the
+    /// engine did not confirm it.</summary>
+    public static string GlossaryLockMessage(AckDto ack, bool locked) => ack.Ok switch
+    {
+        false => $"锁定操作失败：{ack.Message}",
+        true when ack.UserLocked == null => locked
+            ? "已请求锁定，但引擎未回报当前状态"
+            : "已请求解锁，但引擎未回报当前状态",
+        true when ack.UserLocked == true => "该术语已锁定：蒸馏与术语包不会再改它",
+        _ => "该术语已解锁：蒸馏与术语包可以再次更新它",
+    };
+
+    /// <summary>What the status line says after a delete. The FFI key has no domain segment,
+    /// so a domain-scoped row is not removable through it -- and `removed:false` must not be
+    /// rendered as a deletion (measured: it used to say "术语已删除" over a row still on
+    /// screen).</summary>
+    public static string GlossaryDeleteMessage(AckDto ack, GlossaryEntryDto row) => ack.Ok switch
+    {
+        false => $"术语删除失败：{ack.Message}",
+        true when ack.Removed == false =>
+            $"未删除：「{row.SourceTerm}」属于领域 {row.Domain}，当前删除只作用于通用行",
+        _ => "术语已删除",
+    };
+
+    /// <summary>Refusal for a delete the engine cannot aim (D50). The FFI delete key carries
+    /// no domain segment, so a domain-scoped row is out of its reach -- and when the same
+    /// term also exists as a generic row, that other row is what would be removed. Saying no
+    /// is the honest half; the signature that aims at a domain row is a contract change.
+    /// Returns null when the delete may go ahead.</summary>
+    public static string? GlossaryDeleteGuard(GlossaryEntryDto row) =>
+        row.Domain.Length == 0 ? null
+            : $"未删除：「{row.SourceTerm}」属于领域 {row.Domain}，当前删除只作用于通用行";
 
     /// <summary>Reload the TM list for the selected language pair.</summary>
     public void RefreshTm()
@@ -366,9 +431,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         }
         var ack = AckDto.FromJson(EngineNative.GlossaryUpsert(
-            BuildGlossaryEntryJson(term, srcLang, translation, TargetLang)));
-        StatusMessage = ack.Ok ? "术语已保存" : $"术语保存失败：{ack.Message}";
+            BuildGlossaryEntryJson(term, srcLang, translation, TargetLang, "", true)));
+        StatusMessage = GlossarySaveMessage(ack);
         if (ack.Ok) { GlossarySourceTerm = ""; GlossaryTargetTerm = ""; RefreshGlossary(); }
+    }
+
+    /// <summary>Lock or unlock the selected glossary term (D35).</summary>
+    public void SetSelectedGlossaryLock(bool locked)
+    {
+        if (SelectedGlossaryEntry is null) { StatusMessage = "请先选择一条术语"; return; }
+        var e = SelectedGlossaryEntry;
+        var ack = AckDto.FromJson(EngineNative.GlossaryUpsert(BuildGlossaryLockJson(e, locked)));
+        StatusMessage = GlossaryLockMessage(ack, locked);
+        if (ack.Ok) RefreshGlossary();
     }
 
     /// <summary>Delete the selected glossary term.</summary>
@@ -376,10 +451,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (SelectedGlossaryEntry is null) { StatusMessage = "请先选择一条术语"; return; }
         var e = SelectedGlossaryEntry;
+        var guard = GlossaryDeleteGuard(e);
+        if (guard is not null) { StatusMessage = guard; return; }
         var ack = AckDto.FromJson(
             EngineNative.GlossaryDelete(e.SourceTerm, e.SourceLang, e.TargetLang));
-        StatusMessage = ack.Ok ? "术语已删除" : $"术语删除失败：{ack.Message}";
-        if (ack.Ok) { SelectedGlossaryEntry = null; RefreshGlossary(); }
+        StatusMessage = GlossaryDeleteMessage(ack, e);
+        if (ack.Ok && ack.Removed != false) { SelectedGlossaryEntry = null; RefreshGlossary(); }
     }
 
     // ---- Translation (N-06: async path + cancel + timeout + one retry) -------------

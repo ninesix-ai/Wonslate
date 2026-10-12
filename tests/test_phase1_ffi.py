@@ -446,6 +446,97 @@ def test_glossary_upsert_list_delete_cycle(eng: Engine, ck: Checker):
         ck.fail("delete effect", f"term still listed: {remaining}")
 
 
+def test_user_edit_lands_and_the_acks_say_what_happened(eng: Engine, ck: Checker):
+    """D49 and D35 over the same boundary the desktop app uses.
+
+    Measured on the released binary before the fix: saving a term writes it at confidence
+    1.0, and correcting it later -- same key, same confidence -- changed nothing, lifted
+    only the frequency, and still answered `{"ok":true}`; the UI printed "saved".
+    The lock flag also existed with no way to set it and no way to read it back.
+    """
+    src, tgt = "zhffi49", "enffi49"      # own pair: other checks write zh/en
+    term = "ffi49term"
+    domain_term = "ffi49domainterm"      # a row that exists ONLY inside the domain
+    domain = "ffi49"
+
+    def listed(domain_filter, wanted=None):
+        rows = eng.glossary_list_with_domain(src, tgt, domain_filter, 200)
+        return [r for r in rows if r.get("source_term") == (wanted or term)]
+
+    first = eng.glossary_upsert({
+        "source_term": term, "source_lang": src, "target_term": "FIRST",
+        "target_lang": tgt, "confidence": 1.0, "frequency": 1, "domain": "",
+        "user_locked": True,
+    })
+    if not (first.get("ok") and first.get("user_locked") is True):
+        ck.fail("save must echo the lock it applied", f"ack={first}")
+        return
+    ck.ok("a locked save echoes user_locked, so the UI need not guess")
+
+    second = eng.glossary_upsert({
+        "source_term": term, "source_lang": src, "target_term": "SECOND",
+        "target_lang": tgt, "confidence": 1.0, "frequency": 1, "domain": "",
+    })
+    rows = listed("")
+    if not second.get("ok"):
+        ck.fail("tt_glossary_upsert (second edit)", f"ack={second}")
+        return
+    if not rows or rows[0].get("target_term") != "SECOND":
+        ck.fail("D49: a user edit at equal confidence must replace the row", f"listed={rows}")
+        return
+    ck.ok("a second edit of the same term replaces it, equal confidence and all")
+
+    if rows[0].get("user_locked") is not True:
+        ck.fail("an edit that states no lock opinion must preserve it", f"listed={rows}")
+        return
+    if rows[0].get("source") != "manual":
+        ck.fail("a user edit must be stamped manual whatever the payload claims",
+                f"listed={rows}")
+        return
+    ck.ok("the lock survived the opinion-less edit and provenance reads manual")
+
+    # The lock's purpose across the ABI: a seed pack must not move a row a person locked.
+    locked_pack_row = eng.glossary_upsert({
+        "source_term": domain_term, "source_lang": src, "target_term": "LOCKED-IN-DOMAIN",
+        "target_lang": tgt, "confidence": 0.5, "frequency": 1, "domain": domain,
+        "user_locked": True,
+    })
+    if not locked_pack_row.get("ok"):
+        ck.fail("locking the domain row", f"ack={locked_pack_row}")
+        return
+    ack = eng.glossary_import_pack({
+        "domain": domain, "source_lang": src, "target_lang": tgt,
+        "entries": [{"source_term": domain_term, "target_term": "PACK-OVERWRITE",
+                     "confidence": 1.0}],
+    })
+    if not ack.get("ok"):
+        ck.fail("tt_glossary_import_pack over a locked row", f"ack={ack}")
+        return
+    if ack.get("imported") != 1:
+        ck.fail("imported must keep its old meaning (entries in the pack)", f"ack={ack}")
+        return
+    if ack.get("written") != 0 or ack.get("skipped_locked") != 1:
+        ck.fail("D49: a pack must count a locked refusal as skipped, not as written",
+                f"ack={ack}")
+        return
+    if listed(domain, domain_term)[0].get("target_term") != "LOCKED-IN-DOMAIN":
+        ck.fail("the locked domain row must survive the pack",
+                f"listed={listed(domain, domain_term)}")
+        return
+    ck.ok("a pack that displaces nothing says so: imported=1, written=0, skipped_locked=1")
+
+    gone = eng.glossary_delete(domain_term, src, tgt)
+    if gone.get("ok") is not True or gone.get("removed") is not False:
+        ck.fail("deleting a domain row must report that nothing was removed", f"ack={gone}")
+        return
+    ck.ok("a delete that reached no row reports removed=false instead of a bare success")
+
+    if not listed(domain, domain_term):
+        ck.fail("the refused delete must leave the row in place", "domain row vanished")
+        return
+    ck.ok("the refused delete left the locked row exactly where it was")
+
+
 def test_malformed_glossary_payload_is_structured(eng: Engine, ck: Checker):
     """A malformed upsert payload must yield a structured error, never a crash."""
     raw = eng._take(eng.lib.tt_glossary_upsert(b"not json"))
@@ -479,6 +570,9 @@ def test_domain_scoped_reads_and_pack_import(eng: Engine, ck: Checker):
     ack = eng.glossary_import_pack(pack)
     if not (ack.get("ok") and ack.get("imported") == 2):
         ck.fail("tt_glossary_import_pack", f"ack={ack}")
+        return
+    if ack.get("written") != 2 or ack.get("skipped_locked") != 0:
+        ck.fail("a pack that lands every row must report written=2", f"ack={ack}")
         return
     ck.ok("tt_glossary_import_pack imported both rows of a tagged pack")
 
@@ -951,6 +1045,7 @@ def main() -> int:
         _p("== TM / glossary management (N-07) ==")
         test_tm_write_list_flag_bad_cycle(eng, ck)
         test_glossary_upsert_list_delete_cycle(eng, ck)
+        test_user_edit_lands_and_the_acks_say_what_happened(eng, ck)
         test_malformed_glossary_payload_is_structured(eng, ck)
         test_domain_scoped_reads_and_pack_import(eng, ck)
 

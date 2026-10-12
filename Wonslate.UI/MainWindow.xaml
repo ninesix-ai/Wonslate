@@ -196,6 +196,10 @@
                                  ToolTip="术语译文" />
                         <Button Content="新增/更新" Width="100" Margin="10,0,0,0"
                                 Click="SaveGlossaryButton_Click" />
+                        <Button Content="锁定所选" Width="90" Margin="10,0,0,0"
+                                Click="LockGlossaryButton_Click" />
+                        <Button Content="解锁所选" Width="90" Margin="10,0,0,0"
+                                Click="UnlockGlossaryButton_Click" />
                         <Button Content="删除所选" Width="90" Margin="10,0,0,0"
                                 Click="DeleteGlossaryButton_Click" />
                         <Button Content="刷新" Width="70" Margin="10,0,0,0"
@@ -213,6 +217,8 @@
                                                 DisplayMemberBinding="{Binding Confidence}" />
                                 <GridViewColumn Header="来源" Width="80"
                                                 DisplayMemberBinding="{Binding Source}" />
+                                <GridViewColumn Header="锁定" Width="70"
+                                                DisplayMemberBinding="{Binding LockMark}" />
                                 <GridViewColumn Header="频次" Width="60"
                                                 DisplayMemberBinding="{Binding Frequency}" />
                             </GridView>

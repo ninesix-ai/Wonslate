@@ -94,9 +94,11 @@ pub fn build_context(
     Ok(GlossaryContext { entries: hits.into_iter().take(max_terms).collect() })
 }
 
-/// Upsert a term pair from distillation or manually
+/// Upsert a term pair from distillation. A user edit goes through
+/// `tm::glossary_upsert_manual`, which is not subject to the confidence rule (D49).
+/// The `()` shape is what the distill seam (`process_pairs`) is written against.
 pub fn upsert(entry: &GlossaryEntry) -> Result<(), EngineError> {
-    tm::glossary_upsert(entry)
+    tm::glossary_upsert(entry).map(|_| ())
 }
 
 /// Whether this language pair holds any row of `domain` at all, whatever the current
@@ -148,8 +150,9 @@ pub fn scoped_note(
     None
 }
 
-/// User-removed term pair
-pub fn delete(source_term: &str, source_lang: &str, target_lang: &str) -> Result<(), EngineError> {
+/// User-removed term pair. `false` means the key matched no removable row -- the delete
+/// key has no domain segment, so a domain-scoped row reports this rather than a success.
+pub fn delete(source_term: &str, source_lang: &str, target_lang: &str) -> Result<bool, EngineError> {
     tm::glossary_delete(source_term, source_lang, target_lang)
 }
 

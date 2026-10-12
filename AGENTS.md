@@ -415,6 +415,25 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     The round also carries a method note: a mutation round can find a defect instead of confirming
     a suite, which is the cheapest way one has ever paid for itself here.
 
+19. **A write endpoint must report the write it actually did.** `tt_glossary_upsert` shared the
+    machine path's "replace only if strictly higher" rule, so correcting a term you had just saved
+    changed nothing: the row kept the first value, only `frequency` moved, and the ack answered
+    `{"ok":true}` while the UI printed "saved" (defect **D49**, measured on the released binary
+    across the FFI, and `docs/sdk.md` was promising "confidence is the caller's" at the same time).
+    Two doors, two rules now. A user edit (`tm::glossary_upsert_manual`) always lands, stamps
+    provenance `manual`, and may set / keep / clear `user_locked` -- that flag previously had no
+    entry point and no way to be read back at all (**D35**), so listings now carry it per row. A
+    machine write (distillation, seed-pack import) still needs a strictly higher confidence and
+    still stops at a locked row, but it reports `written` / `skipped_locked` / `skipped_not_higher`
+    instead of one flattering total (`imported` keeps its old meaning: entries in the pack, so a
+    released installer still reads it), and `tt_glossary_delete` reports `removed`. The rule to
+    keep: whenever a call can be accepted and still change nothing, the response must say which of
+    the two happened -- `ok` is about the request, not about the store. A lock is a shield against
+    machines only: a locked row must stay editable by the person who locked it, or the feature
+    recreates D49 with the labels swapped. One shape is still open: the delete key carries no
+    domain segment, so a domain row that has a generic twin is unreachable and the *twin* is what
+    gets removed (**D50**); the UI refuses that delete rather than performing the wrong one.
+
 ## 4. Conventions and invariants
 
 **This file is not the source of truth for either.** `CONTRIBUTING.md` is: comment
@@ -457,25 +476,32 @@ Status truth is `docs/requirements/00-需求总纲.md` and `docs/tasks/00-任务
 the private umbrella repo. The open items worth knowing before picking a task — the
 identifiers are stable anchors, the detail lives in the ledgers:
 
-- `D30` — half closed. `/health` now reports `requests_served`, a bounded latency window
-  and `rss_bytes`, so degradation is observable; a bounded batch (`--max-requests`) and a
-  reload that is not a restart (`POST /reload`) exist, and the abandoned-request work is
-  explained and measured. What is open is two decisions, not code: whether `--decode-slots`
-  ships on by default (its caller-side prerequisite -- waiting out a `429 busy` in
-  `engine/sidecar.rs` -- landed, so this is now a pricing question, see rule 15), and whether
-  the service's own waste goes on `/health`.
+- `D30` — closed on 2026-10-11. `/health` reports `requests_served`, a bounded latency window,
+  `rss_bytes`, the in-flight and queued decode counts, and the work spent on callers who already
+  hung up (`answers_to_gone_clients` / `refusals_to_gone_clients`, cumulative). A bounded batch
+  (`--max-requests`) and a reload that is not a restart (`POST /reload`) exist, the retention line
+  is measured, and both remaining decisions were made by the product owner: `--decode-slots` ships
+  **off** by default (low dose costs more; callers outside this repo do not retry), and the waste
+  counters go on `/health`. What is left is a known structural limit, not work: an in-flight CT2
+  decode cannot be cheaply interrupted over HTTP/1.1.
 - `D34` — closed 2026-10-08. A pack row that omitted `confidence` entered at the reader's
   0.90 default rather than the intended 1.0, so a seed pack could not displace the distilled
   rows it was written to override while still reporting `imported: N`. The stamp is now
   presence-based. Rows already in a user's store keep their old value until the pack is
   re-imported; the AV comparison was re-run after that re-import and moved only inside the
   repeat-to-repeat spread, so the published conclusion is unchanged.
-- `D35` — open. `user_locked` is honoured by the store and restored faithfully on load, but no
-  UI control or FFI field can set it. The documented "a locked term is not overwritten by
-  distillation" therefore holds only for a `glossary.json` hand-edited while the engine is
-  stopped. The mechanism exists; the entry point does not.
-- `REQ-B2` — undecided scope: does the no-silent-degradation invariant cover the
-  sidecar's public HTTP channel, or only the Rust pipeline?
+- `D35` — closed 2026-10-12. `user_locked` now has an entry point and a read path: an optional
+  key on `tt_glossary_upsert` (set / keep / clear), the flag travels with every listed row, and
+  the desktop glossary tab has 锁定 / 解锁 with a lock column. Editing a term through the UI locks
+  it; locking never blocks the user's own next edit (see rule 19).
+- `D49` — closed 2026-10-12 (same round as D35, same code site): a user edit at equal confidence
+  silently replaced nothing while the ack said `ok`. See rule 19 for the two-door rule that
+  replaced it and for the accounting the write endpoints now give back.
+- `D50` — open. `tt_glossary_delete`'s key has no domain segment, so a domain row is unreachable
+  and a same-term generic twin is what a delete actually removes. The UI refuses the case; a fix
+  needs a contract decision (domain-aware delete), not a patch.
+- `REQ-B2` — scope decided 2026-10-11: the no-silent-degradation invariant now covers the
+  sidecar's public HTTP channel as well as the Rust pipeline (008 followed as D48).
 - `S12` — closed as **a small but statistically supported gain**, once D32 was fixed and both arms were
   rerun under input-aware injection. The earlier "no attributable gain" reading was an artifact of
   injecting a pack prefix rather than the terms each sentence uses: a measurement hole can erase a

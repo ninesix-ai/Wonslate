@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Wonslate.Interop;
 using Wonslate.ViewModels;
 using Xunit;
 
@@ -303,6 +304,90 @@ public class MainViewModelTests
         Assert.Contains("\"target_term\":\"neural network\"", json);
         // 1.0 beats any distilled confidence, so a later distillation pass cannot overwrite it.
         Assert.Contains("\"confidence\":1", json);
+    }
+
+    // ---- D49 / D35: a save states a lock opinion, and the messages say what happened ----
+
+    [Fact]
+    public void BuildGlossaryEntryJson_CarriesTheLockOpinionTheUserAskedFor()
+    {
+        // "Editing a term means locking it" only holds if the payload says so: the engine
+        // treats an absent key as "leave the lock alone", so a dropped key is not a false
+        // promise, it is no opinion at all -- and the row would stay open to distillation.
+        var locked = MainViewModel.BuildGlossaryEntryJson(
+            "字幕", "zh", "subtitle", "en", "", true);
+        Assert.Contains("\"user_locked\":true", locked);
+
+        var unlocked = MainViewModel.BuildGlossaryEntryJson(
+            "字幕", "zh", "subtitle", "en", "", false);
+        Assert.Contains("\"user_locked\":false", unlocked);
+    }
+
+    [Fact]
+    public void BuildGlossaryLockJson_KeepsTheRowAndFlipsOnlyTheLock()
+    {
+        // The list can hold domain-scoped rows; re-saving must address that very row, not
+        // silently create a generic twin next to it.
+        var row = new GlossaryEntryDto("音色", "zh", "speaker timbre", "en", 1.0f, 7, "av", "seed:av", null);
+
+        var json = MainViewModel.BuildGlossaryLockJson(row, true);
+
+        Assert.Contains("\"domain\":\"av\"", json);
+        Assert.Contains("\"target_term\":\"speaker timbre\"", json);
+        Assert.Contains("\"frequency\":7", json);
+        Assert.Contains("\"user_locked\":true", json);
+    }
+
+    [Fact]
+    public void GlossaryDeleteMessage_DoesNotClaimADeletionThatDidNotHappen()
+    {
+        // Measured: deleting a domain row removed nothing and still answered ok, so the UI
+        // reported "deleted" for a row that stayed on screen.
+        var row = new GlossaryEntryDto("音色", "zh", "speaker timbre", "en", 1.0f, 1, "av", "seed:av", null);
+        var notRemoved = new AckDto(true, null, null, null, false);
+
+        var message = MainViewModel.GlossaryDeleteMessage(notRemoved, row);
+
+        Assert.DoesNotContain("已删除", message);
+        Assert.Contains("av", message);
+        // The guard half: a delete that did remove something must still read as a deletion.
+        Assert.Equal("术语已删除", MainViewModel.GlossaryDeleteMessage(new AckDto(true, null, null, null, true), row));
+    }
+
+    [Fact]
+    public void GlossaryDeleteGuard_RefusesARowTheEngineCannotAim()
+    {
+        // D50: the delete key has no domain segment. With a generic twin of the same term
+        // present, sending the click would remove the OTHER row, so the UI must refuse.
+        var domainRow = new GlossaryEntryDto("音色", "zh", "speaker timbre", "en", 1.0f, 1, "av", "seed:av", null);
+        var genericRow = new GlossaryEntryDto("音色", "zh", "speaker timbre", "en", 1.0f, 1, "", "manual", null);
+
+        var refusal = MainViewModel.GlossaryDeleteGuard(domainRow);
+        Assert.NotNull(refusal);
+        Assert.Contains("av", refusal);
+        Assert.DoesNotContain("已删除", refusal);
+        Assert.Null(MainViewModel.GlossaryDeleteGuard(genericRow));
+    }
+
+    [Fact]
+    public void GlossarySaveMessage_ReportsTheLockTheEngineSet()
+    {
+        // The ack echoes the row's lock state, so the status line tells the user whether
+        // distillation will respect this term from now on.
+        Assert.Equal("术语已保存并锁定", MainViewModel.GlossarySaveMessage(new AckDto(true, null, null, true, null)));
+        Assert.Equal("术语已保存", MainViewModel.GlossarySaveMessage(new AckDto(true, null, null, false, null)));
+    }
+
+    [Fact]
+    public void GlossaryLockMessage_OnlyPromisesWhatTheEngineConfirmed()
+    {
+        // The lock is the promise the user is buying, so the line must come from the echo:
+        // an ack that says nothing about the lock cannot be rendered as "locked now".
+        Assert.Contains("已锁定", MainViewModel.GlossaryLockMessage(new AckDto(true, null, null, true, null), true));
+        Assert.Contains("已解锁", MainViewModel.GlossaryLockMessage(new AckDto(true, null, null, false, null), false));
+        Assert.DoesNotContain("不会再改它", MainViewModel.GlossaryLockMessage(new AckDto(true, null, null), true));
+        Assert.Contains("未回报", MainViewModel.GlossaryLockMessage(new AckDto(true, null, null), true));
+        Assert.Contains("失败", MainViewModel.GlossaryLockMessage(new AckDto(false, "TM_ERROR", "not initialized"), true));
     }
 
     [Fact]

@@ -221,4 +221,46 @@ public class EngineNativeDtoTests
         Assert.Single(list);
         Assert.Null(list[0].Source);
     }
+
+    [Fact]
+    public void GlossaryEntryDto_ParsesTheLockAndMarksOnlyLockedRows()
+    {
+        // D35: the listing is the only way a UI can show a lock, so the flag has to travel.
+        var json = """
+            [{"source_term":"a","source_lang":"zh","target_term":"A","target_lang":"en",
+              "confidence":1.0,"frequency":2,"domain":"av","source":"manual","user_locked":true},
+             {"source_term":"b","source_lang":"zh","target_term":"B","target_lang":"en",
+              "confidence":1.0,"frequency":2,"domain":"av","source":"seed:av","user_locked":false},
+             {"source_term":"c","source_lang":"zh","target_term":"C","target_lang":"en",
+              "confidence":1.0,"frequency":1,"domain":"","source":"distill"}]
+            """;
+        var list = GlossaryEntryDto.ListFromJson(json);
+
+        Assert.Equal(3, list.Count);
+        Assert.True(list[0].UserLocked);
+        Assert.Equal("已锁定", list[0].LockMark);
+        Assert.False(list[1].UserLocked);
+        Assert.Equal("", list[1].LockMark);
+        // A row the engine said nothing about is unknown, not "unlocked".
+        Assert.Null(list[2].UserLocked);
+        Assert.Equal("", list[2].LockMark);
+    }
+
+    [Fact]
+    public void AckDto_ParsesTheWriteEchoesWithoutBreakingOtherEndpoints()
+    {
+        // tm_put / tm_flag_bad / init answer a bare {"ok":true}; the glossary write
+        // endpoints add the echo, and an ack that never says must not read as a success.
+        var plain = AckDto.FromJson("""{"ok":true}""");
+        Assert.True(plain.Ok);
+        Assert.Null(plain.UserLocked);
+        Assert.Null(plain.Removed);
+
+        var saved = AckDto.FromJson("""{"ok":true,"user_locked":true}""");
+        Assert.True(saved.UserLocked);
+
+        var noOp = AckDto.FromJson("""{"ok":true,"removed":false}""");
+        Assert.True(noOp.Ok);
+        Assert.False(noOp.Removed);
+    }
 }

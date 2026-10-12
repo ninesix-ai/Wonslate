@@ -207,11 +207,11 @@ int main(void) {
 
 | 函数 | 原型 | 说明 |
 |---|---|---|
-| `tt_glossary_list` | `char* tt_glossary_list(source_lang, target_lang)` | 返回 JSON 数组（最多 500 条，按置信度降序、同置信度按术语字典序） |
-| `tt_glossary_upsert` | `char* tt_glossary_upsert(const char* entry_json)` | 新增 / 更新（§5.4）；`confidence` 以调用方为准，`source` 被强制标记为 `manual` |
-| `tt_glossary_delete` | `char* tt_glossary_delete(source_term, source_lang, target_lang)` | 按键删除，返回 Ack |
+| `tt_glossary_list` | `char* tt_glossary_list(source_lang, target_lang)` | 返回 JSON 数组（最多 500 条，按置信度降序、同置信度按术语字典序）；每个元素是 §5.4 的记录，含 `user_locked` |
+| `tt_glossary_upsert` | `char* tt_glossary_upsert(const char* entry_json)` | **用户编辑**（§5.4）：一律生效，不受"严格更高"约束；`source` 由引擎置为 `manual`；可选 `user_locked` 键给出锁定意见（缺省=保持该行原有状态），返回 `{"ok":true,"user_locked":<该行现在的锁定态>}` |
+| `tt_glossary_delete` | `char* tt_glossary_delete(source_term, source_lang, target_lang)` | 按键删除，返回 `{"ok":true,"removed":true|false}`。键**不含领域段**：领域行删不到（`removed:false`），同名通用行存在时删掉的是通用那一行（D50，待定契约） |
 | `tt_glossary_list_with_domain` | `char* tt_glossary_list_with_domain(source_lang, target_lang, domain, uint32_t limit)` | S11：按领域取术语行，排序与 `tt_glossary_list` 一致（置信度降序 → 术语字典序）；`domain` 为空串等同只取泛域行（`tt_glossary_list` 即其 limit=500 的便捷形态） |
-| `tt_glossary_import_pack` | `char* tt_glossary_import_pack(const char* pack_json)` | 导入领域术语包，返回 `{"ok":true,"imported":N}`；该路径**不经过**蒸馏的源语言守卫，故错标行仍能入库，由 `tests/test_glossary_hygiene.py` 兜 |
+| `tt_glossary_import_pack` | `char* tt_glossary_import_pack(const char* pack_json)` | 导入领域术语包，返回 `{"ok":true,"imported":N,"written":W,"skipped_locked":L,"skipped_not_higher":K}`：`imported` 一直是"包里带了多少条"（旧调用方可照旧读），三个计数器才说"库里真改了多少"——被锁定行挡住的计入 `skipped_locked`，不如既有行的计入 `skipped_not_higher`（D49）。该路径**不经过**蒸馏的源语言守卫，故错标行仍能入库，由 `tests/test_glossary_hygiene.py` 兜 |
 
 ## 5. JSON 数据契约
 
@@ -274,14 +274,27 @@ int main(void) {
 
 ```json
 {"source_term":"人工智能","source_lang":"zh","target_term":"Artificial Intelligence","target_lang":"en",
- "confidence":1.0,"frequency":1,"domain":"","source":"manual"}
+ "confidence":1.0,"frequency":1,"domain":"","source":"manual","user_locked":true}
 ```
 
-`source` 为来源标记：`distill`（机器抽取）/ `manual`（用户编辑）/ `tm`（由记忆库转化）；空值为旧记录。
+`source` 为来源标记：`distill`（机器抽取）/ `manual`（用户编辑）/ `tm`（由记忆库转化）；空值为旧记录。行经 `tt_glossary_upsert` 写入时由引擎一律改写为 `manual`，调用方在载荷里写什么都不能盖过这一判定。
+
+`user_locked` 是**行的属性**，只有磁盘上写明了 `true` 或通过 `tt_glossary_upsert` 给出意见才会为真；列表接口把它随每行返回，所以界面能显示"这条不会被自动更新"。
+
+**两条写路径的规则不同**，这是 D49 的落点：
+
+| 写入者 | 规则 | 结果 |
+|---|---|---|
+| 用户编辑（`tt_glossary_upsert`） | **一律生效**，无论既有行的置信度；锁定行同样可被本人改 | 锁是拿来挡机器的，不是拿来锁住用户自己的 |
+| 蒸馏 / 种子包导入 | 仅当新行置信度**严格更高**才替换；`user_locked` 行一律不动 | 挡下的那一行不写、也不计入 `written` |
+
+置信度按调用方给的值存（用户没意见时界面发 1.0），不会被抬高也不会被"保护性保留"——因此一条被手工降到较低置信度的行，可能排不进注入窗口（窗口按置信度降序取，见 `glossary_max_terms`）。
 
 ### 5.5 Ack 与错误码
 
 写操作成功：`{"ok":true}`。错误对象：`{"ok":false,"error":"<码>","message":"…"}`（翻译接口的错误还会带 §5.2 的完整字段）。
+
+**`ok` 只回答"请求被接受"，不回答"库里变了"**：术语表的三个写接口因此各自回报实情——`tt_glossary_upsert` 回 `user_locked`（现在的锁定态）、`tt_glossary_delete` 回 `removed`（是否真删掉一行）、`tt_glossary_import_pack` 回 `written` / `skipped_locked` / `skipped_not_higher`。调用方拿不到这些字段时（旧版库）应理解为"引擎没告诉我们"，而不是"做了"（D49）。
 
 | 错误码 | 含义 |
 |---|---|
