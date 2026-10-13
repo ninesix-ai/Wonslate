@@ -585,15 +585,16 @@ def _floor_cell(s) -> str:
     return "_单次_" if s["repeats"] < 2 else "_待 COMET_"
 
 
-def _extra_identity_lines(engines, directions, primary) -> list:
+def _extra_identity_lines(engines, directions, primary, ranges=None) -> list:
     """Markdown for every measurement the main tables do not render.
 
     `primary` is the {(direction, rows)} the tables above already cover. Everything else on
     disk gets a row here -- a second direction (S12 T2) or a grown corpus (S12 T4) must not
     sit in docs/evidence/ with no path onto the page, because that is how a measurement
-    becomes a rumor. Sub-domain splits are left to the primary identity: the range table is
-    indexed against one corpus file, and applying it to a longer or reversed corpus would
-    label groups with the wrong rows.
+    becomes a rumor. Group tables come along: the ranges are indexed by corpus row order, and
+    the derived direction preserves that order, so a group label means the same sentences in
+    both directions. A run shorter than the range table simply shows fewer groups (clamped),
+    never empty ones.
     """
     sizes = {}
     for direction in directions:
@@ -634,11 +635,32 @@ def _extra_identity_lines(engines, directions, primary) -> list:
                 f"| {e} | {_fmt(s['base_comet'])} | {_fmt(s['scope_comet'])} | "
                 f"{_fmt_pct(s['delta_comet'])} | {paired_n} | {_fmt_pct(chrf_delta)} | {floor} | "
                 f"{_fmt(rate_b, 3, 3)} | {_fmt(rate_s, 3, 3)} | {s['status']} |")
+        if ranges is None:
+            ranges = _load_ranges()
+        for e in present:
+            b = (base_runs.get(e) or [None])[0]
+            s = (scope_runs.get(e) or [None])[0]
+            if not (b and s):
+                continue          # one arm alone has nothing to pair against (D31)
+            group_rows = _subdomain_rows(b, s, ranges)
+            if not group_rows:
+                continue
+            sections += [
+                "",
+                "#### %s \u00b7 \u5b50\u9886\u57df\uff08\u524d %d \u884c\uff09" % (e, rows),
+                "",
+                "| \u5b50\u9886\u57df | \u53e5\u5bf9\u6570 | \u672a\u63a5\u7ebf chrF | \u63a5\u7ebf chrF | \u672a\u63a5\u7ebf COMET | \u63a5\u7ebf COMET |",
+                "|---|---|---|---|---|---|",
+            ]
+            for name, count, b_ch, s_ch, b_co, s_co in group_rows:
+                sections.append(f"| {name} | {count} | {_fmt(b_ch, 1, 2)} | {_fmt(s_ch, 1, 2)} | "
+                                f"{_fmt(b_co)} | {_fmt(s_co)} |")
     if not sections:
         return []
     return ["", "## \u5176\u4ed6\u6d4b\u91cf\u8eab\u4efd\uff08\u8de8\u8bed\u5411 / \u6269\u6837\uff09", "",
-            "> \u4e0a\u9762\u7684\u5b50\u9886\u57df\u5206\u7ec4\u8868\u53ea\u5bf9\u5df2\u53d1\u5e03\u8eab\u4efd\u751f\u6548\uff1b\u672c\u8282\u6570\u5b57\u4e0e\u4e4b\u540c\u53e3\u5f84\uff08\u914d\u5bf9\u5dee + \u540c\u81c2\u5730\u677f\uff09\uff0c"
-            "\u4f46\u6837\u672c\u96c6\u4e0d\u540c\uff0c\u4e0d\u53ef\u4e0e\u4e0a\u8868\u6df7\u7528\u3002**",
+            "> \u672c\u8282\u6570\u5b57\u4e0e\u4e0a\u8868\u540c\u53e3\u5f84\uff08\u914d\u5bf9\u5dee + \u540c\u81c2\u5730\u677f\uff09\uff0c\u4f46\u6837\u672c\u96c6\u4e0d\u540c\uff0c\u4e0d\u53ef\u4e0e\u4e0a\u8868\u6df7\u7528\u3002"
+            "\u5b50\u9886\u57df\u5206\u7ec4\u6309\u8bed\u6599\u884c\u5e8f\u53d6\uff0c\u53cd\u5411\u8bed\u6599\u662f\u540c\u4e00\u6279\u884c\u7684\u5217\u5bf9\u8c03\uff0c\u56e0\u6b64\u540c\u7ec4\u540d\u6307\u540c\u4e00\u6279\u53e5\u5b50\uff1b"
+            "\u884c\u6570\u5c11\u4e8e\u5206\u7ec4\u8868\u7684\u8eab\u4efd\u53ea\u5217\u51fa\u8986\u76d6\u5230\u7684\u90a3\u51e0\u7ec4\u3002**",
             ] + sections
 
 
@@ -664,6 +686,10 @@ def generate_report(args):
     # reproduced by running `--report-only --engines ollama-qwen`, which dropped argos and
     # madlad. Anything with evidence is rendered; --engines only decides what gets benched.
     engines = list(dict.fromkeys([e for e in ENGINES if _has_any_evidence(e)] + engines))
+    # The widening has to reach the writer too: `_write_report` builds its own engine list, and
+    # keeping the CLI one there deleted the *sub-domain tables* of every engine not benched in
+    # this invocation while its TL;DR row survived -- a half-fixed version of the same loss.
+    args._report_engines = list(engines)
     directions = list(getattr(args, "directions", None) or DIRECTIONS)
     baseline_runs = {e: _run_list(EVIDENCE_DIR / f"av-domain-{e}.json") for e in engines}
     scoped_runs = {e: _run_list(EVIDENCE_DIR / f"av-domain-{e}-av.json") for e in engines}
@@ -693,7 +719,7 @@ def generate_report(args):
             for run in (baseline_runs if arm == "base" else scoped_runs)[e]:
                 primary.add((run.get("direction") or "zh-en",
                              int(run.get("requested") or 0)))
-    args._extra_lines = _extra_identity_lines(engines, directions, primary)
+    args._extra_lines = _extra_identity_lines(engines, directions, primary, ranges)
     _write_report(ranges, baselines, scoped, summary, args)
     return summary
 
@@ -710,11 +736,35 @@ def _fmt_pct(v):
     return f"{v:+.4f}"
 
 
+def _clamped_ranges(ranges, n_rows):
+    """Ranges that overlap the first `n_rows` corpus rows, with the last one trimmed.
+
+    The corpus grew to 1000 rows while the published runs hold 300 samples. Showing groups
+    301..1000 against those runs would print empty rows that read as "these sub-domains
+    scored nothing" when nothing was measured there -- so groups beyond the run are dropped
+    and the boundary group is cut to the rows that actually exist.
+    """
+    out = []
+    for rng in ranges:
+        if rng["start"] > n_rows:
+            continue
+        item = dict(rng)
+        item["end"] = min(rng["end"], n_rows)
+        out.append(item)
+    return out
+
+
 def _subdomain_rows(base: dict | None, scope: dict | None, ranges: list[dict]) -> list:
     """Return (name, count, base_chrF, scope_chrF, base_comet, scope_comet) per range.
 
     Both columns of a row are restricted to the sentences both arms translated
-    (defect D31); with only one arm present there is nothing to pair against."""
+    (defect D31); with only one arm present there is nothing to pair against. Ranges are
+    clamped to what the runs actually carry, so a 300-row run never displays a 1000-row
+    group table.
+    """
+    n_rows = max(len((base or {}).get("samples") or []),
+                 len((scope or {}).get("samples") or []))
+    ranges = _clamped_ranges(ranges, n_rows)
     allowed = None
     if base and scope:
         allowed = {i for i in range(len(base.get("samples") or []))
@@ -732,7 +782,7 @@ def _subdomain_rows(base: dict | None, scope: dict | None, ranges: list[dict]) -
 
 def _write_report(ranges, baselines, scoped, summary, args) -> None:
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    engines = list(args.engines)
+    engines = list(getattr(args, "_report_engines", None) or args.engines)
     lines = [
         f"# AV 领域质量基准报告（{now} 自动回填）",
         "",
@@ -856,26 +906,34 @@ def _hypothesis_block(summary, baselines, scoped, ranges) -> list:
     qwen = next((s for s in summary if s["engine"] == "ollama-qwen"), None)
     if qwen and qwen["delta_comet"] is not None:
         rows = _subdomain_rows(baselines.get("ollama-qwen"), scoped.get("ollama-qwen"), ranges)
-        # "多义词边界" is the 7th range (index 6) in av_domain_ranges.json.
-        # A row is (name, count, base_chrF, scope_chrF, base_comet, scope_comet);
-        # the subset delta must subtract same-metric columns, i.e. index 5-4 for
-        # COMET and 3-2 for chrF. (A prior bug mixed 5-3 and produced a nonsense
-        # ~-48 number.) Guard against NaN with x == x.
-        poly_row = rows[6]
-        _b_ch, _s_ch, _b_co, _s_co = poly_row[2], poly_row[3], poly_row[4], poly_row[5]
-        poly_comet = (_s_co - _b_co) if (_s_co == _s_co and _b_co == _b_co) else None
-        poly_chrf = (_s_ch - _b_ch) if (_s_ch == _s_ch and _b_ch == _b_ch) else None
-        overall_comet = qwen["delta_comet"]
-        overall_chrf = (qwen["scope_chrF"] - qwen["base_chrF"]
-                        if qwen["scope_chrF"] and qwen["base_chrF"] else None)
-        lines += [
-            f"- **多义词边界子集 Δ vs 全样 Δ（ollama-qwen）**："
-            f"全样 COMET Δ={_fmt_pct(overall_comet)}、chrF Δ={_fmt_pct(overall_chrf)}；"
-            f"多义词子集 COMET Δ={_fmt_pct(poly_comet)}、chrF Δ={_fmt_pct(poly_chrf)}。"
-            + ("多义词子集提升大于全样，与 S11 种子包「术语消歧」设计目标一致。"
-               if (poly_chrf is not None and overall_chrf is not None and poly_chrf > overall_chrf)
-               else "多义词子集未见大于全样的提升，需回看具体证据。"),
-        ]
+        # Found by name, never by position: this used to read `rows[6]` on the assumption that
+        # the polysemy group is the seventh range. The corpus grew and added a second
+        # polysemy group, so a positional read would either fall off the end of a clamped
+        # table or silently describe a different sub-domain than the one it names.
+        # A row is (name, count, base_chrF, scope_chrF, base_comet, scope_comet), so the
+        # subset delta subtracts index 5-4 for COMET and 3-2 for chrF (a prior bug mixed 5-3
+        # and produced a nonsense ~-48 number). Guard against NaN with x == x.
+        poly_rows = [r for r in rows if r[0].startswith("\u591a\u4e49\u8bcd\u8fb9\u754c")]
+        if not poly_rows:
+            lines.append(
+                "- **\u591a\u4e49\u8bcd\u8fb9\u754c\u5b50\u96c6**\uff1a\u672c\u6279\u8bc1\u636e\u672a\u8986\u76d6\u8be5\u5b50\u9886\u57df\u5206\u7ec4\uff0c"
+                "\u4e0d\u7ed9\u5b50\u96c6\u5dee\u503c\u7684\u7ed3\u8bba\u3002")
+        else:
+            poly_row = poly_rows[0]
+            _b_ch, _s_ch, _b_co, _s_co = poly_row[2], poly_row[3], poly_row[4], poly_row[5]
+            poly_comet = (_s_co - _b_co) if (_s_co == _s_co and _b_co == _b_co) else None
+            poly_chrf = (_s_ch - _b_ch) if (_s_ch == _s_ch and _b_ch == _b_ch) else None
+            overall_comet = qwen["delta_comet"]
+            overall_chrf = (qwen["scope_chrF"] - qwen["base_chrF"]
+                            if qwen["scope_chrF"] and qwen["base_chrF"] else None)
+            lines += [
+                f"- **\u591a\u4e49\u8bcd\u8fb9\u754c\u5b50\u96c6 \u0394 vs \u5168\u6837 \u0394\uff08ollama-qwen\uff0c\u7ec4\u540d \u300c{poly_row[0]}\u300d\uff09**\uff1a"
+                f"\u5168\u6837 COMET \u0394={_fmt_pct(overall_comet)}\u3001chrF \u0394={_fmt_pct(overall_chrf)}\uff1b"
+                f"\u591a\u4e49\u8bcd\u5b50\u96c6 COMET \u0394={_fmt_pct(poly_comet)}\u3001chrF \u0394={_fmt_pct(poly_chrf)}\u3002"
+                + ("\u591a\u4e49\u8bcd\u5b50\u96c6\u63d0\u5347\u5927\u4e8e\u5168\u6837\uff0c\u4e0e S11 \u79cd\u5b50\u5305\u300c\u672f\u8bed\u6d88\u6b67\u300d\u8bbe\u8ba1\u76ee\u6807\u4e00\u81f4\u3002"
+                   if (poly_chrf is not None and overall_chrf is not None and poly_chrf > overall_chrf)
+                   else "\u591a\u4e49\u8bcd\u5b50\u96c6\u672a\u89c1\u5927\u4e8e\u5168\u6837\u7684\u63d0\u5347\uff0c\u9700\u56de\u770b\u5177\u4f53\u8bc1\u636e\u3002"),
+            ]
     if any(s["engine"] == "madlad" and s["delta_comet"] is not None for s in summary):
         m = next(s for s in summary if s["engine"] == "madlad")
         lines.append(f"- **madlad Δ**：{_fmt_pct(m['delta_comet'])}——madlad 是 Marian 系，"

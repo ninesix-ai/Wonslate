@@ -17,8 +17,12 @@ These tests pin `summarize_engine` on synthetic runs: no files, no model, no GPU
 Run:
     python -m unittest tests.test_run_av_baseline -v
 """
+import json
 import os
+import pathlib
 import sys
+import tempfile
+import types
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "script"))
@@ -210,6 +214,58 @@ class TermAdherenceReportingTests(unittest.TestCase):
         self.assertIsNotNone(s["base_adherence"])
         self.assertFalse(s["adherence_comparable"],
                          "rates over 500 and 667 opportunities must not be subtracted")
+
+
+class ReportRenderingTests(unittest.TestCase):
+    """The report is a projection of what was measured, not of what this run asked for.
+
+    Two ways the published document lost content without losing a test: narrowing --engines
+    deleted another engine's TL;DR row, and after the first fix its sub-domain tables still
+    vanished -- because the writer built its own engine list from args.engines while the
+    summary used the widened one. A half-fix leaves the row and drops the table, which reads
+    to a passer-by as "that engine was never measured here".
+    """
+
+    def setUp(self):
+        import run_av_baseline
+        self.m = run_av_baseline
+        self.tmp = tempfile.TemporaryDirectory()
+        self.orig_evidence = self.m.EVIDENCE_DIR
+        self.orig_report = self.m.REPORT_PATH
+        self.m.EVIDENCE_DIR = pathlib.Path(self.tmp.name) / "evidence"
+        self.m.EVIDENCE_DIR.mkdir(parents=True)
+        self.m.REPORT_PATH = pathlib.Path(self.tmp.name) / "av-domain-benchmark.md"
+
+    def tearDown(self):
+        self.m.EVIDENCE_DIR = self.orig_evidence
+        self.m.REPORT_PATH = self.orig_report
+        self.tmp.cleanup()
+
+    def _put_legacy_evidence(self, engine, comet):
+        run = _run(["a", "b"], scores=[comet, comet], comet=comet)
+        payload = {"corpus": "av-domain", "generated_at": "x", "runs": [run]}
+        (self.m.EVIDENCE_DIR / ("av-domain-%s.json" % engine)).write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        scoped = dict(run, comet=comet + 0.01,
+                      comet_scores_per_sample=[comet + 0.01, comet + 0.01])
+        (self.m.EVIDENCE_DIR / ("av-domain-%s-av.json" % engine)).write_text(
+            json.dumps(dict(payload, runs=[scoped]), ensure_ascii=False), encoding="utf-8")
+
+    def _args(self, engines):
+        return types.SimpleNamespace(
+            engines=engines, directions=list(self.m.DIRECTIONS), n=None, repeats=1,
+            quick=False, skip_comet=True, report_only=True, force=False,
+            only_baseline=False, preflight_only=False)
+
+    def test_an_engine_with_evidence_keeps_its_subdomain_table(self):
+        self._put_legacy_evidence("argos", 0.73)
+        self._put_legacy_evidence("ollama-qwen", 0.82)
+        self.m.generate_report(self._args(["ollama-qwen"]))
+        text = self.m.REPORT_PATH.read_text(encoding="utf-8")
+        self.assertIn("### ollama-qwen", text)
+        self.assertIn("### argos", text,
+                      "benching one engine must not delete another engine's published tables")
+        self.assertIn("| argos |", text)
 
 
 if __name__ == "__main__":
