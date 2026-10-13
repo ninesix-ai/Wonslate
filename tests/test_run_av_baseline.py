@@ -20,6 +20,7 @@ Run:
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
 import types
@@ -129,6 +130,49 @@ class StatusHonestyTests(unittest.TestCase):
         self.assertEqual("_单次_", _floor_cell({"noise_floor": None, "repeats": 1}))
         self.assertEqual("_待 COMET_", _floor_cell({"noise_floor": None, "repeats": 2}))
         self.assertEqual("±0.0100", _floor_cell({"noise_floor": 0.01, "repeats": 2}))
+
+    def test_a_backend_that_cannot_apply_terms_has_no_arm_to_miss(self):
+        # argos and madlad are served by sidecar.rs, which deliberately does NOT override
+        # accepts_term_context: the CT2/MADLAD checkpoints read the term array and do nothing.
+        # The published legacy artifacts proved it -- the scoped arm came out identical in
+        # 300/300 rows. A baseline-only identity for those engines is therefore a design
+        # decision. Calling it "missing arm" tells a reader to go run a comparison that
+        # cannot differ, and the 0.0000 they get back reads as a measurement of "terminology
+        # does not help" rather than "nothing in this backend can apply it".
+        s = summarize_engine("argos", [_run(["a", "b"], comet=0.70)], [])
+        self.assertNotIn("缺臂", s["status"])
+        self.assertIn("不适用", s["status"])
+
+    def test_an_engine_that_can_apply_terms_still_reports_the_missing_arm(self):
+        # The other half of the distinction. ollama's scoped arm is a real measurement, so
+        # an absent one IS missing evidence; widening the "not applicable" wording to every
+        # engine would quietly cover up an artifact that went missing.
+        s = summarize_engine("ollama-qwen", [_run(["a", "b"], comet=0.70)], [])
+        self.assertIn("缺臂", s["status"])
+
+    def test_a_zero_floor_on_an_nmt_engine_is_not_read_as_significance(self):
+        # These backends are deterministic, so the within-arm floor comes out exactly zero and
+        # the ordinary sentence "the delta exceeds the floor" fires on any nonzero difference.
+        # Publishing that for an engine whose backend drops the term array would turn a wire
+        # format into a terminology finding -- the D51 mistake from the other side.
+        base = _run(["a", "b"], scores=[0.70, 0.70], comet=0.70)
+        scope = _run(["a2", "b2"], scores=[0.7001, 0.7001], comet=0.7001)
+        s = summarize_engine("argos", [base, base], [scope, scope])
+        self.assertEqual(0.0, s["noise_floor"])
+        self.assertNotIn("超噪声地板", s["status"])
+        self.assertIn("构造使然", s["status"])
+
+    def test_the_not_applicable_row_still_reports_its_repeat_count(self):
+        # "Not applicable" says something about the comparison, not about how often the
+        # baseline ran. A fixed sentence claiming a single sample would be a lie the moment
+        # that identity gets a second one, and the repeat count is what a reader uses to
+        # decide whether the absolute metrics are worth quoting.
+        one = summarize_engine("argos", [_run(["a", "b"], comet=0.70)], [])
+        two = summarize_engine("argos", [_run(["a", "b"], comet=0.70),
+                                         _run(["a", "b"], comet=0.71)], [])
+        self.assertIn("未复采", one["status"])
+        self.assertNotIn("未复采", two["status"])
+        self.assertIn("已复采 2 次", two["status"])
 
     def test_a_delta_inside_the_noise_floor_is_not_a_result(self):
         base = _run(["a", "b"], comet=0.700)
@@ -266,6 +310,161 @@ class ReportRenderingTests(unittest.TestCase):
         self.assertIn("### argos", text,
                       "benching one engine must not delete another engine's published tables")
         self.assertIn("| argos |", text)
+
+    def test_a_baseline_only_identity_of_an_nmt_engine_is_not_labelled_missing_arm(self):
+        # The rendered table, not just the dict: this is the row a reader meets after
+        # `--only-baseline`, and "missing arm" there sends someone to re-run a comparison
+        # that sidecar.rs makes impossible by construction.
+        run = _run(["a", "b"], scores=[0.7, 0.7], comet=0.7, engine="argos")
+        run["direction"] = "zh-en"
+        name = self.m.evidence_name("argos", "zh-en", "", 2)
+        (self.m.EVIDENCE_DIR / name).write_text(
+            json.dumps({"corpus": "av-domain", "generated_at": "x",
+                        "direction": "zh-en", "corpus_rows": 2, "runs": [run]},
+                       ensure_ascii=False), encoding="utf-8")
+        lines = self.m._extra_identity_lines(["argos"], ["zh-en"], set())
+        row = [l for l in lines if l.startswith("| argos |")]
+        self.assertEqual(1, len(row), "the new identity did not reach the table")
+        self.assertIn("不适用", row[0])
+        self.assertNotIn("缺臂", row[0])
+
+
+class NmtTermContextWordingTests(unittest.TestCase):
+    """The prose that says which engines consume a glossary must come from the table.
+
+    The shipped report used to read "madlad / qwen consume the term list through the prompt;
+    argos does not". sidecar.rs serves BOTH argos and madlad and deliberately keeps the trait
+    default `accepts_term_context() == false`, and the published scoped artifact for madlad
+    came out identical in 300/300 rows -- so the sentence assigned one engine to the wrong
+    side, which is exactly how a limitation section ends up contradicting the table its own
+    status column reads.
+    """
+
+    MARKER = "不会施加术语上下文的引擎："
+
+    def test_the_split_itself_is_what_the_report_claims(self):
+        import run_av_baseline
+        applies, ignores = run_av_baseline.term_context_sides()
+        self.assertEqual(["ollama-qwen"], applies)
+        self.assertEqual(["argos", "madlad"], ignores)
+
+    def test_the_limitation_line_puts_madlad_with_the_backends_that_ignore_terms(self):
+        import run_av_baseline
+        line = [l for l in run_av_baseline._limitations_block() if "机制依赖" in l]
+        self.assertEqual(1, len(line), "the capability limitation line vanished")
+        tail = line[0].split(self.MARKER)[1].split("。")[0]
+        self.assertIn("argos", tail)
+        self.assertIn("madlad", tail,
+                      "madlad does not apply term context; listing it as a consumer is the "
+                      "claim this test exists to catch")
+        self.assertNotIn("ollama", tail)
+
+    def test_the_delta_note_calls_a_zero_delta_constructual_not_measured(self):
+        # Both NMT rows used to be explained as "a small delta is expected", which leaves
+        # room for reading 0.0000 as a finding about terminology. It is a finding about the
+        # backend, and the report has to say so.
+        import run_av_baseline
+        summary = [{"engine": "argos", "delta_comet": 0.0},
+                   {"engine": "madlad", "delta_comet": 0.0}]
+        text = "\n".join(run_av_baseline._hypothesis_block(summary, {}, {}, []))
+        self.assertIn("构造使然", text)
+        self.assertNotIn("属预期", text)
+
+    def test_the_corpus_size_note_states_what_is_on_disk(self):
+        # The limitation section claimed "300 self-authored pairs, growing to 500-1000 sits in
+        # S12 T4" after T4 had already landed the thousandth row. A dated claim inside a
+        # generated document is the same failure this round keeps meeting: prose that stops
+        # matching the thing it describes. The size now comes from the corpus files.
+        import run_av_baseline
+        rows = run_av_baseline._corpus_rows("zh-en", None, None)
+        self.assertGreater(rows, 300, "the in-repo corpus shrank; fix the test and the report")
+        text = "\n".join(run_av_baseline._limitations_block())
+        self.assertIn("%d 对" % rows, text)
+        self.assertNotIn("挂在 S12 T4", text)
+
+    def test_the_direction_note_covers_every_direction_the_runner_knows(self):
+        import run_av_baseline
+        text = "\n".join(run_av_baseline._limitations_block())
+        self.assertNotIn("仅 zh→en", text,
+                         "en->zh has been measured since S12 T2; saying zh->en only is the "
+                         "stale-claim shape this test exists for")
+        for direction in run_av_baseline.DIRECTIONS:
+            self.assertIn(direction.replace("-", "→"), text)
+
+    def test_the_disclosure_line_carries_the_current_size_and_directions(self):
+        # REQ-E2 points at this sentence when it says an absolute number may only be quoted
+        # with its qualifiers attached. Two of those qualifiers had gone stale, so a reader
+        # faithfully following the rule would have published "300 句、zh→en" about a
+        # thousand-row, two-direction measurement -- a limitation that no longer describes
+        # the data it is supposed to constrain.
+        import run_av_baseline
+        rows = run_av_baseline._corpus_rows("zh-en", None, None)
+        line = next(l for l in run_av_baseline._limitations_block() if "对外披露口径" in l)
+        self.assertIn("AV 域自撰 %d 句" % rows, line)
+        self.assertIn("zh→en", line)
+        self.assertIn("en→zh", line)
+
+    def test_the_reproduction_block_can_reproduce_what_the_report_shows(self):
+        # The identity section holds per-direction and per-size tables, and two of its
+        # identities have no scoped arm by design. A reader copying only the four commands
+        # that used to be listed would get a single direction, one size, and both arms --
+        # i.e. a document that does not reproduce the tables it prints.
+        import run_av_baseline
+        text = "\n".join(run_av_baseline._reproduction_block(
+            types.SimpleNamespace(n=1000, repeats=1, engines="argos,madlad",
+                                  directions="zh-en,en-zh")))
+        for flag in ("--directions", "--only-baseline", "--repeats", "--n"):
+            self.assertIn(flag, text, "%s is missing from the reproduction commands" % flag)
+
+
+    def test_the_chrf_column_is_not_presented_as_cross_direction_comparable(self):
+        # The identity section now puts zh->en and en->zh tables on one page, and all three
+        # engines score far higher chrF on zh->en (ollama 48.90 vs 25.64). Nothing about that
+        # means the en->zh output is worse: chrF counts character overlap, and the reference
+        # texts have very different lengths per direction. Without the caveat, a side-by-side
+        # layout invites exactly that reading.
+        import run_av_baseline
+        line = [l for l in run_av_baseline._limitations_block() if "chrF" in l]
+        self.assertEqual(1, len(line), "the chrF caveat is missing from the limitation section")
+        # Assert the claim, not merely the topic: a line that says chrF IS comparable across
+        # directions would also contain "chrF" and "跨语向", so only the negation is testable.
+        self.assertIn("chrF 不跨语向可比", line[0])
+        self.assertIn("不是同一把尺", line[0])
+
+
+class TermContextSourceTests(unittest.TestCase):
+    """The runner's idea of which engine can carry a glossary comes from the Rust trait.
+
+    A second, hand-kept list in Python would drift the moment an engine starts or stops
+    honouring term context -- and the drift direction that matters is the one where the
+    report claims a comparison is "not applicable" while the backend now does apply terms.
+    So the expectation is parsed out of `engine/mod.rs`, from the assertions that already
+    pin the trait there, in the same spirit as the FFI census reading lib.rs.
+    """
+
+    RUST = (pathlib.Path(__file__).resolve().parent.parent
+            / "translator-engine" / "src" / "engine" / "mod.rs")
+
+    def _rust_expectations(self):
+        text = self.RUST.read_text(encoding="utf-8")
+        yes, no = set(), set()
+        for m in re.finditer(r'assert!\((!?)get_engine\("([a-z]+)"\)'
+                             r'\.accepts_term_context\(\)\)', text):
+            (no if m.group(1) else yes).add(m.group(2))
+        return yes, no
+
+    def test_the_extraction_is_not_silently_empty(self):
+        # Without this guard the equality test below could pass against an empty set, which
+        # is the shape a "vacuously green" source-check always has.
+        yes, no = self._rust_expectations()
+        self.assertEqual({"ollama"}, yes)
+        self.assertEqual({"demo", "argos", "madlad"}, no)
+
+    def test_the_python_table_matches_what_the_engine_asserts(self):
+        from run_av_baseline import ACCEPTS_TERM_CONTEXT
+        yes, no = self._rust_expectations()
+        self.assertEqual(yes, {k for k, v in ACCEPTS_TERM_CONTEXT.items() if v})
+        self.assertEqual(no, {k for k, v in ACCEPTS_TERM_CONTEXT.items() if not v})
 
 
 if __name__ == "__main__":

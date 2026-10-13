@@ -65,7 +65,7 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 # bench call, so a second copy of that rule here would eventually disagree with the writer --
 # and disagree in the direction of aborting a multi-hour matrix run mid-way.
 sys.path.insert(0, str(REPO / "script"))
-from bench_domain_av import evidence_name  # noqa: E402
+from bench_domain_av import evidence_name, _ffi_id  # noqa: E402
 EVIDENCE_DIR = REPO / "docs" / "evidence"
 REPORT_PATH = REPO / "docs" / "av-domain-benchmark.md"
 RANGES_PATH = REPO / "script" / "av_domain_ranges.json"
@@ -98,6 +98,16 @@ OLLAMA_URL = "http://127.0.0.1:11434/api/tags"
 OLLAMA_MODEL = "qwen3:8b"
 DIRECTIONS = ("zh-en", "en-zh")   # en->zh was derived under S12 T2; both corpora are in the repo
 ENGINES = ("argos", "madlad", "ollama-qwen")
+# Which engines can act on a glossary term context at all, keyed by the FFI id the Rust side
+# knows. argos and madlad are served by sidecar.rs, which deliberately does NOT override
+# `accepts_term_context`: the CT2 and MADLAD checkpoints read the term array and ignore it,
+# and their docstrings say so. The published legacy artifacts measured it -- the scoped arm
+# came out byte-identical to the baseline in 300/300 rows for both.
+#
+# tests/test_run_av_baseline.py parses engine/mod.rs and compares, so this cannot drift into
+# the dangerous direction: a table that still says "not applicable" after a backend started
+# applying terms would excuse the report from showing a real terminology effect.
+ACCEPTS_TERM_CONTEXT = {"ollama": True, "demo": False, "argos": False, "madlad": False}
 
 
 def _hr(title: str) -> None:
@@ -413,16 +423,60 @@ def _spread(runs):
     return (max(vals) - min(vals)) if len(vals) >= 2 else None
 
 
-def _status(has_base, has_scope, failed_rows, delta, noise_floor, repeats=1) -> str:
+def _term_context_for(engine) -> bool:
+    """Whether a scoped (terminology-wired) arm could differ at all for this engine.
+
+    Unknown ids fall on the strict side. Claiming "not applicable" for an engine whose
+    capability is not in the table would excuse a genuinely missing artifact, which is the
+    opposite of what this column is for.
+    """
+    return ACCEPTS_TERM_CONTEXT.get(_ffi_id(engine), True)
+
+
+def term_context_sides():
+    """(applies, ignores): the bench engine ids split by whether a scoped arm can differ.
+
+    The report's prose about engine capability is rendered from here so it cannot disagree
+    with the status column. It used to be hand-written, and it did disagree: the limitation
+    section listed madlad among the engines that consume the glossary, while madlad is served
+    by the same sidecar.rs as argos and keeps the trait default of not applying it (D57).
+    """
+    applies = [e for e in ENGINES if _term_context_for(e)]
+    ignores = [e for e in ENGINES if not _term_context_for(e)]
+    return applies, ignores
+
+
+def _status(has_base, has_scope, failed_rows, delta, noise_floor, repeats=1,
+            term_context=True) -> str:
     """The verdict column, and the only place allowed to write 完整.
 
     D31: this used to read `has_base and has_scope` -- two files exist -- and printed
     ✅ 完整 for a run in which 19 of 300 rows had never been translated at all.
+
+    D57: a missing scoped arm has two opposite causes as well. For an engine that cannot
+    apply term context there is nothing to pair, so the arm was never run on purpose; saying
+    "missing evidence" sends a reader to bench a comparison that cannot differ, and the
+    0.0000 they get back then reads as "terminology does not help".
     """
-    if not (has_base and has_scope):
+    if not has_base:
+        return "⚠️ 缺臂（另一轮无证据）"
+    if not has_scope:
+        if not term_context:
+            # The repeat note still belongs here: skipping the comparison does not skip the
+            # question of how often the baseline itself was sampled.
+            tail = ("；未复采，无噪声地板" if repeats < 2
+                    else "；基线已复采 %d 次" % repeats)
+            return "ℹ️ 对照不适用（该后端不施加术语上下文），仅基线" + tail
         return "⚠️ 缺臂（另一轮无证据）"
     head = "✅ 完整" if failed_rows == 0 else \
         "⚠️ %d 行未译出（已从指标剔除）" % failed_rows
+    if not term_context:
+        # These backends are deterministic, so their within-arm floor comes out exactly zero,
+        # and the ordinary "delta exceeds the floor" sentence would fire on any nonzero
+        # difference for an engine that cannot apply the terms at all. Say what that delta is
+        # instead of letting a wire format read as a terminology finding.
+        tail = "；未复采，无噪声地板" if repeats < 2 else "；已复采 %d 次" % repeats
+        return head + "；对照不适用（该后端不施加术语上下文），Δ 为构造使然，不作术语效果解读" + tail
     if noise_floor is None:
         # "no floor" has two opposite causes that read the same unless they are told apart:
         # a single run, or repeats that were measured while COMET has not been scored yet --
@@ -524,7 +578,8 @@ def summarize_engine(engine, base_runs, scope_runs) -> dict:
         "delta_paired": bool(per_pair),
         "repeats": max(len(base_runs), len(scope_runs)),
         "status": _status(has_base, has_scope, failed_rows, delta, noise_floor,
-                          max(len(base_runs), len(scope_runs))),
+                          max(len(base_runs), len(scope_runs)),
+                          term_context=_term_context_for(engine)),
     }
 
 
@@ -934,19 +989,32 @@ def _hypothesis_block(summary, baselines, scoped, ranges) -> list:
                    if (poly_chrf is not None and overall_chrf is not None and poly_chrf > overall_chrf)
                    else "\u591a\u4e49\u8bcd\u5b50\u96c6\u672a\u89c1\u5927\u4e8e\u5168\u6837\u7684\u63d0\u5347\uff0c\u9700\u56de\u770b\u5177\u4f53\u8bc1\u636e\u3002"),
             ]
-    if any(s["engine"] == "madlad" and s["delta_comet"] is not None for s in summary):
-        m = next(s for s in summary if s["engine"] == "madlad")
-        lines.append(f"- **madlad Δ**：{_fmt_pct(m['delta_comet'])}——madlad 是 Marian 系，"
-                     "上下文注入路径与 LLM 不同，Δ 通常小于 ollama-qwen。")
-    if any(s["engine"] == "argos" and s["delta_comet"] is not None for s in summary):
-        a = next(s for s in summary if s["engine"] == "argos")
-        lines.append(f"- **argos Δ**：{_fmt_pct(a['delta_comet'])}。若 |Δ| < 0.005 属预期："
-                     "argos 走 Marian，不消费 prompt 术语。非零时须单独解释。")
+    # A backend that drops the term context cannot show a terminology effect by construction,
+    # so a zero delta there is a statement about the engine, not about the pack. The wording
+    # used to read "expected if |delta| < 0.005", which leaves a reader free to take +0.0000
+    # as a measurement about terminology. Rendered off the same split the status column uses.
+    applies, ignores = term_context_sides()
+    for s in summary:
+        if s["engine"] in ignores and s["delta_comet"] is not None:
+            lines.append(
+                f"- **{s['engine']} Δ**：{_fmt_pct(s['delta_comet'])}——该后端不施加术语上下文"
+                "（`accepts_term_context` 取 trait 默认 `false`，CT2 / MADLAD checkpoint 读到术语数组也不使用），"
+                "此 Δ 为**构造使然**，不得读作“术语表在该引擎上无效”的测量结论；"
+                "已发布的 legacy 证据里它的接线臂与基线臂 300/300 行逐字相同。")
+    if applies:
+        lines.append(f"- **可归因到术语接线的引擎**：{'、'.join(applies)}；只有它们的 Δ 能作术语效果解读。")
     lines += ["", "_(更多细节从 evidence/*.json 的 samples 数组复现)_", ""]
     return lines
 
 
 def _reproduction_block(args) -> list:
+    """The reproduction section.
+
+    It used to list only four commands, none of which could reproduce the per-direction or
+    per-size tables further down the same document -- a reader copying them would get one
+    direction, one size and both arms. The scope knobs are now spelled out, because the
+    identity of a table (D51) is decided by exactly those flags.
+    """
     return [
         "## 复现",
         "",
@@ -957,14 +1025,36 @@ def _reproduction_block(args) -> list:
         "# Linux / macOS",
         "./run_av_baseline.sh",
         "",
-        "# 常用变体",
+        "# 表里每一张的身份由下面四个旋钮决定，缺一个就不是同一张表（D51）：",
+        "python script/run_av_baseline.py --directions zh-en,en-zh            # 语向",
+        "python script/run_av_baseline.py --n 1000                            # 句数",
+        "python script/run_av_baseline.py --repeats 2                         # 每臂复采次数（给噪声地板）",
+        "python script/run_av_baseline.py --engines argos,madlad --only-baseline   # 不施加术语上下文的引擎只跑基线",
+        "",
+        "# 其它变体",
         "python script/run_av_baseline.py --preflight-only   # 只体检",
         "python script/run_av_baseline.py --quick            # 前 20 句冒烟",
         "python script/run_av_baseline.py --skip-comet       # 不跑 COMET（快）",
-        "python script/run_av_baseline.py --report-only      # 只重出报告",
+        "python script/run_av_baseline.py --report-only      # 只重出报告（不动证据）",
         "```",
         "",
     ]
+
+
+def _corpus_size_note(unit="对"):
+    """The corpus's own current row count, phrased so this section cannot go stale.
+
+    The limitation text used to state 300 pairs and "growing to 500-1000 sits in S12 T4" long
+    after the thousandth row had landed. A dated claim in a generated document is the failure
+    this report keeps being edited for: the prose stops matching the thing it describes.
+    """
+    rows = _corpus_rows(DIRECTIONS[0], None, None)
+    return "%d %s" % (rows, unit) if rows else "（行数见 script/eval-data/）"
+
+
+def _direction_note():
+    """The directions the runner actually knows, read off DIRECTIONS rather than restated."""
+    return "、".join(d.replace("-", "\u2192") for d in DIRECTIONS)
 
 
 def _limitations_block() -> list:
@@ -972,10 +1062,20 @@ def _limitations_block() -> list:
         "## 局限与免责（写死，不回填）",
         "",
         "- **域覆盖窄**：AV / 多媒体技术只是众多专业域之一；本报告数字**不外推**到医疗 / 法律 / 金融等域；",
-        "- **语料自撰**：300 对由本项目工程师手写，风格偏技术描述，与真实用户素材（会议记录、视频教程、播客）在句长、口语度、噪声水平上仍有分布差；扩到 500-1000 对挂在 S12 T4；",
-        "- **单语言对**：仅 zh→en；ja/ko/fr/de/es/ru/pt/it/ar 与 en→zh 挂在 S12 T2；",
-        "- **术语注入的机制依赖**：madlad / qwen 通过 prompt 消费术语表；argos（Marian 系）不吃这个上下文，Δ 可能为 0——这是**引擎能力边界**，不是 S11 缺陷；",
+        ("- **语料自撰**：" + _corpus_size_note("对") + "由本项目工程师手写，风格偏技术描述，"
+         "与真实用户素材（会议记录、视频教程、播客）在句长、口语度、噪声水平上仍有分布差；"
+         "扩样按追加式进行，旧身份的行序不变，故历史数字仍可对同一子集复算；"),
+        ("- **语言对覆盖**：" + _direction_note() + "；en\u2192zh 由 zh\u2192en 的语料列对调派生（S12 T2），"
+         "不是独立采写的第二套句子，两语向的结论因此不完全独立；ja/ko/fr/de/es/ru/pt/it/ar 仍挂在 S12 T2；"),
+        ("- **术语注入的机制依赖**：会施加术语上下文的引擎：" + ("、".join(term_context_sides()[0]) or "无")
+         + "；不会施加术语上下文的引擎：" + ("、".join(term_context_sides()[1]) or "无")
+         + "（来源 `translator-engine/src/engine/mod.rs` 的 `accepts_term_context` 及其测试断言，"
+         "本节与表内状态列读同一张表）。后者的 Δ 恒为 0 属**构造使然**，"
+         "不是“S11 对这些引擎无效”的测量结论——这是**引擎能力边界**，不是 S11 缺陷；"),
         "- **COMET 参考不完美**：在通用域与人工判断相关性高，在窄域技术文本上会下降；本报告数字作为**同引擎同批样本的相对 Δ**解读；",
+        ("- **chrF 不跨语向可比**：本报告把 " + _direction_note() + " 的表并排放在同一页上，"
+         "而 chrF 量的是目标侧的字符重叠，两个语向的参考文本长度不同，所以**同一引擎在不同语向的 chrF 绝对值不是同一把尺**（三个引擎均表现为 zh→en 高很多）；"
+         "这**不是**“那个语向译得更差”。要跨语向比，就只比同一语向内的 Δ 与同臂地板。"),
         "- **D32 / D34 与本报告的时间关系**：种子包 266 条 av 行当时同为 confidence 0.90——成因是 **D34**："
         "导入器“缺失即 1.0”的兜底写的是 `confidence <= 0.0`，而 `GlossaryEntry::from_json` 已先把缺失键填成 0.9，"
         "该兜底从 shipped 包永远走不到（2026-10-08 已按“键是否存在”修正并重导种子包，现这些行为 1.0）；"
@@ -993,7 +1093,9 @@ def _limitations_block() -> list:
         "- **Δ 必须有噪声地板才成立**：同臂两次复采（`--repeats 2`）的均值差即地板，|Δ| 在地板内不足以归因——"
         "ollama 档以 `temperature 0.3` 且无 seed 生成，单跑一次无法区分术语效果与采样噪声。"
         "**引擎失败行已从分母剔除**（defect D31：曾把 19 行空译文当“译得差”计入，使 Δ 高估至 +0.0330）；",
-        "- **对外披露口径**：本报告的绝对数字（例如「COMET 0.87」）**不单独抽出对外宣传**，必须与「AV 域自撰 300 句、zh→en、未做过第三方审计」三个限定一起出现。",
+        ("- **对外披露口径**：本报告的绝对数字（例如「COMET 0.87」）**不单独抽出对外宣传**，"
+         "必须与「AV 域自撰 " + _corpus_size_note("句") + "、" + _direction_note() + "、未做过第三方审计」这些限定一起出现，"
+         "并同报语向与句数（D51：不同测量身份的数不可混用）。"),
         "",
     ]
 
