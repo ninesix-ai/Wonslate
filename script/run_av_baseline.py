@@ -1172,17 +1172,33 @@ class _Tee:
             return False
 
 
+def log_path_for(argv) -> pathlib.Path:
+    """Which durable log this invocation writes.
+
+    A read-only call (--report-only / --preflight-only, checked before argparse so the choice
+    exists before the run does) must not truncate the log of a bench that is still running.
+    This session lost the argos/madlad matrix trace exactly that way: a `--report-only` opened
+    the same path in "w" while the matrix was mid-flight. The bench keeps the historic name so
+    anyone following the documented path still finds the run's trace.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--report-only" in argv or "--preflight-only" in argv:
+        return REPO / "run_av_baseline.report.log"
+    return RUN_LOG
+
+
 def main(argv=None) -> int:
     """Wrap the pipeline so stdout/stderr land in run_av_baseline.log too.
 
     Uses line-buffered text mode and swallows any logging error -- losing
     the mirror must never abort a 1-3 hour measurement run."""
+    log_path = log_path_for(argv)
     log_handle = None
     orig_out, orig_err = sys.stdout, sys.stderr
     try:
-        log_handle = open(RUN_LOG, "w", encoding="utf-8")
+        log_handle = open(log_path, "w", encoding="utf-8")
     except OSError as exc:
-        print(f"[warn] cannot open {RUN_LOG} for logging: {exc}", file=sys.stderr)
+        print(f"[warn] cannot open {log_path} for logging: {exc}", file=sys.stderr)
         log_handle = None
     if log_handle:
         stamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -1208,7 +1224,7 @@ def main(argv=None) -> int:
                 log_handle.close()
             except Exception:  # noqa: BLE001
                 pass
-            orig_out.write(f"(full log saved to {RUN_LOG})\n")
+            orig_out.write(f"(full log saved to {log_path})\n")
     return rc
 
 

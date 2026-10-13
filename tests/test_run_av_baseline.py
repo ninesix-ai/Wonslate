@@ -432,6 +432,35 @@ class NmtTermContextWordingTests(unittest.TestCase):
         self.assertIn("不是同一把尺", line[0])
 
 
+class RunLogTests(unittest.TestCase):
+    """A read-only invocation must not destroy the trace of a bench that is still running.
+
+    This session hit it: while the argos/madlad 1000-row matrix was mid-flight, a
+    `--report-only` call reopened run_av_baseline.log in write mode and truncated the live
+    run's log. The durable log exists precisely because a console window can be closed before
+    anyone reads the summary -- so a second, harmless-looking command must not be able to
+    erase it. Losing it cost this round its own timing evidence (the artifact mtimes had
+    already been rewritten by the COMET pass by the time it was gone).
+    """
+
+    def test_bench_and_read_only_invocations_do_not_share_one_log(self):
+        import run_av_baseline
+        bench = run_av_baseline.log_path_for(["--engines", "argos"])
+        report = run_av_baseline.log_path_for(["--report-only"])
+        preflight = run_av_baseline.log_path_for(["--preflight-only"])
+        self.assertNotEqual(bench, report)
+        self.assertNotEqual(bench, preflight)
+        self.assertEqual("run_av_baseline.log", bench.name)
+
+    def test_the_default_invocation_still_writes_the_durable_log(self):
+        # Narrowing this wrongly would move the bench trace to a new file and leave anyone
+        # reading run_av_baseline.log with nothing -- the opposite of the fix's purpose.
+        import run_av_baseline
+        self.assertEqual("run_av_baseline.log", run_av_baseline.log_path_for([]).name)
+        self.assertEqual("run_av_baseline.log",
+                         run_av_baseline.log_path_for(["--skip-comet"]).name)
+
+
 class TermContextSourceTests(unittest.TestCase):
     """The runner's idea of which engine can carry a glossary comes from the Rust trait.
 
