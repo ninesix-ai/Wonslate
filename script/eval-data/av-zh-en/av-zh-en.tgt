@@ -298,3 +298,703 @@ A video keyframe and an animation keyframe share the Chinese term "关键帧" bu
 "分词" is tokenization in NLP but may be word segmentation in Chinese text processing -- the two operate at different granularity.
 "重采样" in audio is resampling; in statistics it is bootstrap sampling -- the surrounding domain decides the rendering.
 "预训练" and "预热" both start with "pre-" in Chinese, but they are pretraining and warmup in English -- completely different engineering meanings.
+When the decode thread stalls on the queue, flushing the buffer once usually gets the pipeline moving again.
+The backpressure signal has to reach the capture side, otherwise the buffer overflows without anyone noticing.
+Raising the chunk size from 20 ms to 40 ms increases end-to-end latency but tolerates network jitter better.
+When the data stream is duplicated in the middle layer, the frame numbering of both copies must not advance independently.
+Whenever a thread pool is introduced anywhere in the pipeline, the ordering guarantee of speech-segment end events must be rechecked.
+Queue depth is an observable and should appear in the diagnostics endpoint next to time to first packet.
+After streaming recognition is cut off mid-way, the resume position must be recorded in frames rather than in seconds.
+When audio is processed in chunks, block boundaries must align to samples, or clicks appear at the seams.
+The buffering policy must state whether it drops the oldest frame or blocks the producer; the two semantics differ completely.
+The pipeline has to flush every stage before shutdown, otherwise the final speech segment disappears without a trace.
+The runtime puts the decoder on a worker thread, leaving the UI thread to only refresh the timeline.
+Rebuilding the feature-dimension array every frame causes noticeable garbage-collection pressure; reuse the buffer instead.
+An inference service should report its concurrency limit together with queue depth so operators can judge how long the line is.
+The reconnect policy for streaming transport must separate a server-initiated close from network jitter.
+Segmentation boundaries in voice segmentation depend on the frame shift; changing it also changes segment granularity.
+A buffer watermark has to bound latency and frame loss together; an upper limit alone is not enough.
+When decoding runs slower than capture, backpressure shifts the waiting onto the encoder queue.
+After a checkpoint is loaded, run one warm-up inference before accepting the first request.
+Log lines for each pipeline stage should carry the speech-segment id, or cross-segment issues cannot be attributed.
+Hot-swapping model weights must freeze the queue and wait for in-flight requests before the replacement.
+Long documents that exceed the token limit must be fed paragraph by paragraph rather than truncated as a whole.
+Retry limits for subword-segmented languages should be designed around the token budget, not a sentence count.
+The runtime offers two memory pools, one for the frame buffer and one for feature tensors.
+Chunk boundaries and forced-alignment timestamps must share one sample-based reference.
+The first block emitted by streaming synthesis must contain whole frames, or the player goes silent at the start.
+If a full queue causes drops, say so in the response instead of letting the caller believe everything was processed.
+The decoder's channel order must match the container's declaration; swapped stereo channels are hard to hear.
+End-to-end evaluation should time each stage; the gap between capture and inference is often overlooked.
+Pinning inference threads reduces jitter but lets the queue build up more easily on single-core machines.
+Converting the frame buffer from seconds to bytes needs both the sample rate and the feature dimension.
+Merged data streams require renumbering, or downstream stages cannot tell which speech segment ends first.
+A flush must be idempotent; calling it twice must not empty the queue twice.
+Pipeline monitoring should expose per-stage queue depth and the age of the oldest request.
+Language codes stay canonical internally and are localized only at display time, to avoid comparison forks.
+Sharing one vocabulary cache between automatic speech recognition and translation saves repeated initialization.
+If any stage of the speech loop becomes asynchronous, redefine where time to first playable segment is measured.
+A buffer's target watermark should adapt to the historical distribution of network jitter.
+The overlap length of chunked processing affects the stability of the spectrum estimate.
+Backpressure loses fidelity across a process boundary, so pass the waiting reason explicitly rather than inferring it from timeouts.
+On a checkpoint switch, keep the old instance alive until the last request has returned.
+Queueing ahead of the pipeline must not count as inference time, or latency reports become misleading.
+With a 25 ms frame length and a 10 ms frame shift, one frame spans three sample windows.
+A queue wait limit needs a hard ceiling; past the platform's representable range it raises instead of waiting.
+The inference batch cap should follow the memory watermark; a fixed value is unstable on shared machines.
+Millisecond timestamps from the decoder are enough; subtitle files do not need centiseconds.
+Partial results from streaming recognition should say whether they can be revised, so downstream can decide to show them.
+Merging voice segmentation with speaker diarization can disagree on boundaries and needs arbitration.
+On shutdown the runtime should print what each buffer still holds, to tell later whether data was dropped.
+Keep draining after a queue timeout, so a flood of backlogged requests does not overwhelm the restart.
+Replace locks with message passing for shared mutable state in a pipeline; a stage reorder otherwise deadlocks.
+Time to first packet and time to first playable segment are different measurements and must not share one metric name.
+Near the token budget, trim the few-shot examples before the terminology list.
+Chunk-downloaded audio needs a sample-rate consistency check before recognition.
+Over-prefetching in the buffer lengthens how long the final speech segment waits.
+Sequence wrap-around in streaming transport must be defined by the protocol, not left to implementation habit.
+On a corrupt frame the decoder should emit silence and record the reason rather than raising.
+The inference result cache is keyed by language pair and domain together; reusing across domains mismatches context.
+Each stage of the pipeline needs its own degradation path instead of failing as a whole.
+Separate queueing time from processing time in runtime metrics so operators know which stage to scale.
+Do audio normalization before encoding, or the dynamic range gets compressed away.
+Transcoding jobs resume per segment, so a failure does not restart the whole file.
+Constant-quality rate control lets the keyframe interval float instead of staying fixed.
+A container format stamps media time, so wall-clock conversion needs the track's start offset.
+The multiplexer demands sample-aligned tracks, or it inserts filler packets.
+Decoder error concealment is configurable; too much makes damaged audio smooth but wrong.
+The group of pictures length and the random access points decide how responsive seeking is.
+Inter-frame prediction depends on reference order, so a lost frame must trigger a fresh sync point.
+A higher quantization parameter compresses more, but blocking artifacts on text edges become visible first.
+The entropy coding context table must reset at stream start; reusing it across segments causes drift.
+A transcoding chain keeps the original sample count unless resampling is explicitly requested.
+Lossless compression guarantees identical bits, not a better subjective quality.
+At low bitrate, lossy compression sacrifices high-frequency detail before the voice fundamental.
+A demuxer must emit samples in decode order when tracks were interleaved on write.
+A bitrate estimation window that is too short mistakes a still frame for something expendable.
+Negotiation between codecs must fall back to the lowest configuration both sides support.
+Container format limits on track count are hit first when many subtitle languages are bundled.
+Keyframe intervals beyond two seconds make scrubbing previews sluggish in live scenarios.
+Widening the motion estimation search rarely improves quality and always costs encoding time.
+Intra-frame prediction pays off on still imagery more than inter-frame, though the bitrate rises.
+The container header an encoder writes must match the real channel count, not the template's.
+Save the probe result before transcoding, to check channel and bit-depth changes afterwards.
+In multi-process transcoding each process owns its buffer; sharing frame buffer memory is forbidden.
+Tracks whose decode order differs from display order need an explicit container offset.
+Rate control should allocate less to narration silence than to the speech in the same passage.
+Entropy decoding errors recover only at a keyframe; silence is not a sync point.
+The first frame of a group of pictures must be independently decodable, or segmenting tools show corruption.
+A container format's metadata length limits affect how bilingual subtitle tracks are named.
+Pass-through of a subtitle track must still preserve the original timeline precision.
+Too much transcoding concurrency makes random disk writes the bottleneck rather than the CPU.
+Each line of a bilingual subtitle has to meet the reading-speed bound on its own, not just the Chinese one.
+Hard subtitles can only be changed by re-encoding, while soft subtitles let you swap the track at any time.
+The subtitle track's encoding must be declared in the container, or the player guesses from the local code page.
+Dubbing replaces the audio track, not the duration; squeezing the duration breaks audio-video sync.
+Narration is slower paced than dialogue, so dubbing cannot reuse the same timeline strategy.
+Lip sync adjustment works only within a couple of frames; beyond that the mismatch becomes visible.
+Subtitle timing drift accumulates at paragraph boundaries rather than spreading evenly across lines.
+Subtitle alignment should cut points by voice segmentation first, then map text onto those boundaries.
+Segment timing must be based on the media timeline; do not assume millisecond values survive transcoding.
+Detect and strip a byte order mark on subtitle import, or the first line carries an invisible character.
+Dubbing and lip sync have different acceptance criteria: one is judged by the replaced voice, the other by the picture.
+Multi-language subtitle releases should key subtitle tracks by language code, not display name.
+Line breaking for subtitles belongs to the renderer, decoupled from export options.
+A timeline panel must separate video frame numbers from audio sample indices; conversion depends on frame rate and sample rate.
+The loudness target of a dubbed audio track must match the original or the level jumps when switching.
+Subtitle timing needs remapping under variable playback speed; scaling timestamps is not enough.
+Export to SRT needs millisecond timestamps while ASS needs centiseconds.
+The preview renders soft subtitles so users can toggle the subtitle track.
+Re-muxing is enough when only the timeline changes; do not add an unnecessary second lossy compression pass.
+A dubbing delivery needs both the audio track and bilingual subtitles, or the work cannot be reviewed.
+Subtitle line breaking must avoid cutting inside words: Chinese by speech segment, Latin scripts by word boundary.
+Timeline alignment checks can run before dubbing, without waiting for all assets.
+Cutting a line shifts every later timestamp, so reflow the whole block rather than nudging rows.
+Dubbing sessions must keep a consistent sample rate and bit depth to avoid a second resampling.
+The maximum characters per subtitle line should be measured for the target language's width, not copied from Chinese habits.
+The audio-video sync tolerance depends on the material; conference recordings and animation differ.
+Run punctuation restoration after segmentation, or punctuation crosses into neighbouring lines.
+When narration and dialogue share one audio track, dubbing replacement must locate speech segments first.
+Compare sample rate, channel count and bit depth before export, and refuse a silent resample when they differ.
+Subtitle timing on material with dropped frames must interpolate by real frame durations, not a constant rate.
+Multi-speaker podcast localization needs speaker diarization first, then timbre assignment per role.
+Use decoded frames as the lip-sync reference; pre-encode frame order is unreliable.
+When a subtitle track carries rich text, spell out the container's tag whitelist.
+Converting hard subtitles into soft ones needs optical recognition, and quality drops below authored text.
+Squeezing duration to 95 percent accumulates into a half-second offset; long material needs segment-wise correction.
+Dubbing delivery ships two artefacts, a timeline file and an audio track, with naming agreed in advance.
+Line length and lines per screen together bound the readable speed of subtitles.
+Subtitle tracks in several languages should share one segmentation result to avoid drifting apart.
+Timeline export must state whether it references media time or wall-clock time.
+Keep or remove dubbing breathes consistently with the source; over-cleaning sounds artificial.
+On alignment failure, report the speech segment ids that disagree so a human can step in.
+Record the start offsets of subtitle and video tracks separately; they cannot be recovered after muxing.
+Declare speed and pitch changes separately; changing one alone sounds inconsistent.
+In dialogue-dense material, break subtitles on pauses rather than punctuation.
+After swapping an audio track, preserve its language tag and default-track flag when re-muxing.
+Let intelligibility rule subtitle timing fixes rather than aligning to frames.
+When a dubbing runs long against the picture, adjust pacing before cutting content.
+Stacking bilingual subtitles doubles lines per screen, so dwell time must shrink.
+The player drops subtitle lines whose timestamps precede the video's start offset.
+Check for overlapping subtitles before export; overlap leaves the reader unsure which line to read.
+Leave silence padding between dubbing takes to make later alignment possible.
+Split subtitles for long video by semantic paragraphs rather than fixed seconds.
+For non-integer frame rates, export subtitle timing in a timebase instead of frame counts.
+Set the loudness target before muxing; compressing afterwards also affects dialogue.
+Line breaking needs protection rules for abbreviations and proper names.
+Normalize differing frame rates onto one timeline before any lip-sync work.
+Ellipses and dashes in subtitles need their own pause rules for speech synthesis.
+Review dubbing speech segment by segment; one pass over the whole show misses local desync.
+In multilingual delivery, subtitle filenames carry the language code and provenance.
+Timeline export must include track offsets and the effective frame rate.
+A subtitle line's minimum dwell time is set by its length, not by cut rhythm.
+When narration shares a track with music, dubbing needs an extra separation step.
+Record the subtitle track's character set in the export log for field debugging.
+Measure audio-video sync on audible events such as claps and strikes.
+Spot-check subtitle alignment at the start, middle and end; the middle drifts most.
+Dubbing must re-break lines for the target language; literal length usually exceeds the picture.
+Log dropped-frame positions on subtitle timelines, or corrections have no basis.
+Write default and forced track flags explicitly when merging tracks.
+When exporting bilingual subtitles, dwell time must satisfy one reading-speed bound for both languages.
+Underrun in the buffer makes whole subtitle lines flicker, independent of content.
+Export the segment timing sheet as a checklist dubbing sessions can follow line by line.
+Keep numbering for silent spans on the timeline; deleting one shifts everything after it.
+Replacing an audio track must update its duration metadata, not just the payload.
+A high cache hit rate does not mean good translation quality; it only means the sentence was seen before.
+The cache here is the audio frame cache, not a web cache.
+An over-large prefetch cache lengthens how long the last speech segment waits.
+A disk cache survives power loss, so its invalidation policy needs a version tag.
+A cache key must include the language pair and domain, or cross-domain reuse mismatches context.
+After a codec upgrade old streams still decode, and the compatibility matrix belongs in the release notes.
+This file needs the software codec rather than the system one.
+Codec negotiation must look at what both sides support, not just one's own advertised list.
+A wrong container format can drop the subtitle track even while video looks fine.
+Re-muxing the same material into another container can shift duration metadata by a few milliseconds.
+A mix should treat dialogue, music and effects as separate stems rather than stacked on one track.
+Set the loudness target of the mix to the delivery platform's requirement, not as loud as possible.
+Leave headroom during mixing so later compression does not lift the noise floor.
+Exported stems must share one start time, or reassembling them misaligns.
+Accompaniment left in the dry vocal is recognised as speech and invents transcript content.
+Keep the dubbing dry vocal archived on its own; after the mix it can no longer be separated.
+Map channels in the track table according to the container, not the player's display order.
+Rerun the coverage matrix after any change to the routing table, or the report describes a stale configuration.
+The routing here means engine selection, not a network routing table.
+Video clip cuts must land on keyframes, or the result decodes as corrupted.
+Splitting tools handle long groups of pictures poorly without re-encoding first.
+Spreadsheet data used as subtitle source needs formula-injection guards on both sides.
+Keep the table schema backward compatible; old assets without the new field are the norm.
+Frame rate is a media property, not an editing one; do not convert it twice on export.
+If part of the model weights are corrupt, refuse the checkpoint instead of silently filling in.
+On a vocabulary mismatch, subword tokenisation degrades to per-character and quality collapses.
+Whether the pipeline rejects or waits on a full queue has to be observable.
+A queue policy change moves time to first packet, so keep it in the same regression.
+Buffering and buffer both read the same in Chinese; keep one English word for them.
+Separate the data stream from streaming transport in docs: one is content, the other is how it travels.
+Say from context whether checkpoint means model weights or a resume point.
+A pipeline stage and a speech segment are different notions; name them apart.
+Channel covers both senses in English, so the Chinese interface must pick one by domain instead of defaulting.
+A keyframe is not the first frame; preview logic must decide on decodable frames.
+Tokens and subwords differ for billing and for segmentation; do not share one metric.
+Keep bitrate and rate control terminology distinct but consistent, or readers see two metrics.
+Chunking is not batching; chunking is a window inside streaming, batching is a group of requests.
+Declare resampling and requantisation separately, or one hides the other's damage.
+Error out when an encoder preset and an explicit quality flag conflict, rather than silently choosing one.
+Record why the decoder fell back from hardware to software.
+When container and codec capabilities disagree, the container's constraint wins.
+Warn before failing when the mix exceeds the container's track limit.
+Dry vocal quality drives dubbing intelligibility; leftover accompaniment shows up as transcript errors.
+Report the row when a subtitle sheet lacks a duration column, instead of defaulting it.
+Renumber frames after concatenation, or decode order and display order invert.
+Routing decisions must be readable back; a result without a path cannot be debugged.
+A vocabulary's domain coverage decides subword quality; a general one shreds proper nouns.
+Expire the cache per language pair across versions rather than clearing it globally.
+Automatic evaluation cannot replace human review; on narrow domains the correlation drops sharply.
+Sample evaluations must stratify by sub-domain, or the long tail stays invisible.
+Chinese speech evaluation leans on character error rate, because word error rate depends on a tokenisation convention.
+Change one variable per experiment; altering injection policy and its cap together makes results unattributable.
+Evaluation samples should cover short, medium and long sentences; their failure modes differ.
+Once a regression baseline is published, fix the seed and timestamp so it can be reproduced.
+Statistical significance is not practical significance; check whether a few tenths reach the user.
+Report negative results under the same discipline, not only the round that worked.
+Scope a rerun explicitly, or it overwrites evidence belonging to other engines.
+Do not leave failed rows in the denominator, or an engine fault reads as a quality drop.
+Same-arm repeats give the noise floor; a delta inside it cannot be attributed.
+Every metric row must trace to one reproducible run with script, samples and time.
+Keep a measured source for spot-checked contamination rates instead of reusing an old estimate.
+Keep evaluation scripts under version control; a one-off script outside the repo cannot be re-checked.
+Pair on the same sentences; a difference between unlike windows is not an effect.
+Hold-out means held out; samples that took part in tuning cannot be the evaluation set.
+State limitations plainly; do not extrapolate a distribution beyond the domains it covers.
+Every published number needs a measured source; label estimates as estimates.
+Give repeated runs of one metric distinct identities so a new run cannot replace the old evidence.
+Evaluation corpora must pass the license gate; no copyleft licence may enter the artefacts.
+Record sub-domain group boundaries in config, not in someone's memory of line numbers.
+Absolute automatic scores make poor promises; relative deltas plus human review hold.
+Refuse to conclude under an insufficient sample rather than printing an optimistic number.
+Fail non-zero in evaluation scripts; a silent pass misleads everything downstream.
+Never reorder existing rows when growing a regression set, or past numbers stop being comparable.
+Land a metric-definition change in its own commit, not together with corpus growth.
+State the evaluation environment up front; whether a host service is running changes the conclusion.
+Write the annotation guideline before human review, or hindsight biases the labels.
+Control and treatment need the same machine and build; cross-machine comparison is void.
+Rule out the measurement layer before blaming the model when a metric drops.
+Reproducibility needs data, script, timestamp and environment; one missing voids it.
+Verify self-describing fields before storing evidence; anonymous artefacts cannot be cited.
+Report the confidence interval with the sample size; a bare mean carries no information.
+Build boundary probes around ambiguous words; random sampling cannot measure domain sensitivity.
+Classified batch localization normally runs on site, with telemetry and any outbound call closeable as a whole.
+In an offline delivery bundle, neither models nor vocabularies may rely on runtime downloads.
+Privacy mode closes the upgrade path rather than sending source text to the cloud.
+Logs must not carry source fragments; the user's material is itself sensitive.
+Check metadata on export: track titles and author fields often leak project names.
+Audit records keep the basis of a decision, never the translated text.
+Before handing deliverables to a third party, confirm the glossary holds no internal codenames.
+Cutting network access has to work as one configuration switch, not per call site.
+Clearing the translation memory must also clear term rows derived from it, or they keep resurfacing.
+A site machine has no outbound access, so the media must carry every dependency and its checksum.
+A rollback must cover the glossary and memory schema, or an old build misreads a new format.
+The licence audit must cover dependencies that appear only at runtime, not just the build manifest.
+Keep separate memory stores per project for sensitive material, to avoid cross-project bleed.
+The diagnostics endpoint must stay available under privacy mode and issue no requests itself.
+After disabling cloud engines, still state plainly that the result is local rather than implying an upgrade.
+On-site log levels should be raised temporarily and revert, rather than emitting detail forever.
+A pre-delivery checklist must cover consistency of font, encoding and language code.
+Record resume progress per segment for batch jobs, without keeping the source text.
+Until access control exists, the exposed service surface must stay loopback-only.
+A published domain glossary must not carry a user's private rows.
+Export bundles should ship a manifest so the customer can check for sensitive fields.
+Telemetry off by default is safer than on by default with a switch; the cost of a mistake is asymmetric.
+Use synthetic material in docs, never a client's real transcript.
+Keep keys and tokens out of the repository, including fake ones used in tests.
+Clearing data must return a verifiable receipt rather than a bare success.
+Verify model provenance in offline environments, so the download path does not become the attack surface.
+The metadata fields of exported files are the most overlooked compliance item.
+Reproduce field issues with a minimal sample, so a whole batch never leaves the site.
+Until roles exist, isolate memory stores by directory on shared terminals.
+Align audit retention with the delivery contract instead of keeping records by default.
+Separate logical flagging from physical erasure in delete operations.
+Sensitive-domain evaluation samples cannot appear in a public benchmark.
+Exclude and re-check the user data directory from packaged artefacts before delivery.
+On project handover, sign the scope for the glossary and the memory store separately.
+Privacy invariants held by a test are worth more than privacy promises in a document.
+Disable a feature visibly, rather than hiding its entry point.
+A customer's proxy changes probe results, so separate unreachable from unconfigured.
+Ship the conservative default and require an explicit action to loosen it.
+Leave no partial file behind on export failure: write to a staging name then rename.
+Staging names must be unique; a fixed one deletes the wrong file under concurrency.
+Run a disconnected drill of first install to prove no hidden outbound requests exist.
+Integrity checking of model files should cover both size and digest.
+A field upgrade must be able to roll back config alone, keeping confirmed terms.
+Logs must name the layer a decision came from, not just the outcome.
+When data may not leave the country, cloud engines stay out of routing even if reachable.
+Record the delivery package's digest with its version to trace what was installed.
+After clearing the memory, term harvesting can still refill it, so allow closing that path.
+Rows a user confirmed can be marked non-redistributable.
+Internal build artefacts need full signing, or platform security blocks loading.
+Judge delivery risk by where data flows, not by how many features exist.
+An offline bundle ships the engine, models, vocabularies and a checksum manifest together.
+The installer must work into a user directory without elevation.
+Sign every build artefact, or platform application control blocks local loading.
+Handle non-Latin characters in the install path when loading the native library.
+An upgrade keeps the user data directory and migrates its schema version.
+Ask what to do with the data directory on uninstall; never delete by default.
+The packaging step should enumerate included binaries, so nothing is unsigned or missing.
+Keep one config resolution rule across portable and installed forms, or behaviour forks.
+Pin runtime dependency versions; a floating minor version can change inference output.
+When build and dev machines differ, the clean reproducible one is authoritative.
+State which models must be fetched separately, so a gap is not found after installation.
+Attribute growth in package size to a specific addition, rather than reporting a total.
+A post-install self-check must cover loading the native library and reading a model.
+With no outbound access, the update path must accept an offline patch package.
+Until hot reload exists, document which layer a config change restarts.
+Crash reports collect location and version by default, never the text.
+Exclude cache directories when packaging, so a developer's memory store is never shipped.
+Keep one thin launcher per OS and put the logic in the shared script.
+The build script must skip a stage whose inputs are unchanged by digest.
+A clean build must be reproducible with one command, without relying on prior artefacts.
+Show the same version string in the UI and in diagnostics.
+Ship a licence matrix covering every third-party component in the package.
+Split model downloads per language pair so a first install fetches nothing wholesale.
+Keep install scripting idempotent; running it twice must not create a second config.
+On failure leave a readable reason file, not just a dialog.
+Prefer extra diagnostics when debugging in the field, rather than editing code to reproduce it.
+Checksum every stage of the packaging chain so a truncated file never reaches an installer.
+Map each delivered version to a repository commit for later tracing.
+Keep the default data-directory rule identical across bindings.
+Reproducing an issue across machines needs version, config and a model inventory.
+Verify installer integrity before copying any file.
+Include the reproduction command so a customer can rerun measurements alone.
+Separate development and release output paths in packaging.
+Allow installing docs and tools without models where there is no network.
+Write packaged scripts byte-wise; text mode sneaks platform line endings in.
+A release build must be reproducible to the same hash in CI, or a version number means little.
+The first launch after install needs a guided path, not an empty window.
+Keep the installer's version equal to what the runtime self-check reports.
+Ship the lockfile with the package so a site can re-check dependencies.
+Keep build output separate from sources so binaries never get committed.
+Back up the data directory before a field upgrade so a failure restores wholesale.
+Strip test fixtures and dev scripts from packaging, cutting size and misuse.
+Keep commands in delivered docs matching real entry points, or they rot.
+A failing build step must exit non-zero and name the stage.
+Release notes must state which behaviour changes break comparison with prior metrics.
+Package size is bounded by first-install network conditions, not by feature count.
+Read field differences back through diagnostics instead of inferring them from chat.
+Artefacts must be verifiable offline on the target machine.
+Rebuild only what a change affects, to keep packaging feedback short.
+State the deprecation window in compatibility promises so customers can plan.
+A release manifest lists each file's provenance and licence.
+Detect missing dependencies at install and print the exact fetch command.
+Ship dependencies whole where a site has no package manager.
+Separate building from publishing so developer credentials never enter artefacts.
+Fix environment variables and path normalization for reproducible builds.
+Include one clean-machine install in acceptance, or it only works on a dev box.
+Leave no absolute default paths inside a package, or another machine cannot reproduce.
+Run the full gate before release and record its last line in the ledger.
+Store the checksum beside the media so an archive stays verifiable years later.
+Test the upgrade path from the oldest delivered version in one hop.
+Practise the rollback before delivery; the first attempt should not be a customer's.
+Bundle third-party licence texts alongside the packaged material.
+Pin toolchain minor versions so optimisation differences do not move performance numbers.
+Allow verifying one file at a time, to localise corruption.
+Make post-install self-check output copyable to support, with versions and path digests.
+Ship documentation readable offline for disconnected environments.
+Confirm sample corpora are public-safe, never client material.
+Archive release build logs to reconstruct the environment and outcome later.
+A delivered version must answer which release introduced a feature.
+Allow pointing the build cache outside the tree, to keep the working copy clean.
+Run static checks before packaging to catch obvious UI and text faults.
+Print the installed components and versions at the end of setup.
+Report the single missing dependency, rather than failing the whole install.
+Reproducibility means someone else can run it, not that this machine can.
+Sharing one GPU between inference and synthesis starves both; measure them in separate phases.
+Near the memory ceiling the system starts paging, and latency grows a long tail.
+Thermal throttling slows the same model late in a sustained load, which a short test will miss.
+Battery power caps throughput on laptops, so note the power state next to any number.
+Judge batch throughput against the memory it costs, or it is only buying time with resources.
+Loading a model from disk belongs to first-start wait, not to inference time.
+The same weights can behave differently across optimisation levels, so pin the build for regressions.
+Repeat a measurement to tell sampling noise from a real change; one run cannot decide.
+A shift in hit rate moves latency and cost together, so read them as a pair.
+On a slow disk, queueing under concurrent IO reads as a slower model.
+Report a distribution for a regression, not a mean; the tail is where the experience lives.
+Judge quantisation loss on task metrics, not on weight error alone.
+Multi-core scaling stalls at queue synchronisation points, so the speedup curve is not linear.
+The first request carries lazy initialisation, so report cold start separately.
+Distinguish cache residency from a real leak when memory grows over time.
+Paging and garbage collection create spikes, so confirm with a repeat sample.
+The same workload takes different times in different orders, so fix input order in a benchmark.
+Attach the environment to any performance promise: chip, power state and concurrency.
+Overlapping inference with pre-processing makes a segment look shorter than the sum, not faster.
+A smaller model can beat a larger one where latency matters; check the quality cost per task.
+Size cache prefetch to corpus repetition; on random input prefetch is pure overhead.
+If concurrent decoding does not raise throughput, the bottleneck is compute rather than scheduling.
+Under rising load the tail degrades before the median, so read the pair together.
+Mixing waiting and processing into one metric hides queue build-up.
+Benchmark on hardware in the delivered class, or the numbers mean nothing.
+A memory ceiling protects a long run better than a larger cache does.
+Threaded decoding adds context switches and is slower on short text.
+Acceleration pays off only as far as operators are covered, so measure it.
+Stamp performance baselines with collection time; background jobs disturb day-to-day comparison.
+An acceleration switch that is not wired up must not be reported as a gain.
+Feeding long text segment by segment raises total time but lowers peak memory.
+Report quantised and full-precision variants of one model as separate rows.
+Note resident services holding memory before measuring; they change the result.
+Check performance and quality together, so "faster and equal" is defensible.
+Alert on queue age rather than queue depth, since depth alone is not user-visible harm.
+Do not divide a batch's total by its count and call it single-request latency.
+Give both cold-load and warm latency; reporting one flatters the number.
+Driver updates change kernel behaviour, so record the driver version with a result.
+Set concurrency ceilings from measured resources, not from a core count.
+Keep throughput and latency as two goals in reports; they pull apart.
+Progress for long jobs should reflect completed work, not a fixed tick.
+Attribute a metric's improvement to a specific change, or it is just noise.
+Log writing by the harness itself can slow the service under test.
+Give a regression a decided threshold with a noise band around it.
+Features must run on machines without accelerators, not on a specific kernel.
+Judge a cache by hit rate and invalidation cost together.
+When start-up cost dominates short tasks, optimising the algorithm returns little.
+The gain from one to two concurrent workers is usually smaller than from two to three.
+Cite an unreproducible performance number only as a historical fact.
+Confirm nothing else is running on the device before measuring.
+Paging produces minute-scale spikes in tail latency; do not call it model decay.
+Label a hardware switch honestly when it is not actually wired up.
+Separate per-item cost from amortised cost in performance measurement.
+An optimisation whose gain is eaten by extra waiting nets out to zero.
+Measure long-run stability by exit codes and error counts, not by optimism.
+A report's conclusion should point to data reproducible on the same machine.
+Record performance-versus-quality choices as product decisions, not technical defaults.
+Energy becomes a constraint in long batch inference, not only in mobile use.
+An unpinned build makes two measurements incomparable.
+Stating device scope inside a conclusion beats a disclaimer elsewhere.
+Schedule measurement windows away from system updates and index rebuilds.
+Test an accelerated path for correctness separately from its speed.
+A performance defect needs a re-runnable entry point for regression checks.
+Higher batch throughput is not lower per-item latency; accept them separately.
+When a metric's jitter exceeds the version difference, it cannot support a conclusion.
+The flywheel assumes the AI got it right once, so local reuse is what saves afterwards.
+The distillation threshold sets the glossary's signal-to-noise ratio; too loose pollutes every later request.
+Machine-extracted rows must be distinguishable from human-confirmed ones, or review is pointless.
+One term may translate differently per domain, so the key must include the domain.
+A user's edit outranks any automatic source and must not be silently overwritten.
+A glossary must be exportable for review, without the user's private rows.
+Fragmented distillation output has to be stopped by a source-language check.
+Validate the flywheel with both hit rate and quality; either alone misleads.
+A mistranslation stored in memory is reused forever, so the bad-mark path must work.
+Glossary size is not injection size; only the rows reaching context have effect.
+When the injection window sorts by confidence, ties need a deterministic order, or runs are irreproducible.
+Read back whether a term applied from the response, do not guess it.
+Returned distillation rows must be switchable off wholesale, to isolate faults.
+Glossary changes must surface in a re-run, or a semantic change stays invisible.
+The cost of one wrong term is that every sentence containing it reuses it.
+Glossary governance is traceability: source, confidence and editor must be distinguishable.
+Locking and deleting are different protections and cannot substitute for each other.
+Maintain glossaries per language pair; reusing across pairs bleeds meaning.
+Test a new domain pack on the same sentences, never across batches.
+Reviewed rows should record which batch they came from, to allow reversal.
+Term conflicts must name both provenances rather than silently picking one.
+Rerun the quality regression after changing the distillation threshold, or the ratio is unknown.
+Escape rules are needed when a term's translation contains a placeholder.
+The flywheel's ceiling is set by how repetitive the content is, not by the model.
+Allow replacing a whole domain glossary so a customer's own terms can ship.
+Separate "engine cannot use terms" from "no term matched this sentence".
+State whether a denominator is all rows or only rows containing terms.
+Roll back the glossary and the memory store independently.
+A distillation batch window affects insert order, so cross-batch comparison needs care.
+A locked row stays editable by its own author; a lock is not a permission wall.
+Governance shows up in consistency metrics, not in row counts.
+Measure a pack's coverage against the corpus, do not infer it from row counts.
+At cold start, a few hand-picked high-value terms beat bulk import.
+Where two renderings coexist, choose explicitly and record why.
+The flywheel assumes correct renderings get reused; reusing wrong ones amplifies them.
+Keep a pack's licence and provenance traceable, and exclude copyleft sources.
+Allow bulk cleanup by provenance, to undo one bad import.
+Refuse a partially failed import whole, leaving no half-applied rows.
+Do not raise a declared confidence during import; the authored value is final.
+Deleting a domain row needs the full key, or it hits a generic twin instead.
+Keep glossary review in step with corpus growth, or metrics drift.
+Keep a retired term for history while excluding it from injection.
+Layer glossaries by scope: generic, domain and project.
+Handle polysemy with context, not by forcing one rendering.
+Include the upgrade rate in flywheel metrics; frequent upgrades mean local capability is thin.
+A single-arm measurement has nothing to compare against.
+Injection and memory reuse are two paths; attribute their effects separately.
+Pack review must point to specific row changes.
+Handle term conflicts conservatively: report ambiguity instead of rewriting silently.
+Automatic rows need a lower default confidence than human-confirmed ones.
+Record glossary changes with the measurement identity, to explain numbers later.
+Judge an import by rows written, not rows supplied.
+If a pack shows no gain, check first whether injection actually arrived.
+Glossary governance yields a reusable domain asset, not one-off configuration.
+Every link of the flywheel needs an observable, or decay cannot be located.
+Unlocking a row must be traceable to an actor.
+A term's translation length affects layout and dwell time.
+Roll back exactly the batch a change introduced.
+Keep the evaluation term set equal to the delivered one, or the conclusion does not apply.
+A pack stays maintainable when row granularity is even.
+Avoid accumulating unevidenced rows; retire low-hit ones periodically.
+An accepted mistranslation is amplified by the flywheel, so gate it earlier.
+The worth of a glossary is the consistency a customer can perceive.
+Show which engine actually answered, so users can tell which tier produced the result.
+State the reason and the next step in plain words, not only an error code.
+Keep the copy button reachable before a panel collapses.
+Every status change needs a text form, not colour alone.
+Let users resize and keep column widths, as the glossary gains columns over versions.
+Keep keyboard focus in the input area after a translation, for continuous work.
+A progress bar must be cancellable, and say the native call still drains afterwards.
+Write errors without internal jargon; translate internal names into plain language.
+Use the same wording across UI and help, or one feature gets two names.
+Screen readers need an explicit label and role on every status line.
+Do not put default focus on a button that triggers a network call.
+A batch completion notice must give both succeeded and failed counts.
+Keep table sorting stable; equal-valued rows must not reshuffle on refresh.
+Explain a disabled control, or a greyed-out one reads as a defect.
+The first-launch missing-model notice should carry a copyable fetch command.
+Let the UI show only user-confirmed rows, to make provenance checkable.
+Reset scroll position when switching language pairs in a long list.
+State the paste length limit and what happens beyond it.
+Pull numbers in messages from live config, never hardcode them.
+Cancelling must not lose finished work, only what was still in flight.
+Wrap cell text so long terms stay fully visible.
+A transient status message should be replaced, not queued behind others.
+Spell out blast radius and reversibility in a destructive dialog.
+The interface must stay responsive while waiting on an external service.
+Include contrast and focus order in accessibility checks.
+Show a metric to its measurement precision, no further.
+Let users copy the full context of an error for support.
+Filter the table by source, to view machine and human rows apart.
+An empty state needs a next step, never a blank pane.
+Button labels should name the outcome, not the mechanism.
+Keep interface language and content language distinct.
+Advanced settings must say when they apply: immediately or after restart.
+Keep feedback beside the control that produced it.
+Mark the active sort column in the header.
+A delete confirmation must show how many rows are involved.
+Name the missing precondition for an unavailable feature.
+Suggest splitting on over-long input, rather than truncating quietly.
+Show the routing that is actually in force, not what configuration intended.
+Avoid framing a technical limitation as the user's mistake.
+Import results must separate rows written from rows supplied.
+Keep engine names equal to their registered identifiers.
+Preserve the current selection across refreshes unless it no longer exists.
+Change UI text and docs in one commit, or they diverge.
+Pick shortcuts that do not collide with input-method bindings.
+Copyable paths in messages, without a personal directory inside.
+Show a completed count instead of a percentage that cannot be measured.
+Keep one name for a state across UI, logs and diagnostics.
+Reassure the user that work continues during a long wait.
+Label a switch by what it controls, not by a hoped-for effect.
+Show the provenance column so review has a starting point.
+Offer the exact command to recover, not generic advice to retry.
+Preview a pack's contents read-only before import.
+Format numbers with explicit units to avoid ambiguity.
+Show an edit marker on rows the user changed.
+Timestamp state transitions on long-running tasks.
+Pinpoint the row number for a batch failure.
+Keep UI copy from promising a quality tier it cannot guarantee.
+Separate waiting on an external service from local computation.
+Let UI copy be proofread without a code change.
+Copied diagnostics must include version and environment.
+Label a confidence column with what it measures.
+Mark scope when a feature is not present on every platform.
+Offer a simplified view that hides internal columns.
+Estimate expected duration for slow operations rather than spinning.
+Use placeholders in example paths, never a real directory.
+Make an operation's effect readable back for confirmation.
+Show a disabled control together with its reason.
+Let a UI filter show only the failed rows of a batch.
+Keep status messages free of internal shorthand.
+Keep a long table's header pinned while scrolling.
+Present a number under the same definition as its source.
+The interface must work fully with no network access.
+Keep stated defaults drawn from the same source as real defaults.
+A commit subject names the part of the system a change touches.
+Run the lookalike scan after writing prose; do not trust the eye.
+Attach evidence to a ledger status change: a test name or a command.
+Append corrections to dated entries; never rewrite them.
+Keep one change to one kind of problem, or attribution dies.
+Use path-scoped commits with concurrent sessions, so shared staging cannot sweep another's work.
+Provide one thin launcher per OS and keep the logic in a single place.
+Register a new suite in both the local gate and the pipeline.
+Promote a one-off probe's finding into a re-runnable entry point, or nobody can re-check it.
+Tests must not depend on a developer's running services.
+The gate beats eyeballing: it reports assumptions you forgot to update.
+An assertion that cannot fail is not an assertion.
+Docs are not an implementation basis; code and tests are current truth.
+Declare a metric definition change inside the report.
+Remove the workaround that masked a defect when fixing it.
+State what a measurement cannot prove.
+Line endings come from repository attributes, not local configuration.
+Keep source comments in English and user-facing copy in the product language.
+Trace every published number to one reproducible run.
+Self-check convention compliance before review, not after being told.
+Search out stale promises after a change, so no second copy survives.
+Trust code over the ledger on conflict, then correct the ledger.
+Confirm a run's scope and what it can overwrite before starting it.
+Keep documented commands executable, never pseudocode.
+Print a skip reason; a skip is not a pass.
+Bind an explanation to concrete evidence, not to recollection.
+Keep one source of truth for a shared counter, or two disagree.
+Give a new knob bounds and an injection seam so tests can pin it.
+State what a change deliberately did not do, in its message.
+Keep a defect's sub-item numbering consistent, or work split by number misaligns.
+Register a re-runnable entry in the intent table, not in chat history.
+Commit an evaluation's inputs with its script, to allow replay.
+Note environment preconditions; they are not optional in a cross-machine citation.
+Cite things other people can actually run.
+After a fix, check for the same shape elsewhere in the tree.
+The voice loop chains segmentation, recognition, translation and synthesis in series.
+Recognition errors propagate into translation and synthesis, so score segments independently.
+Excessive microphone gain pushes the waveform into clipping and ruins recognisability.
+Trim silence after segmentation, not by a blanket energy threshold on the waveform.
+Normalise speaker output volume before encoding, not after.
+Flush the buffer when the playhead crosses a segment, or the previous audio lingers.
+Route multiple speakers apart before assigning synthesis channels.
+Set the voice model size ceiling by first-install download conditions.
+A transcript plus translation in a demo must not be called simultaneous interpretation.
+Switch timbre at segment boundaries, not mid-segment.
+Share one set of language codes between recognition and translation, or the two diverge.
+Match voice material's sample rate to what the model expects.
+A segmentation change moves both intelligibility and latency, so judge them together.
+Keep the text result when synthesis fails, rather than losing the transcript too.
+Voice evaluation samples must cover both noisy and accented conditions.
+A vocoder bounds naturalness, and not in lockstep with model size.
+Language detection is unstable on mixed Chinese-English material, so fall back per segment.
+Int8 quantisation shrinks size; measure the naturalness cost per task.
+Rerun end-to-end metrics whenever any single model in the chain changes.
+Allow delivery of transcript and subtitles without forcing synthesis.
+Let an offline voice package update recognition or synthesis independently.
+Speaker diarization merges two voices on overlap, so keep human review.
+Forced-alignment timestamp accuracy decides subtitle usability and dubbing placement.
+Inverse text normalization turns spoken numbers into written form, which downstream parsing depends on.
+A thin vocabulary shreds proper nouns and drags recognition down.
+Half-precision inference is unsupported on some hardware, so keep a fallback.
+Deliver a model's provenance and licence with the weights, not the file alone.
+Until streaming synthesis lands, voice product copy promises transcript and translation only.
+Keep voice evaluation off the device a resident service is using.
+Flag low-confidence segments in subtitles rather than guessing silently.
+Make resampling and filter choice explicit in audio format conversion.
+Voice model updates land off the product release cycle, so allow independent upgrade.
+Export transcript and translation separately for different downstream needs.
+Match synthesis pace and subtitle dwell to one reading constraint.
+Measure voice material by active speech span, not file length.
+Make each stage's latency measurable, or optimisation has no basis.
+Balance model size against time-to-first-use by product scenario.
+Accept voice delivery on the target machine, not the development box.
+Failures in the voice loop must name the failing stage, not the loop as a whole.
+Extend recognition vocabularies per customer domain instead of patching a model.
+Keep synthesis parameters so the same result can be reproduced.
+Show voice quality and latency side by side in one report.
+List each model's licence, size and fetch method in the manifest.
+Keep voice evaluation corpora licence-compatible with the product.
+Instrument start and end times for every stage of the chain.
+Declare recognition and synthesis language support separately, not as one list.
+On a model fetch failure, print the copyable command and the expected digest.
+A request should read back the path it took, the time each stage spent and the engine that answered.
+A health check should separate alive, ready and busy rather than collapsing them.
+Requests waiting in a queue need a visible metric, or operators can only infer them from timing.
+A wait limit needs an upper bound; past the representable range it severs instead of waiting.
+Record abandoned requests, since they still consumed a real computation.
+A suggested wait should come from a quantile of finished work, not from an average.
+A bounded restart must be triggerable on purpose, not only by accident.
+Scope an evaluation run by pair and engine, so evidence belonging elsewhere survives.
+Close a batch with a summary: counts, failures, the latency distribution and an exit code.
+Observability data must separate its own cost from the measured system's cost.
+Leave a minimal replayable input for every reproduced failure.
+Name metrics with unit and definition, or one label carries two meanings.
+Long-run alerts should key off trend and noise band, not a single point.
+Judge a change on the same machine and load, comparing before and after.
+A rerun must land under the same identity name, for traceability across versions.
+Aggregate logs by request identity, not only by time order.
+Absolute metric values are not comparable across environments; cite the relative difference.
+Keep observability fields backward compatible and say what an unknown means.
+Persist failed rows separately, so a rerun does not repeat what already succeeded.
+A process is observable when a fault can be localised to a stage.
+Report the denominator; unanswered rows must not be scored as low quality.
+Log chip, memory, concurrency and resident services for every run.
+Present jitter as a noise band, not as two numbers to compare.
+State which metrics indicate a need to scale, in the operations runbook.
+After a fix, confirm the workaround that hid it is gone.
+Sample order can fake degradation; revisit the same rows to tell them apart.
+Do not claim an unmeasured step has been optimised.
+Sample metrics finer than the timescale on which decay appears.
+Acceptance of a delivery includes one end-to-end reproducible command.
+An evaluation report names the pairs and domains it does not cover.
+State in the body when a conclusion depends on some service running.
+Observe waiting time as well as processing time.
+An incident record holds version, config and an input digest.
+Update code and docs together when a metric definition changes.
+Keep batch logs safe to publish, without client text.
+Fix the control group to one build and one data directory.
+Every reported number should point back to its evidence artefact.
+Distinguish user-visible waiting from internal waiting in operations metrics.
+Give every threshold a source instead of inheriting the previous number.
+Clean up resident services after a run, so the next measurement is not polluted.
+State what an incident conclusion ruled out, not only what it found.
+Trace every percentage in a report back to its counts.
+Mark an unreplicated difference as a single observation.
+Evaluation scripts must run unchanged on someone else's machine.
+A follow-up visit reuses the same identity name so the two runs compare.
+Report a missing observation instead of defaulting it.
+Decide a metric's purpose when it is collected, not afterwards.
+State the rule that refuses a conclusion when the sample is too small.
+An evaluation is trustworthy because it could have failed.

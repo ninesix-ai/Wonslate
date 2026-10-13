@@ -1,15 +1,120 @@
 {
-  "comment": "Sub-domain line ranges for the AV-domain evaluation corpus. 1-indexed inclusive. Sum = 300. Bench harness writes samples in corpus order, so the range maps directly onto sample IDs in the evidence JSON.",
+  "comment": "Sub-domain line ranges for the AV-domain evaluation corpus. 1-indexed inclusive. Sum = 1000. Bench harness writes samples in corpus order, so the range maps directly onto sample IDs in the evidence JSON. Rows 1-300 are the published identity and must never be reordered.",
   "ranges": [
-    {"name": "流水线核心与信号基础（初版）",       "start": 1,   "end": 30},
-    {"name": "流水线扩展（后处理/Kokoro sid/Whisper 切片）", "start": 31,  "end": 60},
-    {"name": "信号与声码（Nyquist/mel/formant）",  "start": 61,  "end": 85},
-    {"name": "缓冲与流式",                          "start": 86,  "end": 110},
-    {"name": "编解码与容器",                        "start": 111, "end": 135},
-    {"name": "字幕与配音",                          "start": 136, "end": 160},
-    {"name": "多义词边界（buffer/stream/channel...）", "start": 161, "end": 185},
-    {"name": "UI 与项目术语",                       "start": 186, "end": 207},
-    {"name": "翻译技术（NMT/LLM/TM/蒸馏）",         "start": 208, "end": 267},
-    {"name": "批处理与项目工程约束",                "start": 268, "end": 300}
+    {
+      "name": "流水线核心与信号基础（初版）",
+      "start": 1,
+      "end": 30
+    },
+    {
+      "name": "流水线扩展（后处理/Kokoro sid/Whisper 切片）",
+      "start": 31,
+      "end": 60
+    },
+    {
+      "name": "信号与声码（Nyquist/mel/formant）",
+      "start": 61,
+      "end": 85
+    },
+    {
+      "name": "缓冲与流式",
+      "start": 86,
+      "end": 110
+    },
+    {
+      "name": "编解码与容器",
+      "start": 111,
+      "end": 135
+    },
+    {
+      "name": "字幕与配音",
+      "start": 136,
+      "end": 160
+    },
+    {
+      "name": "多义词边界（buffer/stream/channel...）",
+      "start": 161,
+      "end": 185
+    },
+    {
+      "name": "UI 与项目术语",
+      "start": 186,
+      "end": 207
+    },
+    {
+      "name": "翻译技术（NMT/LLM/TM/蒸馏）",
+      "start": 208,
+      "end": 267
+    },
+    {
+      "name": "批处理与项目工程约束",
+      "start": 268,
+      "end": 300
+    },
+    {
+      "name": "流水线与运行时扩展",
+      "start": 301,
+      "end": 359
+    },
+    {
+      "name": "编解码与容器扩展",
+      "start": 360,
+      "end": 389
+    },
+    {
+      "name": "字幕配音与时序",
+      "start": 390,
+      "end": 462
+    },
+    {
+      "name": "多义词边界扩展（cache/codec/container/mix/stem）",
+      "start": 463,
+      "end": 510
+    },
+    {
+      "name": "质量与评测方法",
+      "start": 511,
+      "end": 544
+    },
+    {
+      "name": "隐私与合规",
+      "start": 545,
+      "end": 594
+    },
+    {
+      "name": "部署与打包",
+      "start": 595,
+      "end": 668
+    },
+    {
+      "name": "硬件与性能",
+      "start": 669,
+      "end": 733
+    },
+    {
+      "name": "术语治理与飞轮",
+      "start": 734,
+      "end": 796
+    },
+    {
+      "name": "UI 与可访问性",
+      "start": 797,
+      "end": 869
+    },
+    {
+      "name": "工程与文档纪律",
+      "start": 870,
+      "end": 904
+    },
+    {
+      "name": "语音链路与模型生态",
+      "start": 905,
+      "end": 951
+    },
+    {
+      "name": "运维观测与端到端评测",
+      "start": 952,
+      "end": 1000
+    }
   ]
 }

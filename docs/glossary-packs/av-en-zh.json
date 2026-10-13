@@ -1,0 +1,1075 @@
+{
+  "domain": "av",
+  "source_lang": "en",
+  "target_lang": "zh",
+  "version": "2026.10",
+  "license": "Apache-2.0",
+  "attribution": "Mechanically reversed from av-zh-en.json by script/derive_av_direction.py: the same rows, columns swapped. License inherits the source pack's Apache-2.0 / MIT provenance.",
+  "notes": "Do not hand-edit: fix av-zh-en.json and re-run the derivation. glossary_import_pack stamps source=\"seed:<domain>\" and defaults confidence to 1.0 on import.",
+  "entries": [
+    {
+      "source_term": "voice activity detection",
+      "target_term": "语音活动检测"
+    },
+    {
+      "source_term": "automatic speech recognition",
+      "target_term": "自动语音识别"
+    },
+    {
+      "source_term": "machine translation",
+      "target_term": "机器翻译"
+    },
+    {
+      "source_term": "text-to-speech",
+      "target_term": "语音合成"
+    },
+    {
+      "source_term": "streaming synthesis",
+      "target_term": "流式合成"
+    },
+    {
+      "source_term": "streaming recognition",
+      "target_term": "流式识别"
+    },
+    {
+      "source_term": "real-time interpretation",
+      "target_term": "实时同传"
+    },
+    {
+      "source_term": "batch localization",
+      "target_term": "批量本地化"
+    },
+    {
+      "source_term": "end-to-end latency",
+      "target_term": "端到端延迟"
+    },
+    {
+      "source_term": "first-packet latency",
+      "target_term": "首包延迟"
+    },
+    {
+      "source_term": "time to first playable audio",
+      "target_term": "首段可播"
+    },
+    {
+      "source_term": "speech round-trip",
+      "target_term": "语音闭环"
+    },
+    {
+      "source_term": "speaker diarization",
+      "target_term": "说话人分离"
+    },
+    {
+      "source_term": "speech segmentation",
+      "target_term": "语音分段"
+    },
+    {
+      "source_term": "speech segment",
+      "target_term": "语段"
+    },
+    {
+      "source_term": "forced alignment",
+      "target_term": "强制对齐"
+    },
+    {
+      "source_term": "inverse text normalization",
+      "target_term": "逆文本规整"
+    },
+    {
+      "source_term": "punctuation restoration",
+      "target_term": "标点恢复"
+    },
+    {
+      "source_term": "number normalization",
+      "target_term": "数字规整"
+    },
+    {
+      "source_term": "code-switching",
+      "target_term": "中英混排"
+    },
+    {
+      "source_term": "language code",
+      "target_term": "语言代码"
+    },
+    {
+      "source_term": "language identification",
+      "target_term": "语言识别"
+    },
+    {
+      "source_term": "acoustic model",
+      "target_term": "声学模型"
+    },
+    {
+      "source_term": "vocoder",
+      "target_term": "声码器"
+    },
+    {
+      "source_term": "waveform",
+      "target_term": "波形"
+    },
+    {
+      "source_term": "sample rate",
+      "target_term": "采样率"
+    },
+    {
+      "source_term": "bit depth",
+      "target_term": "位深"
+    },
+    {
+      "source_term": "audio channel",
+      "target_term": "声道"
+    },
+    {
+      "source_term": "mono",
+      "target_term": "单声道"
+    },
+    {
+      "source_term": "stereo",
+      "target_term": "立体声"
+    },
+    {
+      "source_term": "multichannel",
+      "target_term": "多声道"
+    },
+    {
+      "source_term": "sample",
+      "target_term": "采样点"
+    },
+    {
+      "source_term": "frame",
+      "target_term": "帧"
+    },
+    {
+      "source_term": "frame size",
+      "target_term": "帧长"
+    },
+    {
+      "source_term": "frame shift",
+      "target_term": "帧移"
+    },
+    {
+      "source_term": "feature dimension",
+      "target_term": "特征维度"
+    },
+    {
+      "source_term": "mel-frequency cepstral coefficients",
+      "target_term": "梅尔频率倒谱系数"
+    },
+    {
+      "source_term": "spectrum",
+      "target_term": "频谱"
+    },
+    {
+      "source_term": "spectrogram",
+      "target_term": "频谱图"
+    },
+    {
+      "source_term": "pitch",
+      "target_term": "音高"
+    },
+    {
+      "source_term": "timbre",
+      "target_term": "音色"
+    },
+    {
+      "source_term": "loudness",
+      "target_term": "响度"
+    },
+    {
+      "source_term": "clipping",
+      "target_term": "削波"
+    },
+    {
+      "source_term": "aliasing",
+      "target_term": "混叠"
+    },
+    {
+      "source_term": "audio normalization",
+      "target_term": "音频归一化"
+    },
+    {
+      "source_term": "buffer",
+      "target_term": "缓冲区"
+    },
+    {
+      "source_term": "buffering",
+      "target_term": "缓冲"
+    },
+    {
+      "source_term": "jitter",
+      "target_term": "抖动"
+    },
+    {
+      "source_term": "pipeline",
+      "target_term": "流水线"
+    },
+    {
+      "source_term": "queue",
+      "target_term": "队列"
+    },
+    {
+      "source_term": "chunk",
+      "target_term": "分块"
+    },
+    {
+      "source_term": "chunking",
+      "target_term": "分块处理"
+    },
+    {
+      "source_term": "flush",
+      "target_term": "冲刷"
+    },
+    {
+      "source_term": "backpressure",
+      "target_term": "背压"
+    },
+    {
+      "source_term": "data stream",
+      "target_term": "数据流"
+    },
+    {
+      "source_term": "streaming transport",
+      "target_term": "流式传输"
+    },
+    {
+      "source_term": "network jitter",
+      "target_term": "网络抖动"
+    },
+    {
+      "source_term": "frame buffer",
+      "target_term": "帧缓冲"
+    },
+    {
+      "source_term": "codec",
+      "target_term": "编解码器"
+    },
+    {
+      "source_term": "encoder",
+      "target_term": "编码器"
+    },
+    {
+      "source_term": "decoder",
+      "target_term": "解码器"
+    },
+    {
+      "source_term": "multiplexer",
+      "target_term": "复用器"
+    },
+    {
+      "source_term": "demultiplexer",
+      "target_term": "解复用器"
+    },
+    {
+      "source_term": "container format",
+      "target_term": "容器格式"
+    },
+    {
+      "source_term": "bitrate",
+      "target_term": "比特率"
+    },
+    {
+      "source_term": "rate control",
+      "target_term": "码率控制"
+    },
+    {
+      "source_term": "constant bitrate",
+      "target_term": "恒定比特率"
+    },
+    {
+      "source_term": "variable bitrate",
+      "target_term": "可变比特率"
+    },
+    {
+      "source_term": "keyframe",
+      "target_term": "关键帧"
+    },
+    {
+      "source_term": "group of pictures",
+      "target_term": "图像组"
+    },
+    {
+      "source_term": "inter-frame prediction",
+      "target_term": "帧间预测"
+    },
+    {
+      "source_term": "intra-frame prediction",
+      "target_term": "帧内预测"
+    },
+    {
+      "source_term": "motion estimation",
+      "target_term": "运动估计"
+    },
+    {
+      "source_term": "quantization parameter",
+      "target_term": "量化参数"
+    },
+    {
+      "source_term": "entropy coding",
+      "target_term": "熵编码"
+    },
+    {
+      "source_term": "entropy decoding",
+      "target_term": "熵解码"
+    },
+    {
+      "source_term": "transcoding",
+      "target_term": "转码"
+    },
+    {
+      "source_term": "lossless compression",
+      "target_term": "无损压缩"
+    },
+    {
+      "source_term": "lossy compression",
+      "target_term": "有损压缩"
+    },
+    {
+      "source_term": "subtitle",
+      "target_term": "字幕"
+    },
+    {
+      "source_term": "closed caption",
+      "target_term": "内嵌字幕"
+    },
+    {
+      "source_term": "burned-in subtitle",
+      "target_term": "硬字幕"
+    },
+    {
+      "source_term": "soft subtitle",
+      "target_term": "软字幕"
+    },
+    {
+      "source_term": "subtitle file",
+      "target_term": "字幕文件"
+    },
+    {
+      "source_term": "SubRip subtitle",
+      "target_term": "SubRip 字幕"
+    },
+    {
+      "source_term": "Advanced SubStation Alpha",
+      "target_term": "高级子站字幕"
+    },
+    {
+      "source_term": "Web Video Text Tracks",
+      "target_term": "网络视频文本轨道"
+    },
+    {
+      "source_term": "subtitle track",
+      "target_term": "字幕轨"
+    },
+    {
+      "source_term": "timeline",
+      "target_term": "时间轴"
+    },
+    {
+      "source_term": "subtitle timing",
+      "target_term": "字幕时序"
+    },
+    {
+      "source_term": "bilingual subtitles",
+      "target_term": "双语字幕"
+    },
+    {
+      "source_term": "dubbing",
+      "target_term": "配音"
+    },
+    {
+      "source_term": "voiceover",
+      "target_term": "旁白"
+    },
+    {
+      "source_term": "lip sync",
+      "target_term": "对口型"
+    },
+    {
+      "source_term": "audio-video sync",
+      "target_term": "声画同步"
+    },
+    {
+      "source_term": "audio track",
+      "target_term": "音轨"
+    },
+    {
+      "source_term": "video track",
+      "target_term": "视频轨"
+    },
+    {
+      "source_term": "subtitle alignment",
+      "target_term": "字幕对齐"
+    },
+    {
+      "source_term": "segment timing",
+      "target_term": "分段计时"
+    },
+    {
+      "source_term": "checkpoint",
+      "target_term": "检查点"
+    },
+    {
+      "source_term": "model weights",
+      "target_term": "模型权重"
+    },
+    {
+      "source_term": "tokenizer",
+      "target_term": "分词器"
+    },
+    {
+      "source_term": "vocabulary",
+      "target_term": "词表"
+    },
+    {
+      "source_term": "subword",
+      "target_term": "子词"
+    },
+    {
+      "source_term": "byte-pair encoding",
+      "target_term": "字节对编码"
+    },
+    {
+      "source_term": "token",
+      "target_term": "词元"
+    },
+    {
+      "source_term": "word embedding",
+      "target_term": "词嵌入"
+    },
+    {
+      "source_term": "inference",
+      "target_term": "推理"
+    },
+    {
+      "source_term": "training",
+      "target_term": "训练"
+    },
+    {
+      "source_term": "fine-tuning",
+      "target_term": "微调"
+    },
+    {
+      "source_term": "quantization",
+      "target_term": "量化"
+    },
+    {
+      "source_term": "int8 quantization",
+      "target_term": "int8 量化"
+    },
+    {
+      "source_term": "half precision",
+      "target_term": "半精度"
+    },
+    {
+      "source_term": "graph optimization",
+      "target_term": "图优化"
+    },
+    {
+      "source_term": "knowledge distillation",
+      "target_term": "知识蒸馏"
+    },
+    {
+      "source_term": "teacher model",
+      "target_term": "教师模型"
+    },
+    {
+      "source_term": "student model",
+      "target_term": "学生模型"
+    },
+    {
+      "source_term": "attention mechanism",
+      "target_term": "注意力机制"
+    },
+    {
+      "source_term": "Transformer",
+      "target_term": "转换器模型"
+    },
+    {
+      "source_term": "inference runtime",
+      "target_term": "推理运行时"
+    },
+    {
+      "source_term": "computation graph",
+      "target_term": "计算图"
+    },
+    {
+      "source_term": "Open Neural Network Exchange",
+      "target_term": "开放神经网络交换"
+    },
+    {
+      "source_term": "execution provider",
+      "target_term": "执行提供程序"
+    },
+    {
+      "source_term": "CPU provider",
+      "target_term": "CPU 提供程序"
+    },
+    {
+      "source_term": "CUDA provider",
+      "target_term": "CUDA 提供程序"
+    },
+    {
+      "source_term": "DirectML provider",
+      "target_term": "DirectML 提供程序"
+    },
+    {
+      "source_term": "CoreML provider",
+      "target_term": "CoreML 提供程序"
+    },
+    {
+      "source_term": "VRAM",
+      "target_term": "显存"
+    },
+    {
+      "source_term": "offload",
+      "target_term": "显存不足卸载"
+    },
+    {
+      "source_term": "batch size",
+      "target_term": "批大小"
+    },
+    {
+      "source_term": "thread count",
+      "target_term": "线程数"
+    },
+    {
+      "source_term": "parallelism",
+      "target_term": "并行度"
+    },
+    {
+      "source_term": "operator",
+      "target_term": "算子"
+    },
+    {
+      "source_term": "neural machine translation",
+      "target_term": "神经机器翻译"
+    },
+    {
+      "source_term": "statistical machine translation",
+      "target_term": "统计机器翻译"
+    },
+    {
+      "source_term": "large language model",
+      "target_term": "大语言模型"
+    },
+    {
+      "source_term": "context window",
+      "target_term": "上下文窗口"
+    },
+    {
+      "source_term": "prompt",
+      "target_term": "提示词"
+    },
+    {
+      "source_term": "system prompt",
+      "target_term": "系统提示"
+    },
+    {
+      "source_term": "few-shot examples",
+      "target_term": "少样本示例"
+    },
+    {
+      "source_term": "glossary",
+      "target_term": "术语表"
+    },
+    {
+      "source_term": "translation memory",
+      "target_term": "翻译记忆"
+    },
+    {
+      "source_term": "terminology consistency",
+      "target_term": "术语一致性"
+    },
+    {
+      "source_term": "term injection",
+      "target_term": "术语注入"
+    },
+    {
+      "source_term": "distillation",
+      "target_term": "蒸馏"
+    },
+    {
+      "source_term": "confidence",
+      "target_term": "置信度"
+    },
+    {
+      "source_term": "quality score",
+      "target_term": "质量分"
+    },
+    {
+      "source_term": "cache hit",
+      "target_term": "命中"
+    },
+    {
+      "source_term": "cache miss",
+      "target_term": "未命中"
+    },
+    {
+      "source_term": "cache",
+      "target_term": "缓存"
+    },
+    {
+      "source_term": "least recently used",
+      "target_term": "最近最少使用"
+    },
+    {
+      "source_term": "hit rate",
+      "target_term": "命中率"
+    },
+    {
+      "source_term": "fallback degradation",
+      "target_term": "兜底降级"
+    },
+    {
+      "source_term": "no silent degradation",
+      "target_term": "不静默降级"
+    },
+    {
+      "source_term": "latency",
+      "target_term": "延迟"
+    },
+    {
+      "source_term": "encoding latency",
+      "target_term": "编码延迟"
+    },
+    {
+      "source_term": "decoding latency",
+      "target_term": "解码延迟"
+    },
+    {
+      "source_term": "round-trip time",
+      "target_term": "往返时延"
+    },
+    {
+      "source_term": "real-time factor",
+      "target_term": "实时因子"
+    },
+    {
+      "source_term": "time to first token",
+      "target_term": "首字延迟"
+    },
+    {
+      "source_term": "queries per second",
+      "target_term": "每秒查询数"
+    },
+    {
+      "source_term": "throughput",
+      "target_term": "吞吐量"
+    },
+    {
+      "source_term": "wall-clock time",
+      "target_term": "挂钟时间"
+    },
+    {
+      "source_term": "benchmark",
+      "target_term": "基准测试"
+    },
+    {
+      "source_term": "profiling",
+      "target_term": "性能剖析"
+    },
+    {
+      "source_term": "cold start",
+      "target_term": "冷启动"
+    },
+    {
+      "source_term": "warm start",
+      "target_term": "热启动"
+    },
+    {
+      "source_term": "warmup",
+      "target_term": "预热"
+    },
+    {
+      "source_term": "memory footprint",
+      "target_term": "内存占用"
+    },
+    {
+      "source_term": "sampling",
+      "target_term": "采样"
+    },
+    {
+      "source_term": "speech",
+      "target_term": "语音"
+    },
+    {
+      "source_term": "audio",
+      "target_term": "音频"
+    },
+    {
+      "source_term": "sound",
+      "target_term": "声音"
+    },
+    {
+      "source_term": "voice",
+      "target_term": "嗓音"
+    },
+    {
+      "source_term": "model",
+      "target_term": "模型"
+    },
+    {
+      "source_term": "stream",
+      "target_term": "流"
+    },
+    {
+      "source_term": "segmentation",
+      "target_term": "分段"
+    },
+    {
+      "source_term": "channel",
+      "target_term": "通道"
+    },
+    {
+      "source_term": "picture",
+      "target_term": "画面"
+    },
+    {
+      "source_term": "microphone",
+      "target_term": "麦克风"
+    },
+    {
+      "source_term": "loudspeaker",
+      "target_term": "扬声器"
+    },
+    {
+      "source_term": "recording",
+      "target_term": "录音"
+    },
+    {
+      "source_term": "playback",
+      "target_term": "播放"
+    },
+    {
+      "source_term": "playhead",
+      "target_term": "播放头"
+    },
+    {
+      "source_term": "clip",
+      "target_term": "剪辑"
+    },
+    {
+      "source_term": "preview",
+      "target_term": "预览"
+    },
+    {
+      "source_term": "export",
+      "target_term": "导出"
+    },
+    {
+      "source_term": "import",
+      "target_term": "导入"
+    },
+    {
+      "source_term": "privacy mode",
+      "target_term": "隐私模式"
+    },
+    {
+      "source_term": "metadata",
+      "target_term": "元数据"
+    },
+    {
+      "source_term": "file header",
+      "target_term": "文件头"
+    },
+    {
+      "source_term": "sidecar process",
+      "target_term": "伴随进程"
+    },
+    {
+      "source_term": "language pair",
+      "target_term": "语言对"
+    },
+    {
+      "source_term": "source language",
+      "target_term": "源语言"
+    },
+    {
+      "source_term": "target language",
+      "target_term": "目标语言"
+    },
+    {
+      "source_term": "end-to-end",
+      "target_term": "端到端"
+    },
+    {
+      "source_term": "delivery",
+      "target_term": "交付"
+    },
+    {
+      "source_term": "transcription",
+      "target_term": "识别文本"
+    },
+    {
+      "source_term": "transcription",
+      "target_term": "转写"
+    },
+    {
+      "source_term": "text-to-speech synthesis",
+      "target_term": "文本转语音"
+    },
+    {
+      "source_term": "speech-to-text",
+      "target_term": "语音转文本"
+    },
+    {
+      "source_term": "offline bundle",
+      "target_term": "离线整合包"
+    },
+    {
+      "source_term": "sidecar engine",
+      "target_term": "侧车引擎"
+    },
+    {
+      "source_term": "quality mode",
+      "target_term": "精译档"
+    },
+    {
+      "source_term": "realtime mode",
+      "target_term": "实时档"
+    },
+    {
+      "source_term": "translation engine",
+      "target_term": "翻译引擎"
+    },
+    {
+      "source_term": "engine matrix",
+      "target_term": "引擎矩阵"
+    },
+    {
+      "source_term": "multi-engine routing",
+      "target_term": "多引擎路由"
+    },
+    {
+      "source_term": "local engine",
+      "target_term": "本地引擎"
+    },
+    {
+      "source_term": "cloud engine",
+      "target_term": "云端引擎"
+    },
+    {
+      "source_term": "upgrade policy",
+      "target_term": "升级策略"
+    },
+    {
+      "source_term": "confidence gating",
+      "target_term": "置信度门控"
+    },
+    {
+      "source_term": "ISO 639 code",
+      "target_term": "语言码"
+    },
+    {
+      "source_term": "character n-gram F-score",
+      "target_term": "字符级 F 值"
+    },
+    {
+      "source_term": "bilingual evaluation substitute",
+      "target_term": "双语评估替换"
+    },
+    {
+      "source_term": "learned metric",
+      "target_term": "神经指标"
+    },
+    {
+      "source_term": "frozen evaluation set",
+      "target_term": "固定测试集"
+    },
+    {
+      "source_term": "regression baseline",
+      "target_term": "回归基线"
+    },
+    {
+      "source_term": "error rate",
+      "target_term": "错误率"
+    },
+    {
+      "source_term": "word error rate",
+      "target_term": "词错误率"
+    },
+    {
+      "source_term": "character error rate",
+      "target_term": "字符错误率"
+    },
+    {
+      "source_term": "speech energy",
+      "target_term": "语音能量"
+    },
+    {
+      "source_term": "silence",
+      "target_term": "静音"
+    },
+    {
+      "source_term": "non-speech segment",
+      "target_term": "非语音段"
+    },
+    {
+      "source_term": "speech endpoint detection",
+      "target_term": "语音端点检测"
+    },
+    {
+      "source_term": "speech boundary",
+      "target_term": "语音边界"
+    },
+    {
+      "source_term": "timestamp",
+      "target_term": "时间戳"
+    },
+    {
+      "source_term": "frame rate",
+      "target_term": "帧率"
+    },
+    {
+      "source_term": "keyframe interval",
+      "target_term": "关键帧间隔"
+    },
+    {
+      "source_term": "bitstream",
+      "target_term": "码流"
+    },
+    {
+      "source_term": "sample",
+      "target_term": "样本"
+    },
+    {
+      "source_term": "framing",
+      "target_term": "分帧"
+    },
+    {
+      "source_term": "overlapping window",
+      "target_term": "重叠窗"
+    },
+    {
+      "source_term": "Hamming window",
+      "target_term": "汉明窗"
+    },
+    {
+      "source_term": "short-time Fourier transform",
+      "target_term": "短时傅里叶变换"
+    },
+    {
+      "source_term": "filterbank",
+      "target_term": "滤波器组"
+    },
+    {
+      "source_term": "feature extraction",
+      "target_term": "特征提取"
+    },
+    {
+      "source_term": "decoding graph",
+      "target_term": "解码图"
+    },
+    {
+      "source_term": "beam search",
+      "target_term": "束搜索"
+    },
+    {
+      "source_term": "language model score",
+      "target_term": "语言模型分数"
+    },
+    {
+      "source_term": "lexicon",
+      "target_term": "词典"
+    },
+    {
+      "source_term": "pronunciation dictionary",
+      "target_term": "发音字典"
+    },
+    {
+      "source_term": "phoneme",
+      "target_term": "音素"
+    },
+    {
+      "source_term": "syllable",
+      "target_term": "音节"
+    },
+    {
+      "source_term": "prosody",
+      "target_term": "韵律"
+    },
+    {
+      "source_term": "stress",
+      "target_term": "重音"
+    },
+    {
+      "source_term": "intonation",
+      "target_term": "语调"
+    },
+    {
+      "source_term": "expressive synthesis",
+      "target_term": "情感合成"
+    },
+    {
+      "source_term": "multi-speaker",
+      "target_term": "多说话人"
+    },
+    {
+      "source_term": "zero-shot speaker cloning",
+      "target_term": "零样本说话人克隆"
+    },
+    {
+      "source_term": "speech quality",
+      "target_term": "语音质量"
+    },
+    {
+      "source_term": "naturalness",
+      "target_term": "自然度"
+    },
+    {
+      "source_term": "intelligibility",
+      "target_term": "可懂度"
+    },
+    {
+      "source_term": "audio clip",
+      "target_term": "音频片段"
+    },
+    {
+      "source_term": "video clip",
+      "target_term": "视频片段"
+    },
+    {
+      "source_term": "timecode",
+      "target_term": "时间码"
+    },
+    {
+      "source_term": "frame offset",
+      "target_term": "帧偏移"
+    },
+    {
+      "source_term": "media container",
+      "target_term": "媒体容器"
+    },
+    {
+      "source_term": "subtitle burn-in",
+      "target_term": "字幕烧制"
+    },
+    {
+      "source_term": "subtitle hardcoding",
+      "target_term": "硬字幕化"
+    },
+    {
+      "source_term": "subtitling as separate track",
+      "target_term": "软字幕化"
+    },
+    {
+      "source_term": "media extraction",
+      "target_term": "媒体抽取"
+    },
+    {
+      "source_term": "audio track extraction",
+      "target_term": "音轨抽取"
+    },
+    {
+      "source_term": "video remuxing",
+      "target_term": "视频重封装"
+    },
+    {
+      "source_term": "frame-accurate",
+      "target_term": "帧精确"
+    },
+    {
+      "source_term": "sample-accurate",
+      "target_term": "样本精确"
+    }
+  ]
+}
