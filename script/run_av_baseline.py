@@ -299,9 +299,35 @@ def score_comet(path: pathlib.Path) -> None:
     subprocess.check_call([sys.executable, str(SCORE_PY), str(path)])
 
 
-def _load_ranges() -> list[dict]:
+def _load_ranges(direction) -> list[dict]:
+    """Sub-domain groups of ONE direction's corpus, addressed by row order.
+
+    A group is a span of ROW NUMBERS, so it only means "these sentences" inside one corpus
+    ordering. `en-zh` happens to share `zh-en`'s order because it is that same corpus with its two
+    columns swapped -- an equality a test pins, and a copy `derive_av_direction.py` writes rather
+    than a second thing to maintain by hand.
+
+    A direction that is not declared gets NO groups. Falling back to another direction's list --
+    which is what happened while this function took no direction at all -- prints a correct number
+    under a label describing different sentences, and nothing errors: short runs get clamped, full
+    runs get complete tables. That was defect D62; the report now prints an explicit "this
+    direction has no group table" note instead.
+    """
     data = json.loads(RANGES_PATH.read_text(encoding="utf-8"))
-    return data["ranges"]
+    groups = data.get("ranges")
+    if not isinstance(groups, dict):
+        raise SystemExit("%s: the 'ranges' key must map direction -> list of groups; "
+                         "one shared list across directions is defect D62" % RANGES_PATH)
+    return list(groups.get(direction or "", []))
+
+
+def _run_direction(run) -> str:
+    """Which corpus direction one run measured.
+
+    Artifacts written before the identity reached the header carry no `direction` field; those are
+    the published zh->en runs, which is also why their file names say so (see _arm_runs_by_size).
+    """
+    return (run or {}).get("direction") or "zh-en"
 
 
 def _per_domain_means(run: dict | None, ranges: list[dict], key: str,
@@ -619,12 +645,16 @@ def _arm_runs_by_size(engine, domain, direction) -> dict:
         runs = _run_list(path)
         if runs:
             found[int(size)] = runs
-    if direction == "zh-en":
-        legacy = _run_list(EVIDENCE_DIR / f"av-domain-{engine}{tag}.json")
-        if legacy:
-            rows = next((r.get("corpus_rows") for r in legacy if r.get("corpus_rows")),
-                        legacy[0].get("requested") or 0)
-            found.setdefault(int(rows), legacy)
+    # A legacy-named file carries no direction in its name, so the run's own `direction` field
+    # decides which identity it belongs to; artifacts written before that field existed are the
+    # published zh->en runs (_run_direction's documented default). Reading the name alone here
+    # while the headline table reads the header let one artifact be described as two directions
+    # at once -- the disagreement these two lines forbid.
+    legacy = _run_list(EVIDENCE_DIR / f"av-domain-{engine}{tag}.json")
+    if legacy and _run_direction(legacy[0]) == direction:
+        rows = next((r.get("corpus_rows") for r in legacy if r.get("corpus_rows")),
+                    legacy[0].get("requested") or 0)
+        found.setdefault(int(rows), legacy)
     return found
 
 
@@ -640,16 +670,16 @@ def _floor_cell(s) -> str:
     return "_单次_" if s["repeats"] < 2 else "_待 COMET_"
 
 
-def _extra_identity_lines(engines, directions, primary, ranges=None) -> list:
+def _extra_identity_lines(engines, directions, primary) -> list:
     """Markdown for every measurement the main tables do not render.
 
     `primary` is the {(direction, rows)} the tables above already cover. Everything else on
     disk gets a row here -- a second direction (S12 T2) or a grown corpus (S12 T4) must not
     sit in docs/evidence/ with no path onto the page, because that is how a measurement
-    becomes a rumor. Group tables come along: the ranges are indexed by corpus row order, and
-    the derived direction preserves that order, so a group label means the same sentences in
-    both directions. A run shorter than the range table simply shows fewer groups (clamped),
-    never empty ones.
+    becomes a rumor. Group tables come along, read from THAT section's own direction: a group
+    is a span of corpus row numbers, and only a direction that shares another's row order may
+    reuse its labels (D62). A run shorter than its group table shows fewer groups (clamped),
+    never empty ones; a direction with no table at all says so.
     """
     sizes = {}
     for direction in directions:
@@ -690,14 +720,21 @@ def _extra_identity_lines(engines, directions, primary, ranges=None) -> list:
                 f"| {e} | {_fmt(s['base_comet'])} | {_fmt(s['scope_comet'])} | "
                 f"{_fmt_pct(s['delta_comet'])} | {paired_n} | {_fmt_pct(chrf_delta)} | {floor} | "
                 f"{_fmt(rate_b, 3, 3)} | {_fmt(rate_s, 3, 3)} | {s['status']} |")
-        if ranges is None:
-            ranges = _load_ranges()
+        groups = _load_ranges(direction)
+        if not groups:
+            sections += [
+                "",
+                "> \u65e0\u5206\u7ec4\u8868\uff1a`script/av_domain_ranges.json` \u672a\u767b\u8bb0\u8bed\u5411 `%s`\u3002"
+                "\u5b50\u9886\u57df\u5206\u7ec4\u662f\u8bed\u6599\u884c\u53f7\u533a\u95f4\uff0c\u6362\u4e2a\u8bed\u5411\u5c31\u6307\u7740\u522b\u7684\u53e5\u5b50\uff0c"
+                "\u56e0\u6b64\u4e0d\u5957\u7528\u5176\u4ed6\u8bed\u5411\u7684\u884c\u53f7\uff08D62\uff09\u3002" % direction,
+            ]
+            continue
         for e in present:
             b = (base_runs.get(e) or [None])[0]
             s = (scope_runs.get(e) or [None])[0]
             if not (b and s):
                 continue          # one arm alone has nothing to pair against (D31)
-            group_rows = _subdomain_rows(b, s, ranges)
+            group_rows = _subdomain_rows(b, s, groups)
             if not group_rows:
                 continue
             sections += [
@@ -733,7 +770,6 @@ def generate_report(args):
     Returns the summary rows so main() can print a compact table too.
     An empty list means "declined because there is no evidence"; main()
     uses that as a signal to exit non-zero in --report-only mode."""
-    ranges = _load_ranges()
     engines = list(args.engines)
     # The report is a projection of what has been measured, not of what this invocation
     # asked for. Narrowing --engines used to delete the other engines' rows -- and their
@@ -774,8 +810,8 @@ def generate_report(args):
             for run in (baseline_runs if arm == "base" else scoped_runs)[e]:
                 primary.add((run.get("direction") or "zh-en",
                              int(run.get("requested") or 0)))
-    args._extra_lines = _extra_identity_lines(engines, directions, primary, ranges)
-    _write_report(ranges, baselines, scoped, summary, args)
+    args._extra_lines = _extra_identity_lines(engines, directions, primary)
+    _write_report(baselines, scoped, summary, args)
     return summary
 
 
@@ -835,7 +871,24 @@ def _subdomain_rows(base: dict | None, scope: dict | None, ranges: list[dict]) -
     return rows
 
 
-def _write_report(ranges, baselines, scoped, summary, args) -> None:
+def _data_note() -> str:
+    """The header's 'what data is this' line, rendered from the corpus and the grouping table.
+
+    It used to claim three hundred pairs in one direction with twelve groups, long after the
+    corpus reached 1000 rows in two directions with 23 groups each -- the same stale-prose class
+    as D60, and the same cure: ask the files instead of restating them. The group counts are per
+    direction on purpose, since a group is a span of one corpus's row numbers (D62).
+    """
+    counts = []
+    for direction in DIRECTIONS:
+        groups = _load_ranges(direction)
+        counts.append("%s %s" % (direction.replace("-", "\u2192"),
+                                 "%d 组" % len(groups) if groups else "未登记分组"))
+    return ("数据：`script/eval-data/`（本项目自撰，Apache-2.0，" + _corpus_size_note("对")
+            + "，语向 " + _direction_note() + "；子领域分组按语向各自登记：" + "、".join(counts) + "）。")
+
+
+def _write_report(baselines, scoped, summary, args) -> None:
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     engines = list(getattr(args, "_report_engines", None) or args.engines)
     lines = [
@@ -843,7 +896,7 @@ def _write_report(ranges, baselines, scoped, summary, args) -> None:
         "",
         "> 定位：本报告是 Wonslate **S11 领域种子包收益**的对外证据。与 flores-benchmark.md（通用域）、",
         "> translation-benchmark.md（108 句回归基线）分工不同：本报告的样本与指标专为「AV / 多媒体技术域」设计。",
-        "> 数据：`script/eval-data/av-zh-en/`（本项目自撰，Apache-2.0，300 对 zh→en，12 类子领域分组）。",
+        _data_note(),
         "> 指标：sacrebleu 的 chrF++ / BLEU 与 COMET-22 (Unbabel/wmt22-comet-da)。",
         f"> 生成：`python script/run_av_baseline.py`（本文件由该脚本自动写入，{_hr_line_note(args)}）。",
         "",
@@ -874,17 +927,28 @@ def _write_report(ranges, baselines, scoped, summary, args) -> None:
         "",
     ]
     for e in engines:
+        # Read the groups of the direction THIS table's runs measured, not of whichever direction
+        # the ranges file happened to list first, and say which identity is being described: the
+        # heading alone used to hide that these rows come from the published zh->en artifacts
+        # while the identity section below holds the others (D62).
+        direction = _run_direction(baselines[e] or scoped[e])
+        rows = (baselines[e] or scoped[e] or {}).get("requested")
+        groups = _load_ranges(direction)
         lines += [
             f"### {e}",
             "",
-            "| 子领域 | 句对数 | 未接线 chrF | 接线 chrF | 未接线 COMET | 接线 COMET |",
+            "> \u8bed\u5411 `%s` \u00b7 %s \u53e5\uff08\u672c\u8868\u53d6\u8be5\u8eab\u4efd\u6bcf\u81c2\u7684\u7b2c 1 \u6b21\u590d\u91c7\uff09" % (direction, rows),
+            "",
+            "| \u5b50\u9886\u57df | \u53e5\u5bf9\u6570 | \u672a\u63a5\u7ebf chrF | \u63a5\u7ebf chrF | \u672a\u63a5\u7ebf COMET | \u63a5\u7ebf COMET |",
             "|---|---|---|---|---|---|",
         ]
-        for name, count, b_ch, s_ch, b_co, s_co in _subdomain_rows(baselines[e], scoped[e], ranges):
+        if not groups:
+            lines.append("| _\u65e0\u5206\u7ec4\u8868\uff1a`script/av_domain_ranges.json` \u672a\u767b\u8bb0\u8be5\u8bed\u5411_ | | | | | |")
+        for name, count, b_ch, s_ch, b_co, s_co in _subdomain_rows(baselines[e], scoped[e], groups):
             lines.append(f"| {name} | {count} | {_fmt(b_ch, 1, 2)} | {_fmt(s_ch, 1, 2)} | "
                          f"{_fmt(b_co)} | {_fmt(s_co)} |")
         lines.append("")
-    lines += _hypothesis_block(summary, baselines, scoped, ranges)
+    lines += _hypothesis_block(summary, baselines, scoped)
     lines += _reproduction_block(args)
     lines += getattr(args, "_extra_lines", None) or []
     lines += _limitations_block()
@@ -955,12 +1019,16 @@ def _terminology_lines(summary) -> list:
     return lines
 
 
-def _hypothesis_block(summary, baselines, scoped, ranges) -> list:
+def _hypothesis_block(summary, baselines, scoped) -> list:
     lines = ["## 差值与四条待验证假设", ""]
     lines += _terminology_lines(summary)
     qwen = next((s for s in summary if s["engine"] == "ollama-qwen"), None)
     if qwen and qwen["delta_comet"] is not None:
-        rows = _subdomain_rows(baselines.get("ollama-qwen"), scoped.get("ollama-qwen"), ranges)
+        # The groups of the direction this comparison was actually made in, so the subset named
+        # below cannot come from another corpus's row order (D62).
+        groups = _load_ranges(_run_direction(baselines.get("ollama-qwen")
+                                             or scoped.get("ollama-qwen")))
+        rows = _subdomain_rows(baselines.get("ollama-qwen"), scoped.get("ollama-qwen"), groups)
         # Found by name, never by position: this used to read `rows[6]` on the assumption that
         # the polysemy group is the seventh range. The corpus grew and added a second
         # polysemy group, so a positional read would either fall off the end of a clamped

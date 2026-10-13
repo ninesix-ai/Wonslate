@@ -653,20 +653,48 @@ class CorpusIntegrityTests(unittest.TestCase):
         self.assertEqual([], dupes, "repeated source rows make a sub-domain count lie")
 
     def test_ranges_cover_the_corpus_exactly_once(self):
-        """Every row belongs to one group and no group runs past the end of the corpus."""
+        """Every row of EVERY declared direction belongs to one group, and no group runs past it.
+
+        The table used to be checked against zh-en alone while the runner read it for every
+        direction. Groups are spans of corpus row numbers, so each direction needs its own set:
+        a direction whose rows are ordered differently is mislabelled, not merely mis-sized.
+        """
         import json
         doc = json.loads((self.REPO / "script" / "av_domain_ranges.json").read_text(encoding="utf-8"))
-        src, _tgt = self._pair(self.DIRECTION)
-        covered = [False] * len(src)
-        for rng in doc["ranges"]:
-            self.assertLessEqual(1, rng["start"])
-            self.assertLessEqual(rng["end"], len(src),
-                                 "group %r runs past the corpus" % rng["name"])
-            for i in range(rng["start"] - 1, rng["end"]):
-                self.assertFalse(covered[i], "row %d is claimed by two groups" % (i + 1))
-                covered[i] = True
-        self.assertTrue(all(covered), "rows with no group: %s"
-                        % [i + 1 for i, c in enumerate(covered) if not c][:10])
+        groups = doc["ranges"]
+        self.assertIsInstance(groups, dict,
+                              "groups must be keyed by direction, not one shared list")
+        for direction, ranges in sorted(groups.items()):
+            src, _tgt = self._pair(direction)
+            covered = [False] * len(src)
+            for rng in ranges:
+                self.assertLessEqual(1, rng["start"])
+                self.assertLessEqual(rng["end"], len(src),
+                                     "%s: group %r runs past the corpus" % (direction,
+                                                                            rng["name"]))
+                for i in range(rng["start"] - 1, rng["end"]):
+                    self.assertFalse(covered[i],
+                                     "%s: row %d is claimed by two groups" % (direction, i + 1))
+                    covered[i] = True
+            self.assertTrue(all(covered),
+                            "%s: rows with no group: %s"
+                            % (direction, [i + 1 for i, c in enumerate(covered) if not c][:10]))
+
+    def test_a_derived_direction_declares_the_forwards_row_order(self):
+        """The derived direction's groups must be the forward's, span for span, name for name.
+
+        They are equal ONLY because the derived corpus is a column swap of the same rows (the
+        test above this proves the swap). If someone reorders or grows one corpus alone, these two
+        lists part ways and this test says which direction's grouping has gone stale. Until the
+        runner asked for groups by direction, nothing in the gate could notice at all.
+        """
+        import json
+        doc = json.loads((self.REPO / "script" / "av_domain_ranges.json").read_text(encoding="utf-8"))
+        groups = doc["ranges"]
+        self.assertIn(self.DERIVED, groups,
+                      "%s has no declared groups; borrowing %s's is defect D62"
+                      % (self.DERIVED, self.DIRECTION))
+        self.assertEqual(groups[self.DIRECTION], groups[self.DERIVED])
 
     def test_the_derived_reverse_direction_matches_the_forward_one(self):
         """en->zh is a column swap, not a copy that can drift; check it rather than trust it."""

@@ -328,6 +328,197 @@ class ReportRenderingTests(unittest.TestCase):
         self.assertIn("不适用", row[0])
         self.assertNotIn("缺臂", row[0])
 
+    def test_the_header_describes_the_corpus_actually_on_disk(self):
+        # The published header claimed three hundred pairs in one direction with twelve groups,
+        # long after S12 T4 had landed the thousandth row across two directions with 23 groups
+        # each. That sentence is the qualifier REQ-E2 attaches to every quoted number, so a stale
+        # one mislabels the measurement it is guarding. Group counts are per direction because a
+        # group is a span of one corpus's row numbers (D62), and the header has to say so too.
+        import run_av_baseline
+        note = run_av_baseline._data_note()
+        self.assertNotIn("300 对", note, "a stale row count in a generated header")
+        self.assertIn(str(run_av_baseline._corpus_rows("zh-en", None, None)), note)
+        for direction in run_av_baseline.DIRECTIONS:
+            self.assertIn(direction.replace("-", "\u2192"), note,
+                          "%s is measured but the header does not mention it" % direction)
+
+
+class PerDirectionRangesTests(unittest.TestCase):
+    """A sub-domain group table belongs to ONE corpus row order, so it must be read per direction.
+
+    `script/av_domain_ranges.json` labels spans of corpus ROWS (1..30 = "pipeline core", and
+    so on). Sharing one list between directions was safe for exactly one reason: en->zh is the
+    forward corpus with its two columns swapped, so row 7 is still the same sentence. A direction
+    that is newly authored -- the ja/ko half of S12 T2 -- has its own row order, and borrowing
+    zh-en's spans would print a real number under a group name that describes different
+    sentences. Nothing errors: a 300-row run gets clamped, a 1000-row run gets full tables, and
+    the labels are simply wrong. That is the same class as D55 (empty groups read as "scored
+    nothing") but worse, because these groups are not empty -- they are plausible.
+    """
+
+    GROUPS = {
+        "zh-en": [{"name": "\u7532\u7ec4", "start": 1, "end": 2}],
+        "en-zh": [{"name": "\u4e59\u7ec4", "start": 1, "end": 2}],
+    }
+
+    def setUp(self):
+        import run_av_baseline
+        self.m = run_av_baseline
+        self.tmp = tempfile.TemporaryDirectory()
+        self.orig_evidence = self.m.EVIDENCE_DIR
+        self.orig_ranges = self.m.RANGES_PATH
+        self.orig_report = self.m.REPORT_PATH
+        self.m.EVIDENCE_DIR = pathlib.Path(self.tmp.name) / "evidence"
+        self.m.EVIDENCE_DIR.mkdir(parents=True)
+        # generate_report writes the published document; a test must never aim at the real one.
+        self.m.REPORT_PATH = pathlib.Path(self.tmp.name) / "av-domain-benchmark.md"
+        self.write_ranges({"comment": "fixture", "ranges": dict(self.GROUPS)})
+
+    def tearDown(self):
+        self.m.EVIDENCE_DIR = self.orig_evidence
+        self.m.RANGES_PATH = self.orig_ranges
+        self.m.REPORT_PATH = self.orig_report
+        self.tmp.cleanup()
+
+    def _args(self, engines):
+        return types.SimpleNamespace(
+            engines=engines, directions=list(self.m.DIRECTIONS), n=None, repeats=1,
+            quick=False, skip_comet=True, report_only=True, force=False,
+            only_baseline=False, preflight_only=False)
+
+    def write_ranges(self, payload):
+        path = pathlib.Path(self.tmp.name) / "av_domain_ranges.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        self.m.RANGES_PATH = path
+        return path
+
+    def _put_identity(self, engine, direction, rows=2, comet=0.70, delta=0.01):
+        """Write both arms of one (engine, direction, size) identity."""
+        base = _run(["a", "b"], scores=[comet, comet], comet=comet, engine=engine)
+        base["direction"] = direction
+        scope = _run(["a2", "b2"], scores=[comet + delta, comet + delta],
+                     comet=comet + delta, engine=engine)
+        scope["direction"] = direction
+        for domain, run in (("", base), ("av", scope)):
+            name = self.m.evidence_name(engine, direction, domain, rows)
+            (self.m.EVIDENCE_DIR / name).write_text(
+                json.dumps({"corpus": "av-domain", "generated_at": "x",
+                            "direction": direction, "corpus_rows": rows, "runs": [run]},
+                           ensure_ascii=False), encoding="utf-8")
+
+    def test_ranges_are_read_for_one_direction_and_never_borrowed(self):
+        self.assertEqual([{"name": "\u7532\u7ec4", "start": 1, "end": 2}],
+                         self.m._load_ranges("zh-en"))
+        self.assertEqual([{"name": "\u4e59\u7ec4", "start": 1, "end": 2}],
+                         self.m._load_ranges("en-zh"))
+        # An unlisted direction has NO groups. Returning another direction's list -- what
+        # happens while the loader ignores direction entirely -- is the defect.
+        self.assertEqual([], self.m._load_ranges("zh-ja"))
+
+    def test_each_directions_group_table_carries_its_own_group_names(self):
+        self._put_identity("ollama-qwen", "zh-en")
+        self._put_identity("ollama-qwen", "en-zh")
+        lines = self.m._extra_identity_lines(["ollama-qwen"], ["zh-en", "en-zh"], set())
+        text = "\n".join(lines)
+        section = {}
+        current = None
+        for line in lines:
+            if line.startswith("### "):
+                current = line
+            if line.startswith("| ") and "\u7532\u7ec4" in line:
+                section.setdefault(current, []).append("\u7532")
+            if line.startswith("| ") and "\u4e59\u7ec4" in line:
+                section.setdefault(current, []).append("\u4e59")
+        zh = [k for k in section if "zh-en" in k]
+        en = [k for k in section if "en-zh" in k]
+        self.assertEqual(["\u7532"], [g for k in zh for g in section[k]],
+                         "the zh-en section must show its own group only; got %s" % text[:200])
+        self.assertEqual(["\u4e59"], [g for k in en for g in section[k]],
+                         "the en-zh section must show its own group only; got %s" % text[:200])
+
+    def test_a_direction_without_groups_says_so_instead_of_borrowing_anothers(self):
+        # The honest degradation. A new direction lands in DIRECTIONS before anyone has grouped
+        # its corpus; the report must then show no group table for it, and must SAY why, rather
+        # than silently dressing its rows in zh-en's labels.
+        self.write_ranges({"comment": "fixture", "ranges": {"zh-en": self.GROUPS["zh-en"]}})
+        self._put_identity("ollama-qwen", "zh-ja")
+        lines = self.m._extra_identity_lines(["ollama-qwen"], ["zh-ja"], set())
+        text = "\n".join(lines)
+        self.assertIn("zh-ja", text, "the identity itself must still be reported")
+        self.assertNotIn("\u7532\u7ec4", text,
+                         "zh-en's group name must not be printed over another direction's rows")
+        self.assertIn("\u65e0\u5206\u7ec4\u8868", text,
+                      "silence is not an option: the reader must be told no groups exist here")
+
+    def test_the_shipped_ranges_file_declares_every_direction_the_runner_knows(self):
+        # Read the real asset: adding a direction to DIRECTIONS without declaring its groups
+        # must fail here, not surface later as a missing table in a published report.
+        self.write_ranges(json.loads(self.orig_ranges.read_text(encoding="utf-8")))
+        for direction in self.m.DIRECTIONS:
+            groups = self.m._load_ranges(direction)
+            self.assertTrue(groups, "direction %s has no sub-domain groups declared" % direction)
+            self.assertEqual(1, groups[0]["start"],
+                             "%s: groups must start at corpus row 1" % direction)
+
+    def test_the_main_engine_table_follows_the_runs_own_direction(self):
+        # The headline tables read the legacy artifacts, which are the published zh->en runs; if
+        # the writer asked for a fixed direction instead of the one the run records, a future
+        # headline built on another direction's artifacts would carry zh-en's group labels. This
+        # is the half of D62 that --report-only cannot show on today's data, so it is pinned here.
+        for engine in ("argos", "ollama-qwen"):
+            base = _run(["a", "b"], scores=[0.7, 0.7], comet=0.7, engine=engine)
+            base["direction"] = "en-zh"
+            scope = _run(["a2", "b2"], scores=[0.71, 0.71], comet=0.71, engine=engine)
+            scope["direction"] = "en-zh"
+            (self.m.EVIDENCE_DIR / ("av-domain-%s.json" % engine)).write_text(
+                json.dumps({"corpus": "av-domain", "generated_at": "x", "direction": "en-zh",
+                            "corpus_rows": 2, "runs": [base]}, ensure_ascii=False),
+                encoding="utf-8")
+            (self.m.EVIDENCE_DIR / ("av-domain-%s-av.json" % engine)).write_text(
+                json.dumps({"corpus": "av-domain", "generated_at": "x", "direction": "en-zh",
+                            "corpus_rows": 2, "runs": [scope]}, ensure_ascii=False),
+                encoding="utf-8")
+        self.m.generate_report(self._args(["argos", "ollama-qwen"]))
+        text = self.m.REPORT_PATH.read_text(encoding="utf-8")
+        self.assertIn("\u4e59\u7ec4", text,
+                      "the headline table must use the direction its runs recorded")
+        self.assertNotIn("\u7532\u7ec4", text,
+                         "zh-en's group name appeared in a table built from en-zh artifacts")
+        self.assertIn("> \u8bed\u5411 `en-zh`", text,
+                      "the table must say which identity it describes")
+
+
+class DeriveCheckRangesTests(unittest.TestCase):
+    """`derive_av_direction.py --check` has to notice a stale group copy, not just a stale corpus.
+
+    The derived direction's groups are a copy, so they are the one artefact a hand edit can leave
+    behind while the corpus still matches. Without this the drift path would cover two of the three
+    derived files and a reader would take "derived artefacts match their sources" to mean all three.
+    """
+
+    def test_a_mismatching_group_copy_is_reported_as_drift(self):
+        import derive_av_direction as D
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        real = json.loads(D.RANGES.read_text(encoding="utf-8"))
+        stale = json.loads(json.dumps(real))
+        forward = stale["ranges"]["zh-en"]
+        # A derived list that stops short of the corpus: same shape, wrong coverage.
+        stale["ranges"]["en-zh"] = forward[:-1]
+        path = pathlib.Path(tmp.name) / "av_domain_ranges.json"
+        path.write_text(json.dumps(stale, ensure_ascii=False), encoding="utf-8")
+        orig = D.RANGES
+        D.RANGES = path
+        try:
+            self.assertEqual(1, D.check(),
+                             "--check passed a derived group list that is not the forward's")
+            # And the same loader is happy with the real file, so the failure above is the
+            # mismatch and not an unreadable fixture.
+            D.RANGES = orig
+            self.assertEqual(0, D.check())
+        finally:
+            D.RANGES = orig
+
 
 class NmtTermContextWordingTests(unittest.TestCase):
     """The prose that says which engines consume a glossary must come from the table.
@@ -366,7 +557,7 @@ class NmtTermContextWordingTests(unittest.TestCase):
         import run_av_baseline
         summary = [{"engine": "argos", "delta_comet": 0.0},
                    {"engine": "madlad", "delta_comet": 0.0}]
-        text = "\n".join(run_av_baseline._hypothesis_block(summary, {}, {}, []))
+        text = "\n".join(run_av_baseline._hypothesis_block(summary, {}, {}))
         self.assertIn("构造使然", text)
         self.assertNotIn("属预期", text)
 

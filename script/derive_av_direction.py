@@ -33,6 +33,7 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 EVAL_DATA = REPO / "script" / "eval-data"
 PACKS = REPO / "docs" / "glossary-packs"
+RANGES = REPO / "script" / "av_domain_ranges.json"
 
 # direction to derive -> the direction it comes from
 DERIVED = {"en-zh": "zh-en"}
@@ -95,6 +96,33 @@ def _same_entries(path, payload) -> bool:
         return False
 
 
+def forward_groups(from_direction):
+    """The forward direction's sub-domain groups, as loaded from the ranges file.
+
+    A group is a span of corpus ROW numbers, so a derived direction may reuse them only because
+    its corpus is the same rows in the same order -- which this very script guarantees when it
+    writes the columns. Owning that copy here is what keeps it from drifting: an out-of-date list
+    is a DRIFT that --check reports, instead of a label quietly describing different sentences
+    (defect D62).
+    """
+    doc = json.loads(RANGES.read_text(encoding="utf-8"))
+    groups = doc.get("ranges")
+    if not isinstance(groups, dict):
+        raise SystemExit("{}: 'ranges' must map direction -> list of groups".format(RANGES))
+    if from_direction not in groups:
+        raise SystemExit("{} declares no groups for the source direction {}".format(
+            RANGES.name, from_direction))
+    return groups[from_direction]
+
+
+def _same_groups(to_direction, want) -> bool:
+    try:
+        doc = json.loads(RANGES.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return False
+    return (doc.get("ranges") or {}).get(to_direction) == want
+
+
 def check() -> int:
     """Report every derived artefact that is missing or out of date; write nothing."""
     bad = []
@@ -108,9 +136,19 @@ def check() -> int:
         pack_path, payload, _kept, _dropped = pack_payload(from_direction, to_direction)
         if not _same_entries(pack_path, payload):
             bad.append(pack_path)
+        want_groups = forward_groups(from_direction)
+        if not _same_groups(to_direction, want_groups):
+            bad.append(RANGES)
     for path in bad:
-        print("DRIFT: {} is missing or does not match the derivation".format(
-            path.relative_to(REPO)), file=sys.stderr)
+        # A moved or temporary ranges file still has to be reportable: relative_to raises
+        # ValueError off-repo, which used to turn "found drift" into a crash inside the
+        # reporter -- the worst place for a formatter to fail (a test hit exactly this).
+        try:
+            shown = path.relative_to(REPO)
+        except ValueError:
+            shown = path
+        print("DRIFT: {} is missing or does not match the derivation".format(shown),
+              file=sys.stderr)
     if bad:
         return 1
     print("derived artefacts match their sources")
@@ -132,6 +170,17 @@ def write() -> int:
                                                                  from_direction))
         print("{}: {} term rows reversed ({} dropped for a missing side)".format(
             pack_path.relative_to(REPO), kept, dropped))
+        want_groups = forward_groups(from_direction)
+        if _same_groups(to_direction, want_groups):
+            print("{}: groups for {} already match av-{}".format(
+                RANGES.name, to_direction, from_direction))
+        else:
+            doc = json.loads(RANGES.read_text(encoding="utf-8"))
+            doc["ranges"][to_direction] = json.loads(json.dumps(want_groups, ensure_ascii=False))
+            RANGES.write_bytes((json.dumps(doc, ensure_ascii=False, indent=2)
+                                + "\n").encode("utf-8"))
+            print("{}: declared {} groups for {} (copy of av-{}, same row order)".format(
+                RANGES.name, len(want_groups), to_direction, from_direction))
     return 0
 
 
