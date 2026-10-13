@@ -104,6 +104,28 @@ class StatusHonestyTests(unittest.TestCase):
         self.assertIsNone(s["noise_floor"])
         self.assertIn("未复采", s["status"])
 
+    def test_repeats_without_comet_are_not_labelled_unsampled(self):
+        # Two causes of a missing floor read alike unless they are told apart. A fresh
+        # direction is benched twice and scored for COMET later; labelling that "not repeated"
+        # would delete the fact that the arm was sampled twice, and a reader would wait for a
+        # repeat that already exists.
+        base = _run(["a", "b"], comet=None)
+        scope = _run(["a2", "b2"], comet=None)
+        s = summarize_engine("ollama-qwen", [base, _run(["a", "b"], comet=None)],
+                            [scope, _run(["a2", "b2"], comet=None)])
+        self.assertIsNone(s["noise_floor"])
+        self.assertEqual(2, s["repeats"])
+        self.assertNotIn("未复采", s["status"])
+        self.assertIn("已复采 2 次", s["status"])
+
+    def test_the_floor_cell_agrees_with_the_repeat_count(self):
+        # The floor column and the status column are read side by side; one of them claiming
+        # a single run while the other says the arm was sampled twice makes the row unreadable.
+        from run_av_baseline import _floor_cell
+        self.assertEqual("_单次_", _floor_cell({"noise_floor": None, "repeats": 1}))
+        self.assertEqual("_待 COMET_", _floor_cell({"noise_floor": None, "repeats": 2}))
+        self.assertEqual("±0.0100", _floor_cell({"noise_floor": 0.01, "repeats": 2}))
+
     def test_a_delta_inside_the_noise_floor_is_not_a_result(self):
         base = _run(["a", "b"], comet=0.700)
         base2 = _run(["a", "b"], comet=0.710)          # arm drifts by 0.010 on its own

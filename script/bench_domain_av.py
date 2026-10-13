@@ -61,7 +61,7 @@ AV_DIR_ENV = "WONSLATE_AV_DIR"
 # Directory names the harness knows about, in the canonical
 # `<prefix>/{prefix}.src, {prefix}.tgt` layout. T1 covers zh<->en;
 # T2 (task card) extends to the other ten registered product languages.
-PAIRS = ("av-zh-en",)
+PAIRS = ("av-zh-en", "av-en-zh")
 
 # Engine ids this harness accepts. Must stay in lock-step with the four
 # registered ids in translator-engine/src/engine/mod.rs -- the AI leg
@@ -399,6 +399,25 @@ def _run_one(engine_id, direction, src, tgt, domain=""):
     return hypotheses, metrics, failures
 
 
+def evidence_name(engine_id, direction, domain="", n=None):
+    """File name for one arm's evidence -- the identity of the measurement.
+
+    Engine plus domain was enough while there was exactly one corpus and one direction.
+    With T2 (en->zh on the same rows) and T4 (a bigger corpus) the same engine is
+    measurable several ways, and a name that omits them lets a new run replace the
+    published one in place, silently. So the direction and the row count are part of the
+    name; two repeats of the *same* measurement still share one file, because pairing
+    them is what produces the report's noise floor.
+
+    `n=None` (the corpus's full length) keeps the older published artefacts readable: the
+    300-row runs recorded before this change carry no size marker, and inventing one now
+    would strand them out of the report.
+    """
+    tag = "-{}".format(domain) if domain else ""
+    size = "" if n is None else "-n{}".format(n)
+    return "av-domain-{}{}-{}{}.json".format(engine_id, tag, direction, size)
+
+
 def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, domain="",
                     failures=None, run_index=1, adherence=None):
     """Persist one engine's run so a later COMET pass or diff report can
@@ -417,8 +436,10 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
     import json
 
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    tag = "-{}".format(domain) if domain else ""
-    out = EVIDENCE_DIR / "av-domain-{}{}.json".format(engine_id, tag)
+    out = EVIDENCE_DIR / evidence_name(engine_id, direction, domain, len(src))
+    # An identity this file does not carry cannot be recovered from its name alone once
+    # legacy names coexist, and a report that guesses has been wrong before: state it.
+    identity = {"direction": direction, "corpus_rows": len(src)}
     answered = sum(1 for h in hypotheses if h.strip())
     run = {
         "engine": engine_id,
@@ -453,6 +474,10 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "runs": earlier + [run],
     }
+    # The identity belongs to the artifact, not to the write that opened it: a second repeat
+    # rewrites the same file, and skipping the header there would leave the finished evidence
+    # without the very fields that make it citable.
+    payload.update(identity)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
 

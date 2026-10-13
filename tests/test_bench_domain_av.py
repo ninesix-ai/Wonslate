@@ -17,6 +17,7 @@ GPU, no real sidecar. Run:
 """
 import contextlib
 import io
+import json
 import os
 import pathlib
 import sys
@@ -356,8 +357,10 @@ class EvidenceFailureFieldsTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _read(self):
-        import json
-        path = self.m.EVIDENCE_DIR / "av-domain-ollama-qwen.json"
+        # Built from the writer's own rule rather than spelled out: the row count is part of
+        # the evidence identity, so a hardcoded legacy name here would silently read a
+        # different artifact than the one _write() just produced.
+        path = self.m.EVIDENCE_DIR / self.m.evidence_name("ollama-qwen", "zh-en", "", 3)
         with io.open(str(path), encoding="utf-8") as fh:
             return json.load(fh)
 
@@ -484,7 +487,8 @@ class TermAdherenceTests(unittest.TestCase):
                     "argos", "zh-en", ["启用流式合成。"], ["Enable streaming synthesis."],
                     ["streaming synthesis"], {"chrF": 1.0, "BLEU": 2.0}, None, "",
                     adherence=measure_adherence(samples, self.PAIRS))
-                path = pathlib.Path(d) / "av-domain-argos.json"
+                path = (bench_domain_av.EVIDENCE_DIR
+                        / bench_domain_av.evidence_name("argos", "zh-en", "", 1))
                 rec = json.loads(path.read_text(encoding="utf-8"))
             finally:
                 bench_domain_av.EVIDENCE_DIR = orig_dir
@@ -493,6 +497,195 @@ class TermAdherenceTests(unittest.TestCase):
         self.assertEqual(block["hits"], 1)
         self.assertEqual(block["rate"], 1.0)
         self.assertEqual(block["terms_in_pack"], len(self.PAIRS))
+
+
+class EvidenceIdentityTests(unittest.TestCase):
+    """T2 / T4 precondition: the file name must identify the measurement.
+
+    Today an arm is stored as `av-domain-<engine>[-<domain>].json` -- engine and domain
+    only. Once the same engine is measurable under a second direction (en->zh) or on a
+    bigger corpus (1000 rows), that name is shared, so a new run silently replaces the
+    published 300-row zh->en evidence in place. The published numbers would not just be
+    stale, they would be gone with no signal -- the same class of accident as the 2026-10-07
+    `--skip-comet` run that nulled two engines' COMET fields while nobody was looking.
+    """
+
+    def setUp(self):
+        import bench_domain_av
+        self.m = bench_domain_av
+        self.tmp = tempfile.TemporaryDirectory()
+        self.orig_dir = self.m.EVIDENCE_DIR
+        self.m.EVIDENCE_DIR = pathlib.Path(self.tmp.name)
+
+    def tearDown(self):
+        self.m.EVIDENCE_DIR = self.orig_dir
+        self.tmp.cleanup()
+
+    def _write(self, direction, rows, domain="", run_index=1):
+        src = ["s%d" % i for i in range(rows)]
+        tgt = ["t%d" % i for i in range(rows)]
+        return self.m._write_evidence("ollama-qwen", direction, src, tgt,
+                                      list(src), {"chrF": 10.0, "BLEU": 1.0}, None, domain,
+                                      failures=[], run_index=run_index)
+
+    def test_name_carries_the_direction_and_the_row_count(self):
+        name = self.m.evidence_name("ollama-qwen", "en-zh", "av", 1000)
+        self.assertIn("en-zh", name, "a second direction must not share a file with the first")
+        self.assertIn("n1000", name, "a bigger corpus must not replace the published 300-row run")
+        self.assertIn("ollama-qwen", name)
+        self.assertIn("av", name)
+
+    def test_a_new_direction_leaves_the_published_file_untouched(self):
+        first = self._write("zh-en", 3)
+        second = self._write("en-zh", 3)
+        self.assertNotEqual(first, second, "two directions cannot be the same artifact")
+        self.assertEqual(3, len(json.load(open(first, encoding="utf-8"))["runs"][0]["samples"]))
+        self.assertTrue(second.exists())
+    
+    def test_the_runner_reads_one_direction_at_a_time(self):
+        # Both directions of one engine end in a `-n3` file. A lookup keyed only on the row
+        # count would let whichever file sorts last answer for both, and the report would
+        # print en->zh numbers under the zh->en heading.
+        import run_av_baseline
+        self._write("zh-en", 3)
+        self._write("en-zh", 3)
+        orig = run_av_baseline.EVIDENCE_DIR
+        run_av_baseline.EVIDENCE_DIR = self.m.EVIDENCE_DIR
+        try:
+            for direction in ("zh-en", "en-zh"):
+                runs = run_av_baseline._arm_runs_by_size("ollama-qwen", "", direction)[3]
+                self.assertEqual([direction], [r["direction"] for r in runs],
+                                 "%s picked up the other direction's artifact" % direction)
+        finally:
+            run_av_baseline.EVIDENCE_DIR = orig
+    
+    def test_a_second_direction_reaches_the_report_instead_of_only_the_disk(self):
+        # Evidence with no path onto the page becomes a rumour: the identity section exists so
+        # that a new direction or a grown corpus is shown, not merely filed away.
+        import run_av_baseline
+        self._write("zh-en", 3)
+        self._write("en-zh", 3)
+        orig = run_av_baseline.EVIDENCE_DIR
+        run_av_baseline.EVIDENCE_DIR = self.m.EVIDENCE_DIR
+        try:
+            lines = run_av_baseline._extra_identity_lines(
+                ["ollama-qwen"], ["zh-en", "en-zh"], {("zh-en", 3)})
+        finally:
+            run_av_baseline.EVIDENCE_DIR = orig
+        text = "\n".join(lines)
+        self.assertIn("en-zh", text)
+        self.assertNotIn("zh-en", text, "the primary identity must not be rendered twice")
+    
+    def test_the_runner_lists_every_direction_that_has_a_corpus(self):
+        # A direction missing from this tuple is invisible both to the default matrix and to
+        # the report -- which is how en->zh stayed unrendered after it had been measured.
+        import run_av_baseline
+        self.assertEqual({"zh-en", "en-zh"}, set(run_av_baseline.DIRECTIONS))
+
+    def test_a_bigger_corpus_leaves_the_smaller_run_untouched(self):
+        small = self._write("zh-en", 3)
+        big = self._write("zh-en", 5)
+        self.assertNotEqual(small, big, "corpus size is part of the identity")
+        self.assertEqual(3, len(json.load(open(small, encoding="utf-8"))["runs"][0]["samples"]))
+
+    def test_the_record_states_what_it_measured(self):
+        out = self._write("en-zh", 4, domain="av")
+        record = json.load(open(out, encoding="utf-8"))
+        self.assertEqual("en-zh", record.get("direction"),
+                         "the payload must be self-describing, not only inferable from a file name")
+        self.assertEqual(4, record.get("corpus_rows"))
+
+    def test_repeats_still_share_one_identity(self):
+        # Two repeats of the SAME measurement belong in one artifact: that pairing is how the
+        # report gets its within-arm noise floor. Identity must not split them.
+        self._write("zh-en", 3, run_index=1)
+        second = self._write("zh-en", 3, run_index=2)
+        self.assertEqual(2, len(json.load(open(second, encoding="utf-8"))["runs"]))
+
+    def test_the_identity_survives_the_second_repeat_that_rewrites_the_header(self):
+        # A repeat opens the same file, so the header gets written twice. Skipping the identity
+        # on that second write -- which is what the first version did -- leaves finished
+        # evidence without the fields that make it citable, with only the file name left to say
+        # what was measured.
+        self._write("zh-en", 3, run_index=1)
+        second = self._write("zh-en", 3, run_index=2)
+        record = json.load(open(second, encoding="utf-8"))
+        self.assertEqual("zh-en", record.get("direction"))
+        self.assertEqual(3, record.get("corpus_rows"))
+
+    def test_the_runner_expects_the_same_name_the_bench_writes(self):
+        # One source of truth for the name: the runner checks that a file appeared after each
+        # bench call, and a divergent guess there aborts a long run mid-matrix.
+        import run_av_baseline
+        self.assertIs(run_av_baseline.evidence_name, self.m.evidence_name)
+
+
+class CorpusIntegrityTests(unittest.TestCase):
+    """Invariants the *real* in-repo corpus must keep, so an append cannot break them quietly.
+
+    The 2026-10-03 append left src and tgt 49 lines apart, and a later report would have read
+    that as a valid measurement. These are the checks that make such an append fail here
+    instead -- they run in the gate, on the committed files, with no fixtures involved.
+    """
+
+    REPO = pathlib.Path(__file__).resolve().parent.parent
+    DIRECTION = "zh-en"
+    DERIVED = "en-zh"
+
+    def _pair(self, direction):
+        root = self.REPO / "script" / "eval-data" / "av-{}".format(direction)
+        prefix = "av-{}".format(direction)
+        rows = lambda p: [l for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+        return rows(root / (prefix + ".src")), rows(root / (prefix + ".tgt"))
+
+    def test_source_and_reference_stay_one_to_one(self):
+        src, tgt = self._pair(self.DIRECTION)
+        self.assertEqual(len(src), len(tgt),
+                         "corpus columns drifted apart: %d vs %d" % (len(src), len(tgt)))
+
+    def test_no_source_row_is_repeated(self):
+        src, _tgt = self._pair(self.DIRECTION)
+        seen, dupes = set(), []
+        for line in src:
+            if line in seen:
+                dupes.append(line)
+            seen.add(line)
+        self.assertEqual([], dupes, "repeated source rows make a sub-domain count lie")
+
+    def test_ranges_cover_the_corpus_exactly_once(self):
+        """Every row belongs to one group and no group runs past the end of the corpus."""
+        import json
+        doc = json.loads((self.REPO / "script" / "av_domain_ranges.json").read_text(encoding="utf-8"))
+        src, _tgt = self._pair(self.DIRECTION)
+        covered = [False] * len(src)
+        for rng in doc["ranges"]:
+            self.assertLessEqual(1, rng["start"])
+            self.assertLessEqual(rng["end"], len(src),
+                                 "group %r runs past the corpus" % rng["name"])
+            for i in range(rng["start"] - 1, rng["end"]):
+                self.assertFalse(covered[i], "row %d is claimed by two groups" % (i + 1))
+                covered[i] = True
+        self.assertTrue(all(covered), "rows with no group: %s"
+                        % [i + 1 for i, c in enumerate(covered) if not c][:10])
+
+    def test_the_derived_reverse_direction_matches_the_forward_one(self):
+        """en->zh is a column swap, not a copy that can drift; check it rather than trust it."""
+        src_zh, tgt_zh = self._pair(self.DIRECTION)
+        src_en, tgt_en = self._pair(self.DERIVED)
+        self.assertEqual(src_zh, tgt_en, "the reverse direction's reference must be the forward source")
+        self.assertEqual(tgt_zh, src_en, "the reverse direction's source must be the forward reference")
+
+    def test_the_reverse_pack_is_the_forward_pack_reversed(self):
+        import json
+        packs = self.REPO / "docs" / "glossary-packs"
+        fwd = json.loads((packs / "av-zh-en.json").read_text(encoding="utf-8"))
+        rev = json.loads((packs / "av-en-zh.json").read_text(encoding="utf-8"))
+        self.assertEqual("zh", fwd.get("source_lang"))
+        self.assertEqual("en", rev.get("source_lang"), "the reversed pack must swap the pair")
+        self.assertEqual(
+            sorted((e["source_term"], e["target_term"]) for e in fwd["entries"]),
+            sorted((e["target_term"], e["source_term"]) for e in rev["entries"]),
+            "the reversed pack must hold exactly the same rows, mirrored")
 
 
 if __name__ == "__main__":

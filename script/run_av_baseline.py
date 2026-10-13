@@ -61,6 +61,11 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+# One source of truth for evidence file names. The runner verifies a file appeared after each
+# bench call, so a second copy of that rule here would eventually disagree with the writer --
+# and disagree in the direction of aborting a multi-hour matrix run mid-way.
+sys.path.insert(0, str(REPO / "script"))
+from bench_domain_av import evidence_name  # noqa: E402
 EVIDENCE_DIR = REPO / "docs" / "evidence"
 REPORT_PATH = REPO / "docs" / "av-domain-benchmark.md"
 RANGES_PATH = REPO / "script" / "av_domain_ranges.json"
@@ -91,7 +96,7 @@ SIDECAR_PORTS = {"argos": 11435, "madlad": 11436}
 SIDECAR_BACKENDS = {"argos": "ct2", "madlad": "madlad"}
 OLLAMA_URL = "http://127.0.0.1:11434/api/tags"
 OLLAMA_MODEL = "qwen3:8b"
-DIRECTIONS = ("zh-en",)   # the starter corpus is zh->en; en->zh is S12 T2
+DIRECTIONS = ("zh-en", "en-zh")   # en->zh was derived under S12 T2; both corpora are in the repo
 ENGINES = ("argos", "madlad", "ollama-qwen")
 
 
@@ -110,10 +115,16 @@ def preflight(args) -> list[str]:
             "translator_engine shared library not built. Run:\n"
             "    cargo build --release --manifest-path translator-engine/Cargo.toml\n"
             "  (or: python script/build.py)")
-    if not CORPUS_DIR.joinpath("av-zh-en.src").is_file():
-        problems.append(f"corpus missing at {CORPUS_DIR}")
-    if not PACK_PATH.is_file():
-        problems.append(f"AV seed pack missing at {PACK_PATH}")
+    for direction in getattr(args, "directions", None) or DIRECTIONS:
+        prefix = "av-{}".format(direction)
+        corpus = CORPUS_DIR.parent / prefix
+        if not (corpus / (prefix + ".src")).is_file():
+            problems.append(f"corpus missing at {corpus} (direction {direction})")
+        pack = PACK_PATH.parent / "av-{}.json".format(direction)
+        if not pack.is_file():
+            # Without a pack for this direction there is no treatment to inject, so a
+            # scoped arm would report delta 0 and read as "terminology does not help".
+            problems.append(f"AV seed pack missing at {pack} (direction {direction})")
     if not SIDECAR_PY.is_file():
         problems.append(f"sidecar script missing at {SIDECAR_PY}")
     # Sidecars need their model dirs; check via default_data_dir(). Argos and
@@ -182,9 +193,27 @@ def install_pack() -> None:
     subprocess.check_call([sys.executable, str(INSTALL_PY), "--domain", "av"])
 
 
+def _corpus_rows(direction, n, av_root) -> int:
+    """How many rows this run will actually read: --n, or the corpus's own length.
+
+    The count is part of the evidence identity (T4 grows the corpus under the same
+    direction), so it has to be known before the bench is called -- and counted the way the
+    bench counts it, or the two disagree about which file the run just wrote.
+    """
+    if n:
+        return n
+    prefix = "av-{}".format(direction)
+    roots = [r for r in (av_root, detect_av_root(), CORPUS_DIR.parent) if r]
+    for root in roots:
+        src = pathlib.Path(root) / prefix / (prefix + ".src")
+        if src.is_file():
+            return sum(1 for line in open(src, encoding="utf-8") if line.strip())
+    return 0
+
+
 def run_bench(engine: str, direction: str, domain: str, n: int | None,
               av_root: pathlib.Path | None = None,
-              run_index: int = 1) -> pathlib.Path:
+              run_index: int = 1, corpus_rows: int | None = None) -> pathlib.Path:
     """Invoke bench_domain_av once; return the evidence path it wrote."""
     cmd = [sys.executable, str(BENCH_PY), "--engine", engine,
            "--direction", direction, "--run-index", str(run_index)]
@@ -194,17 +223,18 @@ def run_bench(engine: str, direction: str, domain: str, n: int | None,
         cmd += ["--n", str(n)]
     if av_root:
         cmd += ["--av-root", str(av_root)]
-    tag = f"-{domain}" if domain else ""
-    expected = EVIDENCE_DIR / f"av-domain-{engine}{tag}.json"
+    rows = corpus_rows or _corpus_rows(direction, n, av_root)
+    expected = EVIDENCE_DIR / evidence_name(engine, direction, domain, rows)
     _hr(f"Bench: engine={engine} dir={direction} domain={domain or '(unscoped)'}"
-        + (f" n={n}" if n else ""))
+        + (f" n={n}" if n else "") + f" rows={rows}")
     subprocess.check_call(cmd)
     if not expected.exists():
         raise SystemExit(f"expected evidence file {expected} not written")
     return expected
 
 
-def run_bench_with_retry(engine, direction, domain, n, av_root, procs, run_index=1):
+def run_bench_with_retry(engine, direction, domain, n, av_root, procs, run_index=1,
+                         corpus_rows=None):
     """Run bench_domain_av; if the sidecar crashed mid-bench, restart it and retry.
 
     madlad's 3B CT2 model can OOM on a 6 GB laptop GPU, especially when
@@ -217,14 +247,14 @@ def run_bench_with_retry(engine, direction, domain, n, av_root, procs, run_index
     arm for one flaky sentence would hide the very signal this runner needs.
     """
     try:
-        return run_bench(engine, direction, domain, n, av_root, run_index)
+        return run_bench(engine, direction, domain, n, av_root, run_index, corpus_rows)
     except subprocess.CalledProcessError:
         port = SIDECAR_PORTS.get(engine)
         if port and not _sidecar_running(port):
             print(f"  [retry] {engine} sidecar died (port {port} gone); "
                   f"restarting and retrying bench...", flush=True)
             procs.append(_start_sidecar(engine, port))
-            return run_bench(engine, direction, domain, n, av_root, run_index)
+            return run_bench(engine, direction, domain, n, av_root, run_index, corpus_rows)
         # sidecar is up but bench still failed -- re-raise
         raise
 
@@ -383,7 +413,7 @@ def _spread(runs):
     return (max(vals) - min(vals)) if len(vals) >= 2 else None
 
 
-def _status(has_base, has_scope, failed_rows, delta, noise_floor) -> str:
+def _status(has_base, has_scope, failed_rows, delta, noise_floor, repeats=1) -> str:
     """The verdict column, and the only place allowed to write 完整.
 
     D31: this used to read `has_base and has_scope` -- two files exist -- and printed
@@ -394,7 +424,12 @@ def _status(has_base, has_scope, failed_rows, delta, noise_floor) -> str:
     head = "✅ 完整" if failed_rows == 0 else \
         "⚠️ %d 行未译出（已从指标剔除）" % failed_rows
     if noise_floor is None:
-        tail = "；未复采，无噪声地板"
+        # "no floor" has two opposite causes that read the same unless they are told apart:
+        # a single run, or repeats that were measured while COMET has not been scored yet --
+        # labelling the second one "not repeated" would erase the fact that the arm was
+        # sampled twice.
+        tail = ("；已复采 %d 次，但 COMET 未打分故无地板" % repeats
+                if repeats >= 2 else "；未复采，无噪声地板")
     elif delta is None:
         tail = "；Δ 未测（COMET 尚未打分）"
     elif abs(delta) <= noise_floor:
@@ -488,7 +523,8 @@ def summarize_engine(engine, base_runs, scope_runs) -> dict:
         "adherence_delta": adh_delta, "adherence_comparable": adh_comparable,
         "delta_paired": bool(per_pair),
         "repeats": max(len(base_runs), len(scope_runs)),
-        "status": _status(has_base, has_scope, failed_rows, delta, noise_floor),
+        "status": _status(has_base, has_scope, failed_rows, delta, noise_floor,
+                          max(len(base_runs), len(scope_runs))),
     }
 
 
@@ -505,6 +541,116 @@ def _metric(run, key):
     return None
 
 
+def _arm_runs_by_size(engine, domain, direction) -> dict:
+    """{corpus_rows: runs} for one arm of ONE direction, from named files plus the legacy name.
+
+    The direction is part of the pattern, not decoration: sizing alone would let the en->zh
+    artifact answer for zh->en, since both are named `-n300` and a dict keyed by row count
+    holds only one of them -- the report would then show one direction's numbers under the
+    other's heading.
+
+    The legacy `av-domain-<engine>[-<domain>].json` artifacts are the published 300-row
+    zh->en runs and carry no size in their name; their row count comes from the run's own
+    `requested`. A new-style file wins when both exist for one size, because it also holds
+    the repeats the noise floor needs.
+    """
+    tag = f"-{domain}" if domain else ""
+    marker = f"av-domain-{engine}{tag}-{direction}-n"
+    found = {}
+    for path in sorted(EVIDENCE_DIR.glob(f"{marker}*.json")):
+        size = path.name[:-len(".json")][len(marker):]
+        if not size.isdigit():
+            continue                    # another direction's name or a hand-made file: skip
+        runs = _run_list(path)
+        if runs:
+            found[int(size)] = runs
+    if direction == "zh-en":
+        legacy = _run_list(EVIDENCE_DIR / f"av-domain-{engine}{tag}.json")
+        if legacy:
+            rows = next((r.get("corpus_rows") for r in legacy if r.get("corpus_rows")),
+                        legacy[0].get("requested") or 0)
+            found.setdefault(int(rows), legacy)
+    return found
+
+
+def _floor_cell(s) -> str:
+    """The noise-floor column, consistent with the status column.
+
+    A missing floor has two opposite causes; printing the single-run label for both would
+    tell a reader to run a repeat that has already been run, on an arm whose only gap is that
+    COMET has not scored it.
+    """
+    if s["noise_floor"] is not None:
+        return "±%.4f" % s["noise_floor"]
+    return "_单次_" if s["repeats"] < 2 else "_待 COMET_"
+
+
+def _extra_identity_lines(engines, directions, primary) -> list:
+    """Markdown for every measurement the main tables do not render.
+
+    `primary` is the {(direction, rows)} the tables above already cover. Everything else on
+    disk gets a row here -- a second direction (S12 T2) or a grown corpus (S12 T4) must not
+    sit in docs/evidence/ with no path onto the page, because that is how a measurement
+    becomes a rumor. Sub-domain splits are left to the primary identity: the range table is
+    indexed against one corpus file, and applying it to a longer or reversed corpus would
+    label groups with the wrong rows.
+    """
+    sizes = {}
+    for direction in directions:
+        for engine in engines:
+            for arm, domain in (("base", ""), ("scope", "av")):
+                for rows in _arm_runs_by_size(engine, domain, direction):
+                    sizes.setdefault((direction, rows), {"base": {}, "scope": {}})
+    for direction in directions:
+        for engine in engines:
+            for arm, domain in (("base", ""), ("scope", "av")):
+                for rows, runs in _arm_runs_by_size(engine, domain, direction).items():
+                    sizes[(direction, rows)][arm][engine] = runs
+    sections = []
+    for (direction, rows) in sorted(sizes):
+        if (direction, rows) in primary:
+            continue
+        base_runs = sizes[(direction, rows)]["base"]
+        scope_runs = sizes[(direction, rows)]["scope"]
+        present = sorted(set(base_runs) | set(scope_runs))
+        if not present:
+            continue
+        sections += [
+            "",
+            f"### \u8bed\u5411 {direction} \u00b7 {rows} \u53e5",
+            "",
+            "| \u5f15\u64ce | \u672a\u63a5\u7ebf COMET | \u63a5\u7ebf COMET | \u0394 COMET | \u914d\u5bf9 n | \u0394 chrF | \u566a\u58f0\u5730\u677f | \u672a\u63a5\u7ebf\u9075\u5faa\u7387 | \u63a5\u7ebf\u9075\u5faa\u7387 | \u72b6\u6001 |",
+            "|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for e in present:
+            s = summarize_engine(e, base_runs.get(e, []), scope_runs.get(e, []))
+            chrf_delta = (s["scope_chrF"] - s["base_chrF"]
+                          if s["base_chrF"] is not None and s["scope_chrF"] is not None else None)
+            floor = _floor_cell(s)
+            paired_n = "_\u65e0_" if s["paired_n"] is None else str(s["paired_n"])
+            rate_b = ((s["base_adherence"] or {}).get("rate"))
+            rate_s = ((s["scope_adherence"] or {}).get("rate"))
+            sections.append(
+                f"| {e} | {_fmt(s['base_comet'])} | {_fmt(s['scope_comet'])} | "
+                f"{_fmt_pct(s['delta_comet'])} | {paired_n} | {_fmt_pct(chrf_delta)} | {floor} | "
+                f"{_fmt(rate_b, 3, 3)} | {_fmt(rate_s, 3, 3)} | {s['status']} |")
+    if not sections:
+        return []
+    return ["", "## \u5176\u4ed6\u6d4b\u91cf\u8eab\u4efd\uff08\u8de8\u8bed\u5411 / \u6269\u6837\uff09", "",
+            "> \u4e0a\u9762\u7684\u5b50\u9886\u57df\u5206\u7ec4\u8868\u53ea\u5bf9\u5df2\u53d1\u5e03\u8eab\u4efd\u751f\u6548\uff1b\u672c\u8282\u6570\u5b57\u4e0e\u4e4b\u540c\u53e3\u5f84\uff08\u914d\u5bf9\u5dee + \u540c\u81c2\u5730\u677f\uff09\uff0c"
+            "\u4f46\u6837\u672c\u96c6\u4e0d\u540c\uff0c\u4e0d\u53ef\u4e0e\u4e0a\u8868\u6df7\u7528\u3002**",
+            ] + sections
+
+
+def _has_any_evidence(engine) -> bool:
+    """Whether either arm of one engine is recorded on disk, under any identity."""
+    for domain in ("", "av"):
+        for direction in DIRECTIONS:
+            if _arm_runs_by_size(engine, domain, direction):
+                return True
+    return bool(_run_list(EVIDENCE_DIR / f"av-domain-{engine}.json"))
+
+
 def generate_report(args):
     """Read every evidence file, compute the tables, and rewrite the report.
     Returns the summary rows so main() can print a compact table too.
@@ -512,6 +658,13 @@ def generate_report(args):
     uses that as a signal to exit non-zero in --report-only mode."""
     ranges = _load_ranges()
     engines = list(args.engines)
+    # The report is a projection of what has been measured, not of what this invocation
+    # asked for. Narrowing --engines used to delete the other engines' rows -- and their
+    # sub-domain tables -- out of a published document whose evidence is still on disk:
+    # reproduced by running `--report-only --engines ollama-qwen`, which dropped argos and
+    # madlad. Anything with evidence is rendered; --engines only decides what gets benched.
+    engines = list(dict.fromkeys([e for e in ENGINES if _has_any_evidence(e)] + engines))
+    directions = list(getattr(args, "directions", None) or DIRECTIONS)
     baseline_runs = {e: _run_list(EVIDENCE_DIR / f"av-domain-{e}.json") for e in engines}
     scoped_runs = {e: _run_list(EVIDENCE_DIR / f"av-domain-{e}-av.json") for e in engines}
     # The sub-domain tables read repeat 1 of each arm; the TL;DR averages every repeat.
@@ -534,6 +687,13 @@ def generate_report(args):
 
     summary = [summarize_engine(e, baseline_runs[e], scoped_runs[e]) for e in engines]
     args._evidence_note = _compute_evidence_note(baselines, scoped)
+    primary = set()
+    for e in engines:                                  # what the tables above already render
+        for arm, domain in (("base", ""), ("scope", "av")):
+            for run in (baseline_runs if arm == "base" else scoped_runs)[e]:
+                primary.add((run.get("direction") or "zh-en",
+                             int(run.get("requested") or 0)))
+    args._extra_lines = _extra_identity_lines(engines, directions, primary)
     _write_report(ranges, baselines, scoped, summary, args)
     return summary
 
@@ -592,7 +752,7 @@ def _write_report(ranges, baselines, scoped, summary, args) -> None:
                       if s["base_chrF"] is not None and s["scope_chrF"] is not None
                       else None)
         paired_n = "_无_" if s["paired_n"] is None else str(s["paired_n"])
-        floor = "_单次_" if s["noise_floor"] is None else "±%.4f" % s["noise_floor"]
+        floor = _floor_cell(s)
         lines.append(f"| {s['engine']} | {_fmt(s['base_comet'])} | {_fmt(s['scope_comet'])} | "
                      f"{_fmt_pct(s['delta_comet'])} | {paired_n} | "
                      f"{_fmt_pct(chrf_delta)} | {floor} | {s['status']} |")
@@ -621,6 +781,7 @@ def _write_report(ranges, baselines, scoped, summary, args) -> None:
         lines.append("")
     lines += _hypothesis_block(summary, baselines, scoped, ranges)
     lines += _reproduction_block(args)
+    lines += getattr(args, "_extra_lines", None) or []
     lines += _limitations_block()
     lines += ["", "---", "", "## 变更记录", "",
               f"- {now[:10]}：run_av_baseline.py 自动生成；所有数字来自 `docs/evidence/av-domain-*.json`。",
@@ -802,6 +963,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="do not run score_comet.py")
     p.add_argument("--engines", default=",".join(ENGINES),
                    help="comma-separated subset of argos,madlad,ollama-qwen")
+    p.add_argument("--directions", default=",".join(DIRECTIONS),
+                   help="comma-separated corpus directions, e.g. zh-en,en-zh (S12 T2)")
     p.add_argument("--force", action="store_true",
                    help="with --report-only, overwrite the skeleton even when no "
                         "evidence JSON files exist")
@@ -892,6 +1055,7 @@ def main(argv=None) -> int:
 def _run_all(argv=None) -> int:
     args = build_parser().parse_args(argv)
     args.engines = tuple(e.strip() for e in args.engines.split(",") if e.strip())
+    args.directions = tuple(d.strip() for d in args.directions.split(",") if d.strip())
     unknown = [e for e in args.engines if e not in ENGINES]
     if unknown:
         print(f"unknown engine(s) {unknown}; valid: {ENGINES}", file=sys.stderr)
@@ -944,14 +1108,17 @@ def _run_all(argv=None) -> int:
         # consumer is active.
         evidence_files = []
         for engine in args.engines:
-            for direction in DIRECTIONS:
+            for direction in args.directions:
+                # Counted once per direction and reused for every arm of this run: the
+                # identity in the file name has to match what the bench actually wrote.
+                rows = _corpus_rows(direction, n, av_root)
                 for rep in range(1, max(1, args.repeats) + 1):
                     base = run_bench_with_retry(
-                        engine, direction, "", n, av_root, procs, rep)
+                        engine, direction, "", n, av_root, procs, rep, rows)
                     evidence_files.append(base)
                     if not args.only_baseline:
                         scoped = run_bench_with_retry(
-                            engine, direction, "av", n, av_root, procs, rep)
+                            engine, direction, "av", n, av_root, procs, rep, rows)
                         evidence_files.append(scoped)
         # Phase 2: kill sidecars to free GPU before COMET loads.
         for proc in procs:
