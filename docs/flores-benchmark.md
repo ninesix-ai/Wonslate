@@ -147,3 +147,59 @@ python script/measure_latency.py --engine madlad --port 11436 --n 30 --already-r
 - **延迟与内存已空载重测**（2026-10-05，`script/measure_latency.py`，16 逻辑核 CPU / 6GB 显存，无并发负载）。但样本量小：每引擎仅 30 句 × 6 条混合长度语料、单方向 en→zh，**未覆盖长句极端情形与并发场景**；qwen 的内存未单独记录（走 GPU 驻留，本机实测 2950 MiB，与 COMET 评分互斥）；
 - FLORES 句域为新闻/网络文本（Wikinews/Wikipedia），与产品主打场景（涉密文档/批量本地化）有分布差异；
 - Flores-101 与 Flores-200 在本报告 11 种语言上同源（200 为 101 的扩展），使用 101 版 devtest 不影响结论方向；许可证 CC-BY-SA 4.0 仅用于评测，不进入产品分发物。
+
+## 2026-10-14 追加：翻译专用小模型接入现役 AI 腿的配对对照
+
+目的只有一个：在**不改引擎注册、不改 prompt** 的前提下，量一下「拿一个专用翻译小模型换掉现役 `qwen3:8b`」在本轮能测到的范围。候选经 `ollama create`（Modelfile `FROM` 本地 GGUF）注册后，用同一个入口挂到现役那条腿上：
+
+```sh
+python script/bench_flores.py --engines qwen --qwen-model hy-mt2-1.8b:latest \
+    --pairs en-zh,zh-en --n 100 --flores-root <FLORES 目录> \
+    --out docs/evidence/flores-benchmark-hymt2-1.8b-en-zh-zh-en-n100-2026-10-14.json
+python script/score_comet.py <上述文件> --ckpt <权重目录>/checkpoints/model.ckpt --cpu
+```
+
+臂：`qwen3:8b`（现役基线）、`hy-mt2-1.8b`（腾讯混元翻译模型 2 代 1.8B，Apache-2.0）、`index-translate-2b`（B站 Index-Translate 2B，Apache-2.0），外加**同模型复采一次**做噪声地板。`seed 42`、devtest、每方向 100 句——**与上文已发布口径同一抽样规则，只是方向收窄到 zh↔en 两个**；每条臂写**自己的**证据文件（默认名 `flores-benchmark-<engine>.json` 会覆盖已发布证据，故不用）。
+
+### COMET-22 均值（每方向 n=100，每条臂 200/200 句都有译文，零失败行）
+
+| 臂 | en→zh | zh→en | 两向均值 |
+|---|---|---|---|
+| `qwen3:8b` | 0.8892 | 0.8774 | 0.8833 |
+| `hy-mt2-1.8b` | 0.8914 | 0.8744 | 0.8829 |
+| `index-translate-2b` | 0.8922 | 0.8773 | 0.8848 |
+| `hy-mt2-1.8b` 复采 | 0.8902 | 0.8753 | 0.8827 |
+
+### 配对差值（逐句按 (direction, id) 对齐，n=200；bootstrap 10000 次、seed 42）
+
+| 对照 | Δ COMET | 配对 t | 95% CI | 分方向（en→zh／zh→en） |
+|---|---|---|---|---|
+| 同模型复采（地板） | −0.00011 | −0.15 | [−0.00170, +0.00139] | −0.0012／+0.0010 |
+| `hy-mt2-1.8b` vs `qwen3:8b` | −0.00046 | −0.21 | [−0.00460, +0.00415] | +0.0022／−0.0031 |
+| `index-translate-2b` vs `qwen3:8b` | +0.00143 | 0.75 | [−0.00223, +0.00532] | +0.0030／−0.0001 |
+
+### 延迟（剔每方向首句冷加载后 n=99；`max` 仍按全量 n=100，因为那 3 秒是真实代价）
+
+| 臂 | en→zh p50／p95 | zh→en p50／p95 |
+|---|---|---|
+| `qwen3:8b` | 1.496s／2.728s | 1.687s／3.072s |
+| `hy-mt2-1.8b` | 0.205s／0.370s | 0.246s／0.443s |
+| `hy-mt2-1.8b` 复采 | 0.205s／0.366s | 0.245s／0.426s |
+| `index-translate-2b` | 0.284s／0.477s | 0.325s／0.561s |
+
+### 本节只允许说到的结论，与不允许说到的
+
+- **允许说**：两个 2B 级翻译专用模型在 zh↔en 上与现役 `qwen3:8b` **统计不可分辨**（CI 均含 0），而延迟低 **6～7 倍**；两次复采的百分位逐位复现，说明读数稳定。
+- **不允许说“已证不劣于”**：本测量链的复采地板是 ±0.0017，而两个对照的 CI 宽到 ±0.0044／±0.0053——**CI 比地板宽 3 倍**，与上文局限性节早就写的“语料级 COMET 抽样波动约 ±0.005-0.01”一致。要把“不劣于”证出来，样本量需到 ≈1300 句/方向量级；拿“Δ 落在地板内”当结论是本仓不允许的读法。
+- **不允许拿两个候选排序**（0.8829 vs 0.8848 的差自己也埋在噪声里）。
+- **这是下界不是上限**：候选吃的是 `engine/ollama.rs` 为 qwen 写的 prompt，不是各家官方指令模板（Hy-MT2 的术语／分隔符模板、Index 的 instTrans 硬约束形状都没用上）。要拿它当选型依据，下一轮必须补“原生 prompt 形状”臂与 AV 领域的术语遵循面。
+- **只测了 zh↔en 一对**，不得外推到其他语向（覆盖面以 `GET /languages` 后端自述为准）。
+
+### 环境与权重 provenance（复现前必读）
+
+- 推理服务端：ollama **0.34.0**（CUDA，RTX 4050 Laptop 6GB）；两个 GGUF 的架构 `qwen35` 与 `hunyuan-dense` 均在 `libllama.dll` 的注册表内，才能直接 `ollama create`；
+- 权重：`Index-Translate-2B.Q4_K_M.gguf` SHA256 `044b313d29342bd3b2c77cbb64023ca0d209bd9b3247763f9d162767ef2d746a`，与官方仓 `SHA256SUMS.txt` 逐位一致；`Hy-MT2-1.8B-Q4_K_M.gguf` SHA256 `dc5f44fcf1fa496ee7ad725982c0c8c553a4de00259b53af84c4b89fb0c06699`，**该 GGUF 仓未发官方校验值**（只能靠两个镜像同尺寸互证，引用时请附这句）；取数镜像 modelscope（本机实测 26 MB/s；hf-mirror 对同一文件 0 KB/s）；
+- 本机当时 GPU 已被其他进程占满（空闲仅 617 MiB），所以 COMET 一律走 `--cpu`；与上文“推理与评分必须串行”的纪律一致，未发生争抢；
+- 一次 5 句的管线验证产物（`flores-benchmark-hymt2-1.8b-plumbing-n5.json`）**不入库**：它是工具接线检查，不是测量，留着会被后人当数据引。
+
+本节只记测量与出处，不记项目状态数字（状态在私有台账侧）。

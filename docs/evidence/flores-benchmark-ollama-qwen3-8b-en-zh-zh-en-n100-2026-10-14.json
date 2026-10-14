@@ -1,0 +1,1740 @@
+{
+  "date": "2026-10-14",
+  "benchmark": "FLORES-101 devtest",
+  "sample_per_direction": 100,
+  "seed": 42,
+  "sample_ids": [
+    6,
+    25,
+    27,
+    30,
+    32,
+    44,
+    46,
+    71,
+    80,
+    81,
+    89,
+    94,
+    95,
+    99,
+    103,
+    104,
+    114,
+    127,
+    142,
+    159,
+    163,
+    166,
+    196,
+    203,
+    214,
+    220,
+    223,
+    225,
+    228,
+    233,
+    238,
+    250,
+    270,
+    281,
+    284,
+    296,
+    300,
+    344,
+    348,
+    352,
+    363,
+    367,
+    370,
+    373,
+    379,
+    387,
+    389,
+    429,
+    432,
+    459,
+    464,
+    470,
+    517,
+    549,
+    558,
+    565,
+    574,
+    591,
+    603,
+    604,
+    616,
+    618,
+    633,
+    643,
+    650,
+    654,
+    665,
+    677,
+    692,
+    714,
+    718,
+    721,
+    733,
+    747,
+    754,
+    758,
+    759,
+    777,
+    781,
+    791,
+    825,
+    826,
+    828,
+    849,
+    854,
+    867,
+    875,
+    882,
+    887,
+    890,
+    906,
+    913,
+    944,
+    959,
+    966,
+    976,
+    990,
+    995,
+    998,
+    1002
+  ],
+  "note": "External-facing benchmark; the 108-segment self-built set remains the regression baseline.",
+  "runs": [
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "en->zh",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": 1.66,
+      "errors": [],
+      "samples": [
+        {
+          "id": 6,
+          "source": "He built a WiFi door bell, he said.",
+          "reference": "他称，他制作了一个 WiFi 门铃。",
+          "hypothesis": "他安装了一个WiFi门铃，他说。",
+          "latency_s": 8.07
+        },
+        {
+          "id": 25,
+          "source": "The announcement was made after Trump had a phone conversation with Turkish President Recep Tayyip Erdoğan.",
+          "reference": "特朗普与土耳其总统雷杰普·塔伊普·埃尔多安（Recep Tayyip Erdoğan）通话后发表了声明。",
+          "hypothesis": "在特朗普与土耳其总统雷杰普·塔伊普·埃尔多安进行电话交谈后发布了这一声明。",
+          "latency_s": 1.52
+        },
+        {
+          "id": 27,
+          "source": "This not only confirms that at least some dinosaurs had feathers, a theory already widespread, but provides details fossils generally cannot, such as color and three-dimensional arrangement.",
+          "reference": "这不仅证实了至少有些恐龙有羽毛——这一理论已经广为流传——而且还提供了化石通常无法提供的细节，比如颜色和三维排列。",
+          "hypothesis": "这不仅证实了至少有些恐龙长有羽毛，这一理论早已广为流传，而且还提供了化石通常无法提供的细节，例如颜色和三维排列。",
+          "latency_s": 2.007
+        },
+        {
+          "id": 30,
+          "source": "Because the dinosaur feathers do not have a well-developed shaft, called a rachis, but do have other features of feathers — barbs and barbules — the researchers inferred the rachis was likely a later evolutionary development that these other features.",
+          "reference": "恐龙的羽毛并没有发育良好的主干——这称为“羽轴”，但还是有羽毛的其他特征，比如羽枝和羽小枝，研究人员推断羽轴的进化可能比这些其他特征晚。",
+          "hypothesis": "由于恐龙羽毛没有发育良好的羽轴，称为羽轴，但具有其他羽毛特征——羽枝和羽小枝——研究人员推断羽轴可能是后来进化的特征，这些其他特征则更早出现。",
+          "latency_s": 2.728
+        },
+        {
+          "id": 32,
+          "source": "The researchers suggested that, even though this is the tail of a young dinosaur, the sample shows adult plumage and not a chick's down.",
+          "reference": "研究人员认为，尽管这是一只年轻恐龙的尾巴，但样本显示的是成年羽毛，而非雏龙的绒毛。",
+          "hypothesis": "研究人员指出，尽管这是年轻恐龙的尾巴，但样本显示的是成年羽毛，而不是雏鸟的绒毛。",
+          "latency_s": 1.693
+        },
+        {
+          "id": 44,
+          "source": "Duvall, who is married with two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "reference": "杜瓦尔已婚，有两个已经成年的孩子，他并没有给故事的讲述者米勒留下太大印象。",
+          "hypothesis": "杜瓦尔已婚并有两个成年子女，但她在米勒心中并没有留下深刻印象，因为这个故事是讲给米勒听的。",
+          "latency_s": 2.067
+        },
+        {
+          "id": 46,
+          "source": "\"We will endeavour to cut carbon dioxide emissions per unit of GDP by a notable margin by 2020 from the 2005 level,\" Hu said.",
+          "reference": "“到 2020 年之前，我们将努力使单位国内生产总值二氧化碳排放量比 2005 年显著下降，”胡锦涛说。",
+          "hypothesis": "胡锦涛说：“到2020年，我们将努力使单位国内生产总值二氧化碳排放量比2005年下降一定幅度。”",
+          "latency_s": 1.922
+        },
+        {
+          "id": 71,
+          "source": "Prime Minister Stephen Harper has agreed to send the government's 'Clean Air Act' to an all-party committee for review, before its second reading, after Tuesday's 25 minute meeting with NDP leader Jack Layton at the PMO.",
+          "reference": "周二，总理斯蒂芬·哈珀（ Stephen Harper ）在其办公室与新民主党党魁杰克·林顿（ Jack Layton ）举行 25 分钟的会议后，已经同意将政府的《清洁空气法》送交一个多党委员会审查，然后再进行二读。",
+          "hypothesis": "加拿大总理史蒂芬·哈珀已同意将政府的《清洁空气法》提交给跨党派委员会进行审议，该法将在第二次阅读前提交。此举是在周二在总理办公室与新民主党领袖杰克·莱顿进行了25分钟的会晤之后作出的。",
+          "latency_s": 3.566
+        },
+        {
+          "id": 80,
+          "source": "The tenth named storm of the Atlantic Hurricane season, Subtropical Storm Jerry, formed in the Atlantic Ocean today.",
+          "reference": "亚热带风暴杰瑞 (Jerry) 今天在大西洋形成，这是大西洋飓风季节中第十个被命名的风暴。",
+          "hypothesis": "大西洋飓风季的第十个命名风暴——亚热带风暴杰里，今天在大西洋海域形成。",
+          "latency_s": 1.5
+        },
+        {
+          "id": 81,
+          "source": "The National Hurricane Center (NHC) says that at this point Jerry poses no threat to land.",
+          "reference": "国家飓风中心 (NHC) 表示，目前“杰瑞”对陆地没有威胁。",
+          "hypothesis": "国家飓风中心（NHC）表示，目前杰里对陆地没有威胁。",
+          "latency_s": 1.216
+        },
+        {
+          "id": 89,
+          "source": "The effect the team was looking for would be caused by tidal forces between the galaxy's dark matter and the Milky Way's dark matter.",
+          "reference": "该团队正在寻找的效应可能是由星系暗物质和银河系暗物质之间的潮汐力引起的。",
+          "hypothesis": "团队所期望的效果将由银河暗物质与银河系暗物质之间的潮汐力引起。",
+          "latency_s": 1.277
+        },
+        {
+          "id": 94,
+          "source": "Local authorities are warning residents in the vicinity of the plant to stay indoors, turn off air-conditioners and not to drink tap water.",
+          "reference": "当地政府警告核电站附近的居民，要待在室内，关掉空调，不要喝自来水。",
+          "hypothesis": "当地当局警告工厂附近的居民留在室内，关闭空调，并不要饮用自来水。",
+          "latency_s": 1.04
+        },
+        {
+          "id": 95,
+          "source": "According to Japan's nuclear agency, radioactive caesium and iodine has been identified at the plant.",
+          "reference": "日本原子能机构表示，核电站检测出了放射性物质铯和碘。",
+          "hypothesis": "据日本核能机构称，该核电站已检测到放射性铯和碘。",
+          "latency_s": 1.22
+        },
+        {
+          "id": 99,
+          "source": "Some patients might have contracted the bug in the hospital, Dr. Moll thinks, and at least two were hospital health workers.",
+          "reference": "莫尔 (Moll) 博士认为，有些病人可能是在医院感染了病菌，而且至少有两名病人是医院的医护人员。",
+          "hypothesis": "莫尔博士认为，一些患者可能是在医院感染了这种病毒，其中至少有两人是医院的医护人员。",
+          "latency_s": 1.513
+        },
+        {
+          "id": 103,
+          "source": "Scientists say the explosion caused by the collision was massive.",
+          "reference": "科学家表示，这次碰撞引起的爆炸规模巨大。",
+          "hypothesis": "科学家表示，这次碰撞引发的爆炸规模巨大。",
+          "latency_s": 0.888
+        },
+        {
+          "id": 104,
+          "source": "They are still trying to determine just how large the crash was and how the Earth will be affected.",
+          "reference": "他们仍在努力确定这次撞击的规模以及对地球的影响。",
+          "hypothesis": "他们仍在努力确定这次坠落的规模以及地球会受到怎样的影响。",
+          "latency_s": 1.102
+        },
+        {
+          "id": 114,
+          "source": "The outbreak has prompted the Indian government to undertake such measures as deployment of pig catchers in seriously affected areas, distributing thousands of mosquito curtains and spraying pesticides.",
+          "reference": "这场疫情促使印度政府采取一些措施，比如在严重感染地区放置捕猪器、派发数千个蚊帐并喷洒杀虫剂。",
+          "hypothesis": "疫情促使印度政府采取了一系列措施，例如在严重受影响地区部署捕猪人员，分发数以千计的防蚊帘，并喷洒农药。",
+          "latency_s": 2.006
+        },
+        {
+          "id": 127,
+          "source": "Other subjects on the agenda in Bali include saving the world's remaining forests, and sharing technologies to help developing nations grow in less-polluting ways.",
+          "reference": "巴厘岛会议议程中的其他议题还包括拯救世界上现存的森林，分享技术以帮助发展中国家以污染较少的方式发展。",
+          "hypothesis": "巴厘岛议程上的其他议题包括拯救世界上剩余的森林，以及分享技术帮助发展中国家以更少污染的方式增长。",
+          "latency_s": 1.79
+        },
+        {
+          "id": 142,
+          "source": "Despite there being no tsunami threat, residents started to panic and began to leave their businesses and homes.",
+          "reference": "尽管那里没有海啸的威胁，当地居民却感到坐立不安，纷纷结束生意及离开家园。",
+          "hypothesis": "尽管没有海啸威胁，居民们开始恐慌并纷纷离开自己的店铺和家园。",
+          "latency_s": 1.175
+        },
+        {
+          "id": 159,
+          "source": "Infrared images show that the temperature variations from night and day show that they are likely caves.",
+          "reference": "红外图像显示，昼夜温度的变化表示这些地方很可能是洞穴。",
+          "hypothesis": "红外图像显示，昼夜温度变化表明它们很可能是洞穴。",
+          "latency_s": 0.938
+        },
+        {
+          "id": 163,
+          "source": "After officials verify the voter's identity, the voter drops the envelope into the ballot box and signs the voting roll.",
+          "reference": "官员核实投票者的身份后，投票者将信封投入投票箱，并在投票册上签名。",
+          "hypothesis": "官员核实选民身份后，选民将信封投入票箱，并在选民名册上签名。",
+          "latency_s": 1.48
+        },
+        {
+          "id": 166,
+          "source": "Candidates can send representatives to witness every part of the process. In the evening, votes are counted by volunteers under heavy supervision, following specific procedures.",
+          "reference": "候选人可以派代表现场察看选举过程的每一个环节。晚上，志愿者在严密监督之下按照特定程序计票。",
+          "hypothesis": "候选人可以派代表监督整个过程的每个环节。晚上，志愿者在严密监督下按照特定程序进行计票。",
+          "latency_s": 1.55
+        },
+        {
+          "id": 196,
+          "source": "He was reportedly aged in his 20s. In a statement, Bieber said \"[w]hile I was not present nor directly involved with this tragic accident, my thoughts and prayers are with the family of the victim.\"",
+          "reference": "报道称他年仅 20 多岁。比伯发表声明表示：“虽然我当时并不在场，也没有直接经历这起悲惨事故，但我仍为死者家属感到悲伤，为他们祈祷。”",
+          "hypothesis": "据报道，他当时年约20多岁。比伯在声明中表示：“虽然我并未在现场，也没有直接参与这起悲剧事故，但我向受害者家属表达我的慰问和祈祷。”",
+          "latency_s": 2.499
+        },
+        {
+          "id": 203,
+          "source": "Poland's men's visually impaired skier Maciej Krezel and guide Anna Ogarzynska finished thirteenth in the Super-G. South Korea's Jong Seork Park finished twenty-fourth in the men's sitting Super-G.",
+          "reference": "波兰男子视障滑雪选手马切吉·克雷泽尔（Maciej Krezel ）和向导安娜·奥加津斯卡（Anna Ogarzynska）在超级大回转比赛中获得第十三名，韩国选手朴钟硕（Jong Seork Park）在男子坐式超级大回转比赛中获得第二十四名。",
+          "hypothesis": "波兰男子视障滑雪运动员马切伊·克雷泽尔和向导安娜·奥加日尼亚斯在超级大回转项目中获得第十三名。韩国选手朴钟硕在男子坐姿超级大回转项目中获得第24名。",
+          "latency_s": 3.38
+        },
+        {
+          "id": 214,
+          "source": "In 1989 he helped create The Simpsons with Brooks and Groening, and was responsible for hiring the show's first writing team.",
+          "reference": "1989 年，他与布鲁克斯和格罗宁一起创作了《辛普森一家》，并负责聘请了该剧的首支编剧团队。",
+          "hypothesis": "1989年，他与布鲁斯和格罗宁共同创作了《辛普森一家》，并负责组建该节目首个编剧团队。",
+          "latency_s": 1.988
+        },
+        {
+          "id": 220,
+          "source": "International sanctions have meant that new aircraft cannot be purchased.",
+          "reference": "在国际制裁下，伊朗无法购买新的飞机。",
+          "hypothesis": "国际制裁意味着无法购买新飞机。",
+          "latency_s": 0.739
+        },
+        {
+          "id": 223,
+          "source": "The same month saw another airliner overrun a runway at Mashhad and strike a wall, killing seventeen.",
+          "reference": "同一个月，又有一架客机冲出马什哈德的跑道，撞上一堵墙，造成 17 人死亡。",
+          "hypothesis": "当月，另一架客机在马什哈德冲出跑道并撞上墙壁，导致十七人死亡。",
+          "latency_s": 1.488
+        },
+        {
+          "id": 225,
+          "source": "The rock band was due to tour the United States and Canada until September 16.",
+          "reference": "这支摇滚乐队原定在美国和加拿大巡演，一直持续到 9 月 16 日。",
+          "hypothesis": "这支摇滚乐队原计划在美国和加拿大巡演至9月16日。",
+          "latency_s": 1.268
+        },
+        {
+          "id": 228,
+          "source": "Del Potro had the early advantage in the second set, but this too required a tie break after reaching 6-6.",
+          "reference": "德尔·波特罗（Del Potro）在第二盘刚开局时就占上风，但在比分达到 6-6 后就得进行抢七大战。",
+          "hypothesis": "德尔·波特罗在第二盘开始时占据优势，但这也需要抢七大战，比分来到6-6。",
+          "latency_s": 1.556
+        },
+        {
+          "id": 233,
+          "source": "Then, Lakkha Singh took the lead in singing the bhajans.",
+          "reference": "然后，拉卡·辛格带头唱了拜赞歌。",
+          "hypothesis": "然后，拉克哈·辛格带头唱起了圣歌。",
+          "latency_s": 1.1
+        },
+        {
+          "id": 238,
+          "source": "This will allow players to control actions and movements in video games by moving the device through the air.",
+          "reference": "它让玩家可以通过在空中移动设备来控制电子游戏中的运动和操作。",
+          "hypothesis": "这将使玩家能够通过在空中移动设备来控制视频游戏中的动作和移动。",
+          "latency_s": 1.216
+        },
+        {
+          "id": 250,
+          "source": "Hokuriku Electric Power Co. reported no effects from the earthquake and that the Number 1 and 2 reactors at its Shika nuclear power plant were shut down.",
+          "reference": "北陆电力株式会社报道称，志贺核能发电厂 1 号和 2 号反应堆已经关闭，地震并未造成影响。",
+          "hypothesis": "日本中部电力公司表示地震未造成影响，并称其志贺核电站的1号和2号反应堆已关闭。",
+          "latency_s": 1.691
+        },
+        {
+          "id": 270,
+          "source": "Edgar Veguilla received arm and jaw wounds while Kristoffer Schneider was left requiring reconstructive surgery for his face.",
+          "reference": "埃德加·贝吉利亚 (Edgar Veguilla) 的手臂和下巴受伤，而克里斯托弗· 施耐德 (Kristoffer Schneider) 则需要做脸部重建手术。",
+          "hypothesis": "爱德加·维加利亚受到手臂和下颌受伤，而克里斯托弗·施耐德则需要进行面部重建手术。",
+          "latency_s": 1.776
+        },
+        {
+          "id": 281,
+          "source": "Although three people were inside the house when the car impacted it, none of them were hurt.",
+          "reference": "虽然车撞到房子时，房子里面有三个人，但最后并没有人受伤。",
+          "hypothesis": "尽管有三个人在房子内，汽车撞击时他们都没有受伤。",
+          "latency_s": 0.999
+        },
+        {
+          "id": 284,
+          "source": "He was initially hospitalised in the James Paget Hospital in Great Yarmouth.",
+          "reference": "起初，他被送往位于大雅茅斯的詹姆斯·佩吉特医院进行救治。",
+          "hypothesis": "他最初被收治在大雅茅斯的詹姆斯·帕吉特医院。",
+          "latency_s": 1.34
+        },
+        {
+          "id": 296,
+          "source": "According to Mick O'Flynn, the Acting Director Park Conservation and Heritage with the NPWS, the four shooters selected for the first shooting operation received comprehensive safety and training instruction.",
+          "reference": "澳大利亚新州国家公园和野生动物服务中心（NPWS）保护和遗产管理处代理主任米克·奥弗林（Mick O’flynn）表示：选中参与第一次射击行动的四名枪手均已接受全面的安全及培训指导。",
+          "hypothesis": "根据NPWS公园保护与遗产部门代理主管米克·奥弗林的说法，首批射击行动中选出的四名射击者接受了全面的安全和培训指导。",
+          "latency_s": 2.094
+        },
+        {
+          "id": 300,
+          "source": "The commission was Martelly's response to widespread anti-regime protests that started in October.",
+          "reference": "该委员会是马尔泰利 (Martelly) 对始于 10 月份的大规模反政府抗议活动做出的回应。",
+          "hypothesis": "该委员会是马蒂利对10月开始的广泛反政府抗议活动的回应。",
+          "latency_s": 1.446
+        },
+        {
+          "id": 344,
+          "source": "This is called a chemical's pH. You can make an indicator using red cabbage juice.",
+          "reference": "这被称为化学物质的 pH 值。你可以使用红甘蓝汁制作指示剂。",
+          "hypothesis": "这被称为一种物质的pH值。你可以用红卷心菜汁制作指示剂。",
+          "latency_s": 1.449
+        },
+        {
+          "id": 348,
+          "source": "Swirl the two dry powders together and then, with clean wet hands, squeeze them into a ball.",
+          "reference": "搅动两种干粉使其混合，然后用干净的湿手把它们揉成一个球。",
+          "hypothesis": "将两种干燥粉末混合搅拌，然后用干净的手将它们捏成一个球。",
+          "latency_s": 1.154
+        },
+        {
+          "id": 352,
+          "source": "There were also toilets in ancient Egypt, Persia and China. In Roman civilization, toilets were sometimes part of public bath houses where men and women were together in mixed company.",
+          "reference": "古埃及、波斯和中国也有厕所。在罗马文明中，厕所有时是男女混合的公共浴室的一部分。",
+          "hypothesis": "古代埃及、波斯和中国也有厕所。在罗马文明中，厕所有时是公共浴室的一部分，男男女女混在一起。",
+          "latency_s": 1.743
+        },
+        {
+          "id": 363,
+          "source": "Prides are made up of one to three related adult males, along with as many as thirty females and cubs.",
+          "reference": "狮群由一到三只有亲属关系的成年雄性，以及可多达三十只的雌性和幼崽组成。",
+          "hypothesis": "狮群由一到三只成年雄狮组成，加上多达三十只雌狮和幼崽。",
+          "latency_s": 1.431
+        },
+        {
+          "id": 367,
+          "source": "The tiger is in the same group (Genus Panthera) as lions, leopards, and jaguars. These four cats are the only ones who can roar.",
+          "reference": "老虎与狮、豹和美洲虎属于同一类型（豹属）。这四种大猫是仅有的会吼叫的猫科动物。",
+          "hypothesis": "老虎与狮子、豹子和美洲豹同属一个属（豹属）。这四种猫科动物是唯一能够吼叫的猫科动物。",
+          "latency_s": 1.944
+        },
+        {
+          "id": 370,
+          "source": "Scientists think that ocelots follow and find animals to eat (prey) by smell, sniffing for where they've been on the ground.",
+          "reference": "科学家认为，美洲豹猫是通过气味和嗅探猎物在地面上的踪迹来跟踪和寻找要捕食的动物的。",
+          "hypothesis": "科学家认为，豹猫通过气味追踪并找到猎物，用鼻子嗅探地面留下的痕迹来寻找它们的位置。",
+          "latency_s": 1.618
+        },
+        {
+          "id": 373,
+          "source": "This new environment has different resources and different competitors, so the new population will need different features or adaptations to be a strong competitor than what they had needed before.",
+          "reference": "这个新的环境有不同的资源和不同的竞争对手，所以新的种群将需要不同的特征或适应能力来成为一个强有力的竞争对手，而不是它们之前所需要的那些。",
+          "hypothesis": "这种新环境拥有不同的资源和不同的竞争者，因此新的种群需要不同的特征或适应能力，才能成为强大的竞争者，而这些与他们之前所需的不同。",
+          "latency_s": 2.211
+        },
+        {
+          "id": 379,
+          "source": "Plants make their food from the sun by photosynthesis. They also provide shade.",
+          "reference": "植物通过光合作用从阳光中获取养分。它们还能提供荫凉。",
+          "hypothesis": "植物通过光合作用从太阳获取养分。它们还能提供遮荫。",
+          "latency_s": 1.283
+        },
+        {
+          "id": 387,
+          "source": "Ancient Roman meals couldn't have included foods that came to Europe from America or from Asia in later centuries.",
+          "reference": "几个世纪后从美洲或亚洲传入欧洲的食物不可能出现在古罗马人的饮食当中。",
+          "hypothesis": "古代罗马人的餐食中不可能包含后来几个世纪从美洲或亚洲传入欧洲的食物。",
+          "latency_s": 1.268
+        },
+        {
+          "id": 389,
+          "source": "The Babylonians built each of their gods a primary temple that was considered the home of the god.",
+          "reference": "巴比伦人为他们每位神祇都建造了一座主殿，将其视为该神居所。",
+          "hypothesis": "巴比伦人给每位神明都建造了一座主要神庙，被认为是该神的居所。",
+          "latency_s": 1.433
+        },
+        {
+          "id": 429,
+          "source": "By 1976, thirty percent of Machu Picchu had been restored and restoration continues till today.",
+          "reference": "到 1976 年，马丘比丘的百分之三十得到修复，修复工作一直持续到今天。",
+          "hypothesis": "到1976年，马丘比丘已有30%的部分得到修复，修复工作至今仍在继续。",
+          "latency_s": 1.548
+        },
+        {
+          "id": 432,
+          "source": "The 35mm format is actually, somewhat confusingly, 36mm in width by 24mm in height.",
+          "reference": "35 毫米格式的实际尺寸是 36 毫米宽，24 毫米高，这样格式其实有点令人困惑。",
+          "hypothesis": "35mm画幅实际上有些令人困惑，它的宽度是36mm，高度是24mm。",
+          "latency_s": 1.44
+        },
+        {
+          "id": 459,
+          "source": "he cave itself, which survived the times, gives a very vivid image of Muhammad’s spiritual inclinations.",
+          "reference": "该洞穴本身，不仅经受住时间考验而保留下来，还为穆罕默德的灵性意向带来极其生动的形象。",
+          "hypothesis": "这个洞穴本身，历经时代变迁依然存在，非常生动地展现了穆罕默德的精神倾向。",
+          "latency_s": 1.377
+        },
+        {
+          "id": 464,
+          "source": "Built by the Egyptians in the third century BCE, the Great Pyramid is one of many large pyramid structures built to honor dead Pharaoh.",
+          "reference": "大金字塔是埃及人在公元前三世纪的杰作，它是众多向已故法老表示敬意的大型金字塔的其中之一。",
+          "hypothesis": "建于公元前三世纪的胡夫金字塔，是众多为纪念已故法老而建造的巨大金字塔建筑之一。",
+          "latency_s": 1.528
+        },
+        {
+          "id": 470,
+          "source": "Feel free to pencil in your own marks, but remember the printed bowing marks are there for a musical reason, so they should usually be respected.",
+          "reference": "请随意用铅笔作上你自己的标记，但要记住，印出来的音符是具有音乐意义的，所以它们通常应该被尊重。",
+          "hypothesis": "请随意用铅笔标出你自己的记号，但请记住，印刷的鞠躬记号是有音乐原因的，因此通常应予以尊重。",
+          "latency_s": 2.07
+        },
+        {
+          "id": 517,
+          "source": "The Internet combines elements of both mass and interpersonal communication.",
+          "reference": "互联网结合了大众传播和人际传播的要素。",
+          "hypothesis": "互联网结合了大众传播和人际传播的元素。",
+          "latency_s": 0.951
+        },
+        {
+          "id": 549,
+          "source": "Using ships to transport goods is by far the most efficient way to move large amounts of people and goods across oceans.",
+          "reference": "迄今为止，船运是跨洋运输大量人员和货物的最有效方式。",
+          "hypothesis": "使用船只运输货物无疑是跨海运送大量人员和货物最高效的方式。",
+          "latency_s": 1.064
+        },
+        {
+          "id": 558,
+          "source": "Although wagonways merely consisted of parallel planks of wood, they allowed horses pulling them to achieve greater speeds and pull larger loads than on the slightly more rough roads of the day.",
+          "reference": "虽然马拉轨道车只是由平行的木板拼成，但在当时，就略显坎坷的道路而言，这些车能让拉车的马跑得更快，拉得更多。",
+          "hypothesis": "尽管wagonways仅仅是平行的木板，但它们使拉车的马能够以更高的速度行驶，并拉载比当时稍粗糙的道路上更大的货物。",
+          "latency_s": 2.041
+        },
+        {
+          "id": 565,
+          "source": "We can start living more friendly to the environment, we can join to the environmental movement, and we can even be activists in order to reduce the future suffering in some degree.",
+          "reference": "我们可以开始更环保地生活，加入环保运动，甚至可以成为环保积极分子，在一定程度上减少将来的灾难。",
+          "hypothesis": "我们可以开始更加环保地生活，可以加入环保运动，甚至可以成为环保活动者，以在一定程度上减少未来的痛苦。",
+          "latency_s": 1.722
+        },
+        {
+          "id": 574,
+          "source": "Many people don't think about them as dinosaurs because they have feathers and can fly.",
+          "reference": "很多人认为它们并非恐龙，因为它们有羽毛，会飞。",
+          "hypothesis": "许多人不认为它们是恐龙，因为它们有羽毛并且能飞。",
+          "latency_s": 1.175
+        },
+        {
+          "id": 591,
+          "source": "Science’s main goal is to figure out the way the world works through the scientific method. This method in fact guides most scientific research.",
+          "reference": "科学的主要目的是通过科学方法找出世界的运行方式。实际上，这种方法可为大多数科学研究提供指导。",
+          "hypothesis": "科学的主要目标是通过科学方法弄清楚世界是如何运作的。这种方法实际上指导着大多数科学研究。",
+          "latency_s": 1.344
+        },
+        {
+          "id": 603,
+          "source": "Only mutations in germ-line cells can be passed on to children, while mutations elsewhere can cause cell-death or cancer.",
+          "reference": "只有生殖细胞的突变才会遗传给孩子，而其他细胞的突变则会导致细胞死亡或癌症。",
+          "hypothesis": "只有发生在生殖细胞中的突变才能传递给后代，而其他部位的突变可能导致细胞死亡或癌症。",
+          "latency_s": 1.501
+        },
+        {
+          "id": 604,
+          "source": "Nature-based tourism attracts people interested in visiting natural areas for the purpose of enjoying the scenery, including plant and animal wildlife.",
+          "reference": "自然风光旅游业吸引了那些对自然地区感兴趣的游客，他们前来观赏包括野生动植物在内的自然风景。",
+          "hypothesis": "基于自然的旅游吸引着那些对参观自然区域感兴趣的人，他们旨在享受风景，包括植物和动物野生动物。",
+          "latency_s": 1.56
+        },
+        {
+          "id": 616,
+          "source": "To better represent traffic flow, relationships have been established between the three main characteristics: (1) flow, (2) density, and (3) velocity.",
+          "reference": "为了更好地表示交通流量，在以下三个主要特征之间建立了关系：(1) 流量、(2) 密度和 (3) 速度。",
+          "hypothesis": "为了更准确地反映交通流，已经建立了三个主要特征之间的关系：（1）流量，（2）密度，（3）速度。",
+          "latency_s": 1.879
+        },
+        {
+          "id": 618,
+          "source": "Insects were the first animals to take to the air. Their ability to fly helped them evade enemies more easily and find food and mates more efficiently.",
+          "reference": "昆虫是最早在空中飞行的动物。飞行能力让它们更容易躲避敌人，更有效地寻找食物和配偶。",
+          "hypothesis": "昆虫是最早飞向天空的动物。它们飞行的能力使它们更容易躲避天敌，并更高效地寻找食物和配偶。",
+          "latency_s": 1.672
+        },
+        {
+          "id": 633,
+          "source": "Italian is also the everyday language used by most of those who work in the state while Latin is often used in religious ceremonies.",
+          "reference": "意大利语也是大部分在该国工作的人日常使用的语言，拉丁语则常使用于宗教仪式。",
+          "hypothesis": "意大利语也是大多数在政府机构工作的人员日常使用的语言，而拉丁语则常用于宗教仪式中。",
+          "latency_s": 1.458
+        },
+        {
+          "id": 643,
+          "source": "Thus, the pencil was a good friend to many people when it came out.",
+          "reference": "因此，铅笔一问世，就成了许多人的心头好。",
+          "hypothesis": "因此，当铅笔问世时，它成为了许多人的良师益友。",
+          "latency_s": 1.272
+        },
+        {
+          "id": 650,
+          "source": "The surface of the Moon is made of rocks and dust. The outer layer of the Moon is called the crust.",
+          "reference": "月球的表面由岩石和灰尘组成。月球的外层叫做地壳。",
+          "hypothesis": "月球表面由岩石和尘埃组成。月球的外层称为地壳。",
+          "latency_s": 1.221
+        },
+        {
+          "id": 654,
+          "source": "Content theories are centered on finding what makes people tick or appeals to them.",
+          "reference": "激励内容理论的核心是寻找令人认同或产生兴趣的因素。",
+          "hypothesis": "内容理论的核心在于寻找是什么驱使人们行动或吸引他们。",
+          "latency_s": 1.084
+        },
+        {
+          "id": 665,
+          "source": "They often have more autonomy than conventional team members as their teams may meet according to varying time zones which may not be understood by their local management.",
+          "reference": "他们往往比传统的团队成员拥有更多的自主权，因为他们的团队可能会针对不同的时区安排开会时间，而本地管理层可能不理解这一点。",
+          "hypothesis": "他们通常比传统团队成员拥有更多的自主权，因为他们的团队可能根据不同的时区进行会议，而这些时区可能并不被当地的管理层所理解。",
+          "latency_s": 2.036
+        },
+        {
+          "id": 677,
+          "source": "This provides us with a lot of information and material to build simulation models which help us to understand processes in our mind.",
+          "reference": "这为我们建立仿真模型提供了大量的信息和材料，有助于我们理解大脑运作的过程。",
+          "hypothesis": "这为我们构建模拟模型提供了大量信息和材料，这些模型有助于我们在脑海中理解过程。",
+          "latency_s": 1.21
+        },
+        {
+          "id": 692,
+          "source": "Ottawa is Canada's charming, bilingual capital and features an array of art galleries and museums that showcase Canada's past and present.",
+          "reference": "渥太华是加拿大的首都，富有魅力且采用使用双语制，亮点是一系列展示着加拿大过去和现在的艺术画廊和博物馆。",
+          "hypothesis": "渥太华是加拿大的迷人双语首都，拥有众多艺术画廊和博物馆，展示了加拿大的历史与现状。",
+          "latency_s": 1.588
+        },
+        {
+          "id": 714,
+          "source": "While Goma is reasonably safe, any visits outside of Goma should be researched to understand the state of the fighting that persists in the North Kivu province.",
+          "reference": "尽管戈马还算安全，但前往戈马以外的任何地方都应该事先调查，以便了解北基伍省持续的战斗有没有缓和。",
+          "hypothesis": "虽然戈马相对安全，但前往戈马以外地区时应进行研究，以了解北基伍省持续冲突的现状。",
+          "latency_s": 1.712
+        },
+        {
+          "id": 718,
+          "source": "Today, Timbuktu is an impoverished town, although its reputation makes it a tourist attraction, and it has an airport.",
+          "reference": "今天，虽然廷巴克图的名声使之成为旅游胜地，而且有一个机场，但这是一个贫穷的城镇。",
+          "hypothesis": "今天，廷巴克图是一个贫困的小镇，尽管它的声誉使其成为旅游景点，而且它有一个机场。",
+          "latency_s": 1.496
+        },
+        {
+          "id": 721,
+          "source": "The city is in stark contrast to the rest of the country's cities, because it has more of an Arabic flair than of an African.",
+          "reference": "这座城市与该国其他城市形成了鲜明对比，因为它更多的是阿拉伯风格，而不是非洲风格。",
+          "hypothesis": "这座城市与该国其他城市截然不同，因为它更具有阿拉伯风情，而非非洲风情。",
+          "latency_s": 1.272
+        },
+        {
+          "id": 733,
+          "source": "The Sundarbans has been declared a UNESCO World Heritage Site. The part of the forest within Indian territory is called Sundarbans National Park.",
+          "reference": "孙德尔本斯 (Sundarbans) 已经被联合国教科文组织宣布为世界遗产。印度境内的这部分森林被称为孙德尔本斯国家公园。",
+          "hypothesis": "Sunderbans 被列为联合国教科文组织世界遗产。位于印度境内的森林部分称为苏纳达班国家公园。",
+          "latency_s": 1.798
+        },
+        {
+          "id": 747,
+          "source": "In the 16th century Paraguay, formerly called \"The Giant Province of the Indies\", was born as a result of the encounter of Spanish conquerors with the native indigenous groups.",
+          "reference": "16 世纪的巴拉圭曾被称为“印第安大省”，是西班牙征服者与当地土著群体的相遇后的产物。",
+          "hypothesis": "16世纪的巴拉圭，曾被称为“印第安巨省”，是西班牙征服者与当地土著居民相遇后诞生的。",
+          "latency_s": 1.867
+        },
+        {
+          "id": 754,
+          "source": "The official Falklands currency is the Falkland pound (FKP) whose value is set equivalent to that of one British pound (GBP).",
+          "reference": "福克兰群岛的官方货币是福克兰英镑，与英镑等值。",
+          "hypothesis": "福克兰群岛的官方货币是福克兰镑（FKP），其价值等同于1英镑（GBP）。",
+          "latency_s": 1.633
+        },
+        {
+          "id": 758,
+          "source": "It is nearly impossible to exchange Falklands currency outside of the islands, so exchange money prior to leaving the islands.",
+          "reference": "几乎不可能在岛外兑换福克兰群岛的货币，所以要在离岛之前兑换。",
+          "hypothesis": "在群岛之外几乎不可能兑换福克兰群岛货币，因此在离开群岛前请先兑换好货币。",
+          "latency_s": 1.432
+        },
+        {
+          "id": 759,
+          "source": "Since Montevideo is south of the Equator, it is summer there when it's winter in the Northern Hemisphere and vice versa.",
+          "reference": "蒙得维的亚位于赤道以南，因此北半球冬天的时候，那里是夏天，反之亦然。",
+          "hypothesis": "蒙得维的亚位于赤道以南，因此当北半球是冬季时，那里是夏季，反之亦然。",
+          "latency_s": 1.744
+        },
+        {
+          "id": 777,
+          "source": "These are sometimes-crowded family beaches with a good range of shops lining the shore. Swimming is safe.",
+          "reference": "这些海滩有时挤满了度假的家庭，沿岸排列着各种各样的商店。 游泳很安全。",
+          "hypothesis": "这些有时人满为患的家庭海滩沿岸设有丰富的商店。游泳是安全的。",
+          "latency_s": 1.226
+        },
+        {
+          "id": 781,
+          "source": "For Australians, the idea of 'flat white' coffee is foreign. A short black is 'espresso', cappuccino comes heaped high with cream (not froth), and tea is served without milk.",
+          "reference": "对澳大利亚人来说，“馥芮白”咖啡的概念还比较陌生。小杯黑咖啡是“浓缩咖啡”，卡布奇诺的奶油（不是泡沫）堆得很高，而茶是不搭配牛奶的。",
+          "hypothesis": "对澳大利亚人来说，“flat white”咖啡的概念是陌生的。一份短黑咖啡就是“浓缩咖啡”，卡布奇诺则上面堆满奶油（而不是奶泡），而茶则是不加牛奶的。",
+          "latency_s": 2.678
+        },
+        {
+          "id": 791,
+          "source": "They can also hold the reservation for you if you need time to think about the offer or procure other documents for your destination (e.g. visa).",
+          "reference": "如果你需要时间考虑价格是否合适，或者去往目的地需要获取其他证件（如签证），他们可以为你保留预订。",
+          "hypothesis": "他们也可以为您保留预订，以便您有时间考虑这项优惠或办理前往目的地所需的其他文件（例如签证）。",
+          "latency_s": 1.579
+        },
+        {
+          "id": 825,
+          "source": "Infectious diseases themselves, or dangerous animals that can injure or kill people by force, do not usually qualify as pests.",
+          "reference": "传染性疾病本身，或那些能通过暴力杀伤人类的危险动物，通常不属于害虫之列。",
+          "hypothesis": "传染病本身，或者那些能通过暴力伤害或杀死人类的危险动物，通常不被视为害虫。",
+          "latency_s": 1.401
+        },
+        {
+          "id": 826,
+          "source": "Duty free shopping is the opportunity to buy goods exempted from taxes and excises at certain locations.",
+          "reference": "免税购物是指在特定地点购买免税商品的机会。",
+          "hypothesis": "免税购物是在特定地点购买免征关税和消费税的商品的机会。",
+          "latency_s": 1.012
+        },
+        {
+          "id": 828,
+          "source": "The stretch between Point Marion and Fairmont presents the most challenging driving conditions on the Buffalo-Pittsburgh Highway, passing frequently through isolated backwoods terrain.",
+          "reference": "在布法罗-匹兹堡高速公路上，行车条件最具挑战性的是波特马里恩 (Point Marion) 到费尔蒙特 (Fairmont) 之间的路段，这段路频繁地途径多处偏僻的边远地区。",
+          "hypothesis": "马里昂点与法尔蒙特之间的路段是巴尔的摩-匹兹堡公路最具挑战性的驾驶路段，经常经过人烟稀少的偏僻森林地带。",
+          "latency_s": 2.335
+        },
+        {
+          "id": 849,
+          "source": "Downhill snowsports, which include skiing and snowboarding, are popular sports involving sliding down snow-covered terrain with skis or a snowboard attached to your feet.",
+          "reference": "高山滑雪运动包括普通滑雪和雪板滑雪，是非常受欢迎的运动，在这项运动中，滑雪板或滑雪单板会固定在您的双脚上，从白雪覆盖的地形上滑下来。",
+          "hypothesis": "高山滑雪运动包括滑雪和单板滑雪，是流行的运动项目，涉及在积雪地形上滑行，双脚佩戴滑雪板或单板滑雪板。",
+          "latency_s": 2.162
+        },
+        {
+          "id": 854,
+          "source": "It is related to but usually not involving alpine style ski touring or mountaineering, the latter ones done in steep terrain and requiring much stiffer skis and boots.",
+          "reference": "这项活动与阿尔卑斯式滑雪旅行或登山运动相关，但通常不会进行这两项活动。这两项活动要在陡峭的地形上进行，而且需要更硬的滑雪板和靴子。",
+          "hypothesis": "这与高山风格的滑雪旅行或登山有关，但通常不包括后者，后者是在陡峭地形上进行的，需要更坚硬的滑雪板和靴子。",
+          "latency_s": 2.191
+        },
+        {
+          "id": 867,
+          "source": "Though it is widely used, especially among non-Romani, the word \"Gypsy\" is often considered offensive because of its associations with negative stereotypes and inaccurate perceptions of Romani people.",
+          "reference": "尽管“吉普赛”一词应用广泛，尤其在非罗姆人当中更为盛行，但它通常被认为是一种冒犯，因为它与负面的刻板印象和对罗姆人错误的看法相关联。",
+          "hypothesis": "尽管“吉普赛人”一词被广泛使用，尤其是在非罗姆人中，但由于其与负面刻板印象和对罗姆人不准确的观念相关联，这个词通常被认为具有冒犯性。",
+          "latency_s": 2.827
+        },
+        {
+          "id": 875,
+          "source": "High winds, hail, excessive precipitation, and wildfires are forms and effects of severe weather, as are thunderstorms, tornadoes, waterspouts, and cyclones.",
+          "reference": "狂风、冰雹、过量降水、山火，还有雷雨、龙卷风、水龙卷、气旋，都是极端天气的表现和影响。",
+          "hypothesis": "强风、冰雹、降水量过多和野火是严重天气的形式和影响，雷暴、龙卷风、水龙卷和气旋也是如此。",
+          "latency_s": 2.092
+        },
+        {
+          "id": 882,
+          "source": "Books and magazines dealing with wilderness survival are common, but publications dealing with war zones are few.",
+          "reference": "关于野外生存的书籍和杂志很常见，但关于战区生存的出版物却很少。",
+          "hypothesis": "关于野外生存的书籍和杂志很常见，但涉及战区的出版物却很少。",
+          "latency_s": 1.297
+        },
+        {
+          "id": 887,
+          "source": "Pre-operative transgender people should not expect to pass through the scanners with their privacy and dignity intact.",
+          "reference": "尚未做手术的变性者在通过扫描仪时，不得不透露自己的隐私，并且无法保障自身尊严。",
+          "hypothesis": "术前跨性别者不应指望能保持隐私和尊严通过扫描仪。",
+          "latency_s": 1.063
+        },
+        {
+          "id": 890,
+          "source": "Most deaths happen as result of fatigue trying to swim back against the current, which may be impossible.",
+          "reference": "大部分死亡都是因逆流而上、体力透支造成的，逆着水流游泳不太可能成功。",
+          "hypothesis": "大多数死亡是因为疲劳试图逆流而上游泳，这可能是不可能的。",
+          "latency_s": 1.052
+        },
+        {
+          "id": 906,
+          "source": "Ellsworth Land is the region south of the Peninsula, bounded by the Bellingshausen Sea.",
+          "reference": "埃尔斯沃思地 (Ellsworth Land) 位于该半岛的南部，面朝别林斯高晋海 (Bellingshausen Sea)。",
+          "hypothesis": "埃尔斯沃思地是半岛以南的地区，位于贝尔林斯豪森海以北。",
+          "latency_s": 1.401
+        },
+        {
+          "id": 913,
+          "source": "An increasingly more popular option for those planning a gap-year is to travel and learn.",
+          "reference": "对于那些计划怎么度过空档年的人来说，游学成为越来越受欢迎的选择。",
+          "hypothesis": "越来越多计划间隔年的人选择旅行和学习。",
+          "latency_s": 0.904
+        },
+        {
+          "id": 944,
+          "source": "The broad boulevards, glass-fronted buildings and modern shopping centers are dotted with traditional red-tiled roofs, the 18th century market, and old mosques and churches, although the city has an atmosphere more of Mediterranean Europe than traditional Turkey.",
+          "reference": "在宽阔的林荫大道、玻璃外墙的建筑和现代化的购物中心之间，散布着传统的红瓦屋顶、18 世纪的市场以及古老的清真寺和教堂，不过这座城市比传统的土耳其更有地中海欧洲的氛围。",
+          "hypothesis": "宽阔的林荫大道、玻璃幕墙建筑和现代购物中心间点缀着传统的红瓦屋顶、18世纪的市场以及古老的清真寺和教堂，尽管这座城市更具有地中海欧洲的氛围，而非传统土耳其的风格。",
+          "latency_s": 2.856
+        },
+        {
+          "id": 959,
+          "source": "Parisians have a reputation for being egocentric, rude and arrogant.",
+          "reference": "巴黎人是出了名的以自我中心、粗鲁和傲慢。",
+          "hypothesis": "巴黎人有传言说他们自大、粗鲁和傲慢。",
+          "latency_s": 1.184
+        },
+        {
+          "id": 966,
+          "source": "While visiting the monasteries, women are required to wear skirts covering the knees and have their shoulders covered, too.",
+          "reference": "女性在参观修道院时必须穿裙子，裙子必须及膝，肩膀也要覆盖住。",
+          "hypothesis": "参观修道院时，女性需要穿着遮盖膝盖的长裙，同时也要遮住肩膀。",
+          "latency_s": 1.411
+        },
+        {
+          "id": 976,
+          "source": "The main letters to watch out for are c and g, since their pronunciation varies based on the following vowel.",
+          "reference": "需要注意的主要字母是 c 和 g，因为它们的发音是根据以下元音变化的。",
+          "hypothesis": "需要注意的字母主要是c和g，因为它们的发音会根据后面的元音而变化。",
+          "latency_s": 1.287
+        },
+        {
+          "id": 990,
+          "source": "Singapore is generally an extremely safe place to be and very easy to navigate, and you can buy almost anything after arriving.",
+          "reference": "通常来讲，新加坡是一个非常安全的地方，导航也很容易。到达后你几乎可以买到任何东西。",
+          "hypothesis": "新加坡通常是一个极其安全的地方，非常容易出行，到达后几乎可以买到任何东西。",
+          "latency_s": 1.238
+        },
+        {
+          "id": 995,
+          "source": "For example visiting castles in the Loire Valley, the Rhine valley or taking a cruise to interesting cites on the Danube or boating along the Erie Canal.",
+          "reference": "例如，在卢瓦尔河谷和莱茵河谷参观城堡，或者乘游轮去游览多瑙河沿岸好玩的城市，或者沿伊利运河乘船游玩。",
+          "hypothesis": "例如参观卢瓦尔河谷的城堡，莱茵河谷，或者乘船游览多瑙河上的有趣城市，或者在伊利运河上划船。",
+          "latency_s": 2.058
+        },
+        {
+          "id": 998,
+          "source": "Many of the traditions surrounding the holiday have been adopted also by non-believers in Christian countries and non-Christians around the world.",
+          "reference": "与这个节日有关的许多传统也被基督教国家的非信徒和世界各地的非基督徒所接受。",
+          "hypothesis": "许多与节日相关的传统也被非信徒的基督教国家和世界各地的非基督徒所采用。",
+          "latency_s": 1.234
+        },
+        {
+          "id": 1002,
+          "source": "All animals that originally arrived in the islands came here either by swimming, flying or floating.",
+          "reference": "最初，动物们都是通过游泳、飞行或者漂浮的方式到达了这些岛屿。",
+          "hypothesis": "所有最初抵达这些岛屿的动物都是通过游泳、飞行或漂浮来到这里的。",
+          "latency_s": 1.429
+        }
+      ],
+      "comet": 0.8892,
+      "comet_scores_per_sample": [
+        0.9151,
+        0.9123,
+        0.9344,
+        0.8379,
+        0.9197,
+        0.8003,
+        0.9152,
+        0.7899,
+        0.878,
+        0.952,
+        0.8503,
+        0.8779,
+        0.9367,
+        0.896,
+        0.9692,
+        0.9213,
+        0.9006,
+        0.9132,
+        0.8938,
+        0.9253,
+        0.8999,
+        0.9256,
+        0.9112,
+        0.8024,
+        0.9337,
+        0.9196,
+        0.909,
+        0.9386,
+        0.8789,
+        0.9036,
+        0.9251,
+        0.92,
+        0.804,
+        0.8922,
+        0.8909,
+        0.8288,
+        0.875,
+        0.8707,
+        0.8976,
+        0.9149,
+        0.8555,
+        0.9126,
+        0.8698,
+        0.8827,
+        0.9391,
+        0.9113,
+        0.9319,
+        0.937,
+        0.819,
+        0.8722,
+        0.8865,
+        0.802,
+        0.9548,
+        0.9069,
+        0.7608,
+        0.9384,
+        0.9374,
+        0.9417,
+        0.9087,
+        0.8557,
+        0.9337,
+        0.926,
+        0.9409,
+        0.8672,
+        0.9612,
+        0.8889,
+        0.9127,
+        0.9035,
+        0.8961,
+        0.9008,
+        0.9254,
+        0.9262,
+        0.8671,
+        0.9187,
+        0.8951,
+        0.9223,
+        0.9475,
+        0.8102,
+        0.8574,
+        0.8754,
+        0.9341,
+        0.9417,
+        0.8395,
+        0.8378,
+        0.8595,
+        0.8804,
+        0.879,
+        0.9438,
+        0.6927,
+        0.7728,
+        0.7521,
+        0.6637,
+        0.8891,
+        0.9043,
+        0.8947,
+        0.9117,
+        0.9192,
+        0.8873,
+        0.911,
+        0.9242
+      ],
+      "comet_scored": 100
+    },
+    {
+      "engine": "qwen:qwen3:8b",
+      "direction": "zh->en",
+      "chrf": null,
+      "bleu": null,
+      "latency_mean_s": 1.8,
+      "errors": [],
+      "samples": [
+        {
+          "id": 6,
+          "source": "他称，他制作了一个 WiFi 门铃。",
+          "reference": "He built a WiFi door bell, he said.",
+          "hypothesis": "He said he made a WiFi doorbell.",
+          "latency_s": 0.668
+        },
+        {
+          "id": 25,
+          "source": "特朗普与土耳其总统雷杰普·塔伊普·埃尔多安（Recep Tayyip Erdoğan）通话后发表了声明。",
+          "reference": "The announcement was made after Trump had a phone conversation with Turkish President Recep Tayyip Erdoğan.",
+          "hypothesis": "Trump issued a statement after speaking with Turkish President Recep Tayyip Erdoğan.",
+          "latency_s": 1.062
+        },
+        {
+          "id": 27,
+          "source": "这不仅证实了至少有些恐龙有羽毛——这一理论已经广为流传——而且还提供了化石通常无法提供的细节，比如颜色和三维排列。",
+          "reference": "This not only confirms that at least some dinosaurs had feathers, a theory already widespread, but provides details fossils generally cannot, such as color and three-dimensional arrangement.",
+          "hypothesis": "This not only confirms that at least some dinosaurs had feathers—a theory that has already gained widespread acceptance—but also provides details that fossils usually cannot, such as color and three-dimensional arrangement.",
+          "latency_s": 2.176
+        },
+        {
+          "id": 30,
+          "source": "恐龙的羽毛并没有发育良好的主干——这称为“羽轴”，但还是有羽毛的其他特征，比如羽枝和羽小枝，研究人员推断羽轴的进化可能比这些其他特征晚。",
+          "reference": "Because the dinosaur feathers do not have a well-developed shaft, called a rachis, but do have other features of feathers — barbs and barbules — the researchers inferred the rachis was likely a later evolutionary development that these other features.",
+          "hypothesis": "The feathers of dinosaurs did not have well-developed main shafts—known as \"rachises\"—but they did have other feather features such as branches and sub-branches. Researchers inferred that the evolution of rachises may have occurred later than these other features.",
+          "latency_s": 3.216
+        },
+        {
+          "id": 32,
+          "source": "研究人员认为，尽管这是一只年轻恐龙的尾巴，但样本显示的是成年羽毛，而非雏龙的绒毛。",
+          "reference": "The researchers suggested that, even though this is the tail of a young dinosaur, the sample shows adult plumage and not a chick's down.",
+          "hypothesis": "Researchers believe that although it is a tail from a young dinosaur, the sample shows adult feathers, not downy feathers of a juvenile.",
+          "latency_s": 1.698
+        },
+        {
+          "id": 44,
+          "source": "杜瓦尔已婚，有两个已经成年的孩子，他并没有给故事的讲述者米勒留下太大印象。",
+          "reference": "Duvall, who is married with two adult children, did not leave a big impression on Miller, to whom the story was related.",
+          "hypothesis": "Duvall is married, has two adult children, and didn't leave a big impression on the story's narrator, Miller.",
+          "latency_s": 1.674
+        },
+        {
+          "id": 46,
+          "source": "“到 2020 年之前，我们将努力使单位国内生产总值二氧化碳排放量比 2005 年显著下降，”胡锦涛说。",
+          "reference": "\"We will endeavour to cut carbon dioxide emissions per unit of GDP by a notable margin by 2020 from the 2005 level,\" Hu said.",
+          "hypothesis": "Before 2020, we will strive to significantly reduce the carbon dioxide emissions per unit of GDP compared to 2005,\" Hu Jintao said.",
+          "latency_s": 2.296
+        },
+        {
+          "id": 71,
+          "source": "周二，总理斯蒂芬·哈珀（ Stephen Harper ）在其办公室与新民主党党魁杰克·林顿（ Jack Layton ）举行 25 分钟的会议后，已经同意将政府的《清洁空气法》送交一个多党委员会审查，然后再进行二读。",
+          "reference": "Prime Minister Stephen Harper has agreed to send the government's 'Clean Air Act' to an all-party committee for review, before its second reading, after Tuesday's 25 minute meeting with NDP leader Jack Layton at the PMO.",
+          "hypothesis": "On Tuesday, after a 25-minute meeting with Jack Layton, the leader of the New Democratic Party, at his office, Prime Minister Stephen Harper has agreed to send the government's Clean Air Act to a multi-party committee for review before proceeding to second reading.",
+          "latency_s": 3.462
+        },
+        {
+          "id": 80,
+          "source": "亚热带风暴杰瑞 (Jerry) 今天在大西洋形成，这是大西洋飓风季节中第十个被命名的风暴。",
+          "reference": "The tenth named storm of the Atlantic Hurricane season, Subtropical Storm Jerry, formed in the Atlantic Ocean today.",
+          "hypothesis": "Tropical Storm Jerry formed in the Atlantic today, marking the tenth named storm of the Atlantic hurricane season.",
+          "latency_s": 1.373
+        },
+        {
+          "id": 81,
+          "source": "国家飓风中心 (NHC) 表示，目前“杰瑞”对陆地没有威胁。",
+          "reference": "The National Hurricane Center (NHC) says that at this point Jerry poses no threat to land.",
+          "hypothesis": "The National Hurricane Center (NHC) stated that \"Jerry\" currently poses no threat to land.",
+          "latency_s": 1.304
+        },
+        {
+          "id": 89,
+          "source": "该团队正在寻找的效应可能是由星系暗物质和银河系暗物质之间的潮汐力引起的。",
+          "reference": "The effect the team was looking for would be caused by tidal forces between the galaxy's dark matter and the Milky Way's dark matter.",
+          "hypothesis": "The effect the team is looking for may be caused by tidal forces between dark matter in the galaxy and dark matter in the Milky Way.",
+          "latency_s": 1.709
+        },
+        {
+          "id": 94,
+          "source": "当地政府警告核电站附近的居民，要待在室内，关掉空调，不要喝自来水。",
+          "reference": "Local authorities are warning residents in the vicinity of the plant to stay indoors, turn off air-conditioners and not to drink tap water.",
+          "hypothesis": "The local government warned residents near the nuclear power plant to stay indoors, turn off the air conditioning, and avoid drinking tap water.",
+          "latency_s": 1.664
+        },
+        {
+          "id": 95,
+          "source": "日本原子能机构表示，核电站检测出了放射性物质铯和碘。",
+          "reference": "According to Japan's nuclear agency, radioactive caesium and iodine has been identified at the plant.",
+          "hypothesis": "The Japan Atomic Energy Agency said that radioactive substances cesium and iodine were detected at the nuclear power plant.",
+          "latency_s": 1.619
+        },
+        {
+          "id": 99,
+          "source": "莫尔 (Moll) 博士认为，有些病人可能是在医院感染了病菌，而且至少有两名病人是医院的医护人员。",
+          "reference": "Some patients might have contracted the bug in the hospital, Dr. Moll thinks, and at least two were hospital health workers.",
+          "hypothesis": "Dr. Moll believes that some patients may have contracted bacteria in the hospital, and at least two of the patients are hospital staff.",
+          "latency_s": 1.711
+        },
+        {
+          "id": 103,
+          "source": "科学家表示，这次碰撞引起的爆炸规模巨大。",
+          "reference": "Scientists say the explosion caused by the collision was massive.",
+          "hypothesis": "Scientists said the explosion caused by the collision was of massive scale.",
+          "latency_s": 1.027
+        },
+        {
+          "id": 104,
+          "source": "他们仍在努力确定这次撞击的规模以及对地球的影响。",
+          "reference": "They are still trying to determine just how large the crash was and how the Earth will be affected.",
+          "hypothesis": "They are still trying to determine the scale of this impact and its effect on Earth.",
+          "latency_s": 1.27
+        },
+        {
+          "id": 114,
+          "source": "这场疫情促使印度政府采取一些措施，比如在严重感染地区放置捕猪器、派发数千个蚊帐并喷洒杀虫剂。",
+          "reference": "The outbreak has prompted the Indian government to undertake such measures as deployment of pig catchers in seriously affected areas, distributing thousands of mosquito curtains and spraying pesticides.",
+          "hypothesis": "This pandemic has prompted the Indian government to take some measures, such as placing pig traps in severely infected areas, distributing thousands of mosquito nets, and spraying insecticides.",
+          "latency_s": 2.032
+        },
+        {
+          "id": 127,
+          "source": "巴厘岛会议议程中的其他议题还包括拯救世界上现存的森林，分享技术以帮助发展中国家以污染较少的方式发展。",
+          "reference": "Other subjects on the agenda in Bali include saving the world's remaining forests, and sharing technologies to help developing nations grow in less-polluting ways.",
+          "hypothesis": "Other topics on the Bali conference agenda include saving the existing forests in the world and sharing technology to help developing countries develop in ways that cause less pollution.",
+          "latency_s": 1.873
+        },
+        {
+          "id": 142,
+          "source": "尽管那里没有海啸的威胁，当地居民却感到坐立不安，纷纷结束生意及离开家园。",
+          "reference": "Despite there being no tsunami threat, residents started to panic and began to leave their businesses and homes.",
+          "hypothesis": "Although there was no threat of a tsunami, the local residents felt uneasy, hastily closing their businesses and leaving their homes.",
+          "latency_s": 1.543
+        },
+        {
+          "id": 159,
+          "source": "红外图像显示，昼夜温度的变化表示这些地方很可能是洞穴。",
+          "reference": "Infrared images show that the temperature variations from night and day show that they are likely caves.",
+          "hypothesis": "The infrared image shows that the temperature changes between day and night indicate these places are likely caves.",
+          "latency_s": 1.425
+        },
+        {
+          "id": 163,
+          "source": "官员核实投票者的身份后，投票者将信封投入投票箱，并在投票册上签名。",
+          "reference": "After officials verify the voter's identity, the voter drops the envelope into the ballot box and signs the voting roll.",
+          "hypothesis": "After officials verify the identity of the voter, the voter puts the envelope into the ballot box and signs the register.",
+          "latency_s": 1.494
+        },
+        {
+          "id": 166,
+          "source": "候选人可以派代表现场察看选举过程的每一个环节。晚上，志愿者在严密监督之下按照特定程序计票。",
+          "reference": "Candidates can send representatives to witness every part of the process. In the evening, votes are counted by volunteers under heavy supervision, following specific procedures.",
+          "hypothesis": "Candidates may send representatives to observe each stage of the election process in person. In the evening, volunteers count the votes according to a specific procedure under strict supervision.",
+          "latency_s": 1.994
+        },
+        {
+          "id": 196,
+          "source": "报道称他年仅 20 多岁。比伯发表声明表示：“虽然我当时并不在场，也没有直接经历这起悲惨事故，但我仍为死者家属感到悲伤，为他们祈祷。”",
+          "reference": "He was reportedly aged in his 20s. In a statement, Bieber said \"[w]hile I was not present nor directly involved with this tragic accident, my thoughts and prayers are with the family of the victim.\"",
+          "hypothesis": "The report said he was in his early 20s. Bieber issued a statement saying, \"Although I wasn't present at the time and didn't directly experience this tragic incident, I still feel sorrow for the families of the victims and pray for them.",
+          "latency_s": 3.123
+        },
+        {
+          "id": 203,
+          "source": "波兰男子视障滑雪选手马切吉·克雷泽尔（Maciej Krezel ）和向导安娜·奥加津斯卡（Anna Ogarzynska）在超级大回转比赛中获得第十三名，韩国选手朴钟硕（Jong Seork Park）在男子坐式超级大回转比赛中获得第二十四名。",
+          "reference": "Poland's men's visually impaired skier Maciej Krezel and guide Anna Ogarzynska finished thirteenth in the Super-G. South Korea's Jong Seork Park finished twenty-fourth in the men's sitting Super-G.",
+          "hypothesis": "Polish visually impaired skier Maciej Krezel and guide Anna Ogarzynska placed 13th in the super giant slalom, while South Korean competitor Jong Seork Park ranked 24th in the men's sitting super giant slalom.",
+          "latency_s": 3.439
+        },
+        {
+          "id": 214,
+          "source": "1989 年，他与布鲁克斯和格罗宁一起创作了《辛普森一家》，并负责聘请了该剧的首支编剧团队。",
+          "reference": "In 1989 he helped create The Simpsons with Brooks and Groening, and was responsible for hiring the show's first writing team.",
+          "hypothesis": "In 1989, he created The Simpsons with Brooks and Groening, and was responsible for hiring the show's first writing team.",
+          "latency_s": 1.832
+        },
+        {
+          "id": 220,
+          "source": "在国际制裁下，伊朗无法购买新的飞机。",
+          "reference": "International sanctions have meant that new aircraft cannot be purchased.",
+          "hypothesis": "Under international sanctions, Iran is unable to purchase new aircraft.",
+          "latency_s": 0.955
+        },
+        {
+          "id": 223,
+          "source": "同一个月，又有一架客机冲出马什哈德的跑道，撞上一堵墙，造成 17 人死亡。",
+          "reference": "The same month saw another airliner overrun a runway at Mashhad and strike a wall, killing seventeen.",
+          "hypothesis": "In the same month, another passenger plane veered off the runway at Mashhad and collided with a wall, resulting in 17 deaths.",
+          "latency_s": 1.806
+        },
+        {
+          "id": 225,
+          "source": "这支摇滚乐队原定在美国和加拿大巡演，一直持续到 9 月 16 日。",
+          "reference": "The rock band was due to tour the United States and Canada until September 16.",
+          "hypothesis": "This rock band was originally scheduled to tour in the United States and Canada, lasting until September 16th.",
+          "latency_s": 1.459
+        },
+        {
+          "id": 228,
+          "source": "德尔·波特罗（Del Potro）在第二盘刚开局时就占上风，但在比分达到 6-6 后就得进行抢七大战。",
+          "reference": "Del Potro had the early advantage in the second set, but this too required a tie break after reaching 6-6.",
+          "hypothesis": "Del Potro took the early lead in the second set, but had to fight through a tiebreak after the score reached 6-6.",
+          "latency_s": 1.807
+        },
+        {
+          "id": 233,
+          "source": "然后，拉卡·辛格带头唱了拜赞歌。",
+          "reference": "Then, Lakkha Singh took the lead in singing the bhajans.",
+          "hypothesis": "Then, Lakha Singh led the singing of the praise song.",
+          "latency_s": 1.144
+        },
+        {
+          "id": 238,
+          "source": "它让玩家可以通过在空中移动设备来控制电子游戏中的运动和操作。",
+          "reference": "This will allow players to control actions and movements in video games by moving the device through the air.",
+          "hypothesis": "It allows players to control movement and operations in electronic games by moving the device in the air.",
+          "latency_s": 1.456
+        },
+        {
+          "id": 250,
+          "source": "北陆电力株式会社报道称，志贺核能发电厂 1 号和 2 号反应堆已经关闭，地震并未造成影响。",
+          "reference": "Hokuriku Electric Power Co. reported no effects from the earthquake and that the Number 1 and 2 reactors at its Shika nuclear power plant were shut down.",
+          "hypothesis": "Hokuriku Electric Power Co., Ltd. reported that the No. 1 and No. 2 reactors at the Shika Nuclear Power Plant have been shut down, and the earthquake did not cause any impact.",
+          "latency_s": 2.694
+        },
+        {
+          "id": 270,
+          "source": "埃德加·贝吉利亚 (Edgar Veguilla) 的手臂和下巴受伤，而克里斯托弗· 施耐德 (Kristoffer Schneider) 则需要做脸部重建手术。",
+          "reference": "Edgar Veguilla received arm and jaw wounds while Kristoffer Schneider was left requiring reconstructive surgery for his face.",
+          "hypothesis": "Edgar Veguilla's arms and chin were injured, while Kristoffer Schneider required facial reconstruction surgery.",
+          "latency_s": 1.364
+        },
+        {
+          "id": 281,
+          "source": "虽然车撞到房子时，房子里面有三个人，但最后并没有人受伤。",
+          "reference": "Although three people were inside the house when the car impacted it, none of them were hurt.",
+          "hypothesis": "Although there were three people inside the house when the car collided with it, no one was injured in the end.",
+          "latency_s": 1.625
+        },
+        {
+          "id": 284,
+          "source": "起初，他被送往位于大雅茅斯的詹姆斯·佩吉特医院进行救治。",
+          "reference": "He was initially hospitalised in the James Paget Hospital in Great Yarmouth.",
+          "hypothesis": "At first, he was sent to James Paget Hospital in Great Yarmouth for treatment.",
+          "latency_s": 1.224
+        },
+        {
+          "id": 296,
+          "source": "澳大利亚新州国家公园和野生动物服务中心（NPWS）保护和遗产管理处代理主任米克·奥弗林（Mick O’flynn）表示：选中参与第一次射击行动的四名枪手均已接受全面的安全及培训指导。",
+          "reference": "According to Mick O'Flynn, the Acting Director Park Conservation and Heritage with the NPWS, the four shooters selected for the first shooting operation received comprehensive safety and training instruction.",
+          "hypothesis": "Mick O'Flynn, Acting Director of the Conservation and Heritage Management Branch at the New South Wales National Parks and Wildlife Service (NPWS), stated that the four shooters selected to participate in the first shooting operation have all received comprehensive safety and training guidance.",
+          "latency_s": 3.072
+        },
+        {
+          "id": 300,
+          "source": "该委员会是马尔泰利 (Martelly) 对始于 10 月份的大规模反政府抗议活动做出的回应。",
+          "reference": "The commission was Martelly's response to widespread anti-regime protests that started in October.",
+          "hypothesis": "The committee was Martelly's response to the large-scale anti-government protests that began in October.",
+          "latency_s": 1.242
+        },
+        {
+          "id": 344,
+          "source": "这被称为化学物质的 pH 值。你可以使用红甘蓝汁制作指示剂。",
+          "reference": "This is called a chemical's pH. You can make an indicator using red cabbage juice.",
+          "hypothesis": "This is called the pH value of a chemical substance. You can make an indicator using red cabbage juice.",
+          "latency_s": 1.366
+        },
+        {
+          "id": 348,
+          "source": "搅动两种干粉使其混合，然后用干净的湿手把它们揉成一个球。",
+          "reference": "Swirl the two dry powders together and then, with clean wet hands, squeeze them into a ball.",
+          "hypothesis": "Stir the two dry powders together until mixed, then roll them into a ball using a clean, wet hand.",
+          "latency_s": 1.692
+        },
+        {
+          "id": 352,
+          "source": "古埃及、波斯和中国也有厕所。在罗马文明中，厕所有时是男女混合的公共浴室的一部分。",
+          "reference": "There were also toilets in ancient Egypt, Persia and China. In Roman civilization, toilets were sometimes part of public bath houses where men and women were together in mixed company.",
+          "hypothesis": "Ancient Egypt, Persia, and China also had toilets. In the Roman civilization, toilets were sometimes part of public bathhouses for both men and women.",
+          "latency_s": 2.039
+        },
+        {
+          "id": 363,
+          "source": "狮群由一到三只有亲属关系的成年雄性，以及可多达三十只的雌性和幼崽组成。",
+          "reference": "Prides are made up of one to three related adult males, along with as many as thirty females and cubs.",
+          "hypothesis": "A lion pride consists of one to three related adult males, and up to thirty females and cubs.",
+          "latency_s": 1.436
+        },
+        {
+          "id": 367,
+          "source": "老虎与狮、豹和美洲虎属于同一类型（豹属）。这四种大猫是仅有的会吼叫的猫科动物。",
+          "reference": "The tiger is in the same group (Genus Panthera) as lions, leopards, and jaguars. These four cats are the only ones who can roar.",
+          "hypothesis": "Tigers, lions, leopards, and jaguars belong to the same genus (Panthera). These four big cats are the only roaring felids.",
+          "latency_s": 2.065
+        },
+        {
+          "id": 370,
+          "source": "科学家认为，美洲豹猫是通过气味和嗅探猎物在地面上的踪迹来跟踪和寻找要捕食的动物的。",
+          "reference": "Scientists think that ocelots follow and find animals to eat (prey) by smell, sniffing for where they've been on the ground.",
+          "hypothesis": "Scientists believe that the ocelot tracks and locates animals to hunt by following their scent and tracking their trails on the ground.",
+          "latency_s": 1.68
+        },
+        {
+          "id": 373,
+          "source": "这个新的环境有不同的资源和不同的竞争对手，所以新的种群将需要不同的特征或适应能力来成为一个强有力的竞争对手，而不是它们之前所需要的那些。",
+          "reference": "This new environment has different resources and different competitors, so the new population will need different features or adaptations to be a strong competitor than what they had needed before.",
+          "hypothesis": "This new environment has different resources and different competitors, so the new population will need different characteristics or adaptive abilities to become a strong competitor, rather than those they previously needed.",
+          "latency_s": 2.096
+        },
+        {
+          "id": 379,
+          "source": "植物通过光合作用从阳光中获取养分。它们还能提供荫凉。",
+          "reference": "Plants make their food from the sun by photosynthesis. They also provide shade.",
+          "hypothesis": "Plants obtain nutrients from sunlight through photosynthesis. They can also provide shade.",
+          "latency_s": 1.247
+        },
+        {
+          "id": 387,
+          "source": "几个世纪后从美洲或亚洲传入欧洲的食物不可能出现在古罗马人的饮食当中。",
+          "reference": "Ancient Roman meals couldn't have included foods that came to Europe from America or from Asia in later centuries.",
+          "hypothesis": "Food introduced from America or Asia into Europe several centuries later could not have appeared in the diet of ancient Romans.",
+          "latency_s": 1.375
+        },
+        {
+          "id": 389,
+          "source": "巴比伦人为他们每位神祇都建造了一座主殿，将其视为该神居所。",
+          "reference": "The Babylonians built each of their gods a primary temple that was considered the home of the god.",
+          "hypothesis": "The Babylonians built a main temple for each of their gods, considering it as the dwelling place of that deity.",
+          "latency_s": 1.454
+        },
+        {
+          "id": 429,
+          "source": "到 1976 年，马丘比丘的百分之三十得到修复，修复工作一直持续到今天。",
+          "reference": "By 1976, thirty percent of Machu Picchu had been restored and restoration continues till today.",
+          "hypothesis": "By 1976, thirty percent of Machu Picchu had been restored, and the restoration work has continued up to the present day.",
+          "latency_s": 1.827
+        },
+        {
+          "id": 432,
+          "source": "35 毫米格式的实际尺寸是 36 毫米宽，24 毫米高，这样格式其实有点令人困惑。",
+          "reference": "The 35mm format is actually, somewhat confusingly, 36mm in width by 24mm in height.",
+          "hypothesis": "The actual size of the 35mm format is 36mm wide and 24mm high, which makes the format a bit confusing.",
+          "latency_s": 1.889
+        },
+        {
+          "id": 459,
+          "source": "该洞穴本身，不仅经受住时间考验而保留下来，还为穆罕默德的灵性意向带来极其生动的形象。",
+          "reference": "he cave itself, which survived the times, gives a very vivid image of Muhammad’s spiritual inclinations.",
+          "hypothesis": "The cave itself, not only has withstood the test of time and been preserved, but also brings forth extremely vivid imagery of Muhammad's spiritual intent.",
+          "latency_s": 1.827
+        },
+        {
+          "id": 464,
+          "source": "大金字塔是埃及人在公元前三世纪的杰作，它是众多向已故法老表示敬意的大型金字塔的其中之一。",
+          "reference": "Built by the Egyptians in the third century BCE, the Great Pyramid is one of many large pyramid structures built to honor dead Pharaoh.",
+          "hypothesis": "The Great Pyramid is a masterpiece of the Egyptians from the third century BCE, one of many large pyramids built to express respect for deceased pharaohs.",
+          "latency_s": 1.909
+        },
+        {
+          "id": 470,
+          "source": "请随意用铅笔作上你自己的标记，但要记住，印出来的音符是具有音乐意义的，所以它们通常应该被尊重。",
+          "reference": "Feel free to pencil in your own marks, but remember the printed bowing marks are there for a musical reason, so they should usually be respected.",
+          "hypothesis": "Please feel free to make your own marks with a pencil, but remember that the printed notes have musical significance, so they should usually be respected.",
+          "latency_s": 1.936
+        },
+        {
+          "id": 517,
+          "source": "互联网结合了大众传播和人际传播的要素。",
+          "reference": "The Internet combines elements of both mass and interpersonal communication.",
+          "hypothesis": "The Internet combines elements of mass communication and interpersonal communication.",
+          "latency_s": 0.946
+        },
+        {
+          "id": 549,
+          "source": "迄今为止，船运是跨洋运输大量人员和货物的最有效方式。",
+          "reference": "Using ships to transport goods is by far the most efficient way to move large amounts of people and goods across oceans.",
+          "hypothesis": "So far, shipping has been the most efficient way to transport large numbers of people and goods across oceans.",
+          "latency_s": 1.58
+        },
+        {
+          "id": 558,
+          "source": "虽然马拉轨道车只是由平行的木板拼成，但在当时，就略显坎坷的道路而言，这些车能让拉车的马跑得更快，拉得更多。",
+          "reference": "Although wagonways merely consisted of parallel planks of wood, they allowed horses pulling them to achieve greater speeds and pull larger loads than on the slightly more rough roads of the day.",
+          "hypothesis": "Although the malara carts were simply made of parallel wooden boards, at that time, compared to the somewhat bumpy roads, these carts allowed the horses pulling them to run faster and carry more.",
+          "latency_s": 2.352
+        },
+        {
+          "id": 565,
+          "source": "我们可以开始更环保地生活，加入环保运动，甚至可以成为环保积极分子，在一定程度上减少将来的灾难。",
+          "reference": "We can start living more friendly to the environment, we can join to the environmental movement, and we can even be activists in order to reduce the future suffering in some degree.",
+          "hypothesis": "We can start living a more eco-friendly life, join the environmental movement, and even become environmental activists, thereby reducing future disasters to some extent.",
+          "latency_s": 1.82
+        },
+        {
+          "id": 574,
+          "source": "很多人认为它们并非恐龙，因为它们有羽毛，会飞。",
+          "reference": "Many people don't think about them as dinosaurs because they have feathers and can fly.",
+          "hypothesis": "Many people think they are not dinosaurs because they have feathers and can fly.",
+          "latency_s": 1.228
+        },
+        {
+          "id": 591,
+          "source": "科学的主要目的是通过科学方法找出世界的运行方式。实际上，这种方法可为大多数科学研究提供指导。",
+          "reference": "Science’s main goal is to figure out the way the world works through the scientific method. This method in fact guides most scientific research.",
+          "hypothesis": "The main purpose of science is to find out how the world works through the scientific method. In fact, this approach provides guidance for most scientific research.",
+          "latency_s": 1.934
+        },
+        {
+          "id": 603,
+          "source": "只有生殖细胞的突变才会遗传给孩子，而其他细胞的突变则会导致细胞死亡或癌症。",
+          "reference": "Only mutations in germ-line cells can be passed on to children, while mutations elsewhere can cause cell-death or cancer.",
+          "hypothesis": "Only mutations in germ cells can be passed on to children, while mutations in other cells can lead to cell death or cancer.",
+          "latency_s": 1.578
+        },
+        {
+          "id": 604,
+          "source": "自然风光旅游业吸引了那些对自然地区感兴趣的游客，他们前来观赏包括野生动植物在内的自然风景。",
+          "reference": "Nature-based tourism attracts people interested in visiting natural areas for the purpose of enjoying the scenery, including plant and animal wildlife.",
+          "hypothesis": "Tourism in natural landscapes attracts visitors interested in natural areas, who come to admire natural scenery including wildlife and flora and fauna.",
+          "latency_s": 1.548
+        },
+        {
+          "id": 616,
+          "source": "为了更好地表示交通流量，在以下三个主要特征之间建立了关系：(1) 流量、(2) 密度和 (3) 速度。",
+          "reference": "To better represent traffic flow, relationships have been established between the three main characteristics: (1) flow, (2) density, and (3) velocity.",
+          "hypothesis": "In order to better represent traffic flow, a relationship is established among the following three main characteristics: (1) flow, (2) density, and (3) speed.",
+          "latency_s": 2.114
+        },
+        {
+          "id": 618,
+          "source": "昆虫是最早在空中飞行的动物。飞行能力让它们更容易躲避敌人，更有效地寻找食物和配偶。",
+          "reference": "Insects were the first animals to take to the air. Their ability to fly helped them evade enemies more easily and find food and mates more efficiently.",
+          "hypothesis": "Insects are the earliest animals to fly in the air. The ability to fly makes it easier for them to avoid predators, find food and mates more effectively.",
+          "latency_s": 1.964
+        },
+        {
+          "id": 633,
+          "source": "意大利语也是大部分在该国工作的人日常使用的语言，拉丁语则常使用于宗教仪式。",
+          "reference": "Italian is also the everyday language used by most of those who work in the state while Latin is often used in religious ceremonies.",
+          "hypothesis": "Italian is also the language commonly used in daily life by most people working in the country, while Latin is often used in religious ceremonies.",
+          "latency_s": 1.666
+        },
+        {
+          "id": 643,
+          "source": "因此，铅笔一问世，就成了许多人的心头好。",
+          "reference": "Thus, the pencil was a good friend to many people when it came out.",
+          "hypothesis": "Therefore, once pencils were introduced, they became the favorite of many people.",
+          "latency_s": 1.151
+        },
+        {
+          "id": 650,
+          "source": "月球的表面由岩石和灰尘组成。月球的外层叫做地壳。",
+          "reference": "The surface of the Moon is made of rocks and dust. The outer layer of the Moon is called the crust.",
+          "hypothesis": "The surface of the moon is composed of rocks and dust. The outer layer of the moon is called the crust.",
+          "latency_s": 1.477
+        },
+        {
+          "id": 654,
+          "source": "激励内容理论的核心是寻找令人认同或产生兴趣的因素。",
+          "reference": "Content theories are centered on finding what makes people tick or appeals to them.",
+          "hypothesis": "The core of the motivation content theory is to identify factors that are recognized or generate interest.",
+          "latency_s": 1.388
+        },
+        {
+          "id": 665,
+          "source": "他们往往比传统的团队成员拥有更多的自主权，因为他们的团队可能会针对不同的时区安排开会时间，而本地管理层可能不理解这一点。",
+          "reference": "They often have more autonomy than conventional team members as their teams may meet according to varying time zones which may not be understood by their local management.",
+          "hypothesis": "They often have more autonomy than traditional team members because their teams may schedule meeting times according to different time zones, while local management may not understand this.",
+          "latency_s": 1.871
+        },
+        {
+          "id": 677,
+          "source": "这为我们建立仿真模型提供了大量的信息和材料，有助于我们理解大脑运作的过程。",
+          "reference": "This provides us with a lot of information and material to build simulation models which help us to understand processes in our mind.",
+          "hypothesis": "This provides us with a lot of information and materials to build a simulation model, helping us understand the process of how the brain works.",
+          "latency_s": 1.864
+        },
+        {
+          "id": 692,
+          "source": "渥太华是加拿大的首都，富有魅力且采用使用双语制，亮点是一系列展示着加拿大过去和现在的艺术画廊和博物馆。",
+          "reference": "Ottawa is Canada's charming, bilingual capital and features an array of art galleries and museums that showcase Canada's past and present.",
+          "hypothesis": "Ottawa is the capital of Canada, charming and bilingual, with a highlight of a series of art galleries and museums showcasing Canada's past and present.",
+          "latency_s": 1.905
+        },
+        {
+          "id": 714,
+          "source": "尽管戈马还算安全，但前往戈马以外的任何地方都应该事先调查，以便了解北基伍省持续的战斗有没有缓和。",
+          "reference": "While Goma is reasonably safe, any visits outside of Goma should be researched to understand the state of the fighting that persists in the North Kivu province.",
+          "hypothesis": "Although Goma is still relatively safe, any travel outside of Goma should be preceded by thorough research to determine whether the ongoing fighting in North Kivu has eased.",
+          "latency_s": 2.273
+        },
+        {
+          "id": 718,
+          "source": "今天，虽然廷巴克图的名声使之成为旅游胜地，而且有一个机场，但这是一个贫穷的城镇。",
+          "reference": "Today, Timbuktu is an impoverished town, although its reputation makes it a tourist attraction, and it has an airport.",
+          "hypothesis": "Today, although Timbuktu's reputation has made it a tourist destination and it has an airport, it is still a poor town.",
+          "latency_s": 1.888
+        },
+        {
+          "id": 721,
+          "source": "这座城市与该国其他城市形成了鲜明对比，因为它更多的是阿拉伯风格，而不是非洲风格。",
+          "reference": "The city is in stark contrast to the rest of the country's cities, because it has more of an Arabic flair than of an African.",
+          "hypothesis": "This city stands in sharp contrast to other cities in the country, as it is more Arab in style than African.",
+          "latency_s": 1.584
+        },
+        {
+          "id": 733,
+          "source": "孙德尔本斯 (Sundarbans) 已经被联合国教科文组织宣布为世界遗产。印度境内的这部分森林被称为孙德尔本斯国家公园。",
+          "reference": "The Sundarbans has been declared a UNESCO World Heritage Site. The part of the forest within Indian territory is called Sundarbans National Park.",
+          "hypothesis": "Sundarbans has been declared a World Heritage Site by UNESCO. The part of this forest within India is known as the Sundarbans National Park.",
+          "latency_s": 2.147
+        },
+        {
+          "id": 747,
+          "source": "16 世纪的巴拉圭曾被称为“印第安大省”，是西班牙征服者与当地土著群体的相遇后的产物。",
+          "reference": "In the 16th century Paraguay, formerly called \"The Giant Province of the Indies\", was born as a result of the encounter of Spanish conquerors with the native indigenous groups.",
+          "hypothesis": "Paraguay in the 16th century was once called \"The Great Indian Province,\" a product of the encounter between Spanish conquerors and the local indigenous groups.",
+          "latency_s": 2.32
+        },
+        {
+          "id": 754,
+          "source": "福克兰群岛的官方货币是福克兰英镑，与英镑等值。",
+          "reference": "The official Falklands currency is the Falkland pound (FKP) whose value is set equivalent to that of one British pound (GBP).",
+          "hypothesis": "The official currency of the Falkland Islands is the Falkland pound, which is equivalent to the British pound.",
+          "latency_s": 2.037
+        },
+        {
+          "id": 758,
+          "source": "几乎不可能在岛外兑换福克兰群岛的货币，所以要在离岛之前兑换。",
+          "reference": "It is nearly impossible to exchange Falklands currency outside of the islands, so exchange money prior to leaving the islands.",
+          "hypothesis": "It is almost impossible to exchange Falkland Islands currency outside the island, so you should exchange it before leaving the island.",
+          "latency_s": 1.657
+        },
+        {
+          "id": 759,
+          "source": "蒙得维的亚位于赤道以南，因此北半球冬天的时候，那里是夏天，反之亦然。",
+          "reference": "Since Montevideo is south of the Equator, it is summer there when it's winter in the Northern Hemisphere and vice versa.",
+          "hypothesis": "Montevideo is located south of the equator, so when it is winter in the northern hemisphere, it is summer there, and vice versa.",
+          "latency_s": 2.032
+        },
+        {
+          "id": 777,
+          "source": "这些海滩有时挤满了度假的家庭，沿岸排列着各种各样的商店。 游泳很安全。",
+          "reference": "These are sometimes-crowded family beaches with a good range of shops lining the shore. Swimming is safe.",
+          "hypothesis": "These beaches are sometimes crowded with vacationing families, with various shops lined along the coast. Swimming is safe.",
+          "latency_s": 1.476
+        },
+        {
+          "id": 781,
+          "source": "对澳大利亚人来说，“馥芮白”咖啡的概念还比较陌生。小杯黑咖啡是“浓缩咖啡”，卡布奇诺的奶油（不是泡沫）堆得很高，而茶是不搭配牛奶的。",
+          "reference": "For Australians, the idea of 'flat white' coffee is foreign. A short black is 'espresso', cappuccino comes heaped high with cream (not froth), and tea is served without milk.",
+          "hypothesis": "To Australians, the concept of \"flat white\" coffee is still relatively unfamiliar. A small cup of black coffee is called \"espresso,\" and the cream (not foam) in a cappuccino is piled high, while tea is never served with milk.",
+          "latency_s": 3.422
+        },
+        {
+          "id": 791,
+          "source": "如果你需要时间考虑价格是否合适，或者去往目的地需要获取其他证件（如签证），他们可以为你保留预订。",
+          "reference": "They can also hold the reservation for you if you need time to think about the offer or procure other documents for your destination (e.g. visa).",
+          "hypothesis": "If you need time to consider whether the price is appropriate, or if you need to obtain other documents (such as a visa) to reach your destination, they can hold your reservation for you.",
+          "latency_s": 2.391
+        },
+        {
+          "id": 825,
+          "source": "传染性疾病本身，或那些能通过暴力杀伤人类的危险动物，通常不属于害虫之列。",
+          "reference": "Infectious diseases themselves, or dangerous animals that can injure or kill people by force, do not usually qualify as pests.",
+          "hypothesis": "Transmissible diseases themselves, or dangerous animals capable of harming humans through violence, are typically not classified as pests.",
+          "latency_s": 1.423
+        },
+        {
+          "id": 826,
+          "source": "免税购物是指在特定地点购买免税商品的机会。",
+          "reference": "Duty free shopping is the opportunity to buy goods exempted from taxes and excises at certain locations.",
+          "hypothesis": "Tax-free shopping refers to the opportunity to purchase tax-exempt goods in specific locations.",
+          "latency_s": 1.277
+        },
+        {
+          "id": 828,
+          "source": "在布法罗-匹兹堡高速公路上，行车条件最具挑战性的是波特马里恩 (Point Marion) 到费尔蒙特 (Fairmont) 之间的路段，这段路频繁地途径多处偏僻的边远地区。",
+          "reference": "The stretch between Point Marion and Fairmont presents the most challenging driving conditions on the Buffalo-Pittsburgh Highway, passing frequently through isolated backwoods terrain.",
+          "hypothesis": "The most challenging driving conditions on the Buffalo-Pittsburgh Turnpike are between Point Marion and Fairmont, where the road frequently passes through several remote and isolated areas.",
+          "latency_s": 2.141
+        },
+        {
+          "id": 849,
+          "source": "高山滑雪运动包括普通滑雪和雪板滑雪，是非常受欢迎的运动，在这项运动中，滑雪板或滑雪单板会固定在您的双脚上，从白雪覆盖的地形上滑下来。",
+          "reference": "Downhill snowsports, which include skiing and snowboarding, are popular sports involving sliding down snow-covered terrain with skis or a snowboard attached to your feet.",
+          "hypothesis": "Alpine skiing includes regular skiing and snowboarding, and it is a very popular sport. In this sport, the ski board or snowboard is fixed to your feet and slides down the snowy terrain.",
+          "latency_s": 2.52
+        },
+        {
+          "id": 854,
+          "source": "这项活动与阿尔卑斯式滑雪旅行或登山运动相关，但通常不会进行这两项活动。这两项活动要在陡峭的地形上进行，而且需要更硬的滑雪板和靴子。",
+          "reference": "It is related to but usually not involving alpine style ski touring or mountaineering, the latter ones done in steep terrain and requiring much stiffer skis and boots.",
+          "hypothesis": "This activity is related to alpine skiing or mountaineering, but usually does not involve these two activities. These two activities are conducted on steep terrain and require harder skis and boots.",
+          "latency_s": 2.491
+        },
+        {
+          "id": 867,
+          "source": "尽管“吉普赛”一词应用广泛，尤其在非罗姆人当中更为盛行，但它通常被认为是一种冒犯，因为它与负面的刻板印象和对罗姆人错误的看法相关联。",
+          "reference": "Though it is widely used, especially among non-Romani, the word \"Gypsy\" is often considered offensive because of its associations with negative stereotypes and inaccurate perceptions of Romani people.",
+          "hypothesis": "Although the term \"Gypsy\" is widely used, especially among non-Romani people, it is generally considered offensive because it is associated with negative stereotypes and misconceptions about the Romani people.",
+          "latency_s": 2.649
+        },
+        {
+          "id": 875,
+          "source": "狂风、冰雹、过量降水、山火，还有雷雨、龙卷风、水龙卷、气旋，都是极端天气的表现和影响。",
+          "reference": "High winds, hail, excessive precipitation, and wildfires are forms and effects of severe weather, as are thunderstorms, tornadoes, waterspouts, and cyclones.",
+          "hypothesis": "Strong winds, hail, excessive precipitation, wildfires, thunderstorms, tornadoes, waterspouts, and cyclones are all manifestations and impacts of extreme weather.",
+          "latency_s": 2.261
+        },
+        {
+          "id": 882,
+          "source": "关于野外生存的书籍和杂志很常见，但关于战区生存的出版物却很少。",
+          "reference": "Books and magazines dealing with wilderness survival are common, but publications dealing with war zones are few.",
+          "hypothesis": "Books and magazines about wilderness survival are common, but publications about survival in combat zones are rare.",
+          "latency_s": 1.228
+        },
+        {
+          "id": 887,
+          "source": "尚未做手术的变性者在通过扫描仪时，不得不透露自己的隐私，并且无法保障自身尊严。",
+          "reference": "Pre-operative transgender people should not expect to pass through the scanners with their privacy and dignity intact.",
+          "hypothesis": "Transgender individuals who have not undergone surgery have to reveal their privacy when going through the scanner and cannot ensure their dignity.",
+          "latency_s": 1.509
+        },
+        {
+          "id": 890,
+          "source": "大部分死亡都是因逆流而上、体力透支造成的，逆着水流游泳不太可能成功。",
+          "reference": "Most deaths happen as result of fatigue trying to swim back against the current, which may be impossible.",
+          "hypothesis": "Most deaths were caused by struggling against the current and exhaustion, and swimming upstream is unlikely to be successful.",
+          "latency_s": 1.382
+        },
+        {
+          "id": 906,
+          "source": "埃尔斯沃思地 (Ellsworth Land) 位于该半岛的南部，面朝别林斯高晋海 (Bellingshausen Sea)。",
+          "reference": "Ellsworth Land is the region south of the Peninsula, bounded by the Bellingshausen Sea.",
+          "hypothesis": "Ellsworth Land is located in the southern part of the peninsula, facing the Bellingshausen Sea.",
+          "latency_s": 1.316
+        },
+        {
+          "id": 913,
+          "source": "对于那些计划怎么度过空档年的人来说，游学成为越来越受欢迎的选择。",
+          "reference": "An increasingly more popular option for those planning a gap-year is to travel and learn.",
+          "hypothesis": "For those planning how to spend their gap year, studying abroad has become an increasingly popular choice.",
+          "latency_s": 1.456
+        },
+        {
+          "id": 944,
+          "source": "在宽阔的林荫大道、玻璃外墙的建筑和现代化的购物中心之间，散布着传统的红瓦屋顶、18 世纪的市场以及古老的清真寺和教堂，不过这座城市比传统的土耳其更有地中海欧洲的氛围。",
+          "reference": "The broad boulevards, glass-fronted buildings and modern shopping centers are dotted with traditional red-tiled roofs, the 18th century market, and old mosques and churches, although the city has an atmosphere more of Mediterranean Europe than traditional Turkey.",
+          "hypothesis": "Between the wide tree-lined avenues, glass-walled buildings, and modern shopping centers, traditional red-tiled roofs, 18th-century markets, ancient mosques and churches are scattered, though the city has a more Mediterranean European atmosphere than traditional Turkey.",
+          "latency_s": 3.059
+        },
+        {
+          "id": 959,
+          "source": "巴黎人是出了名的以自我中心、粗鲁和傲慢。",
+          "reference": "Parisians have a reputation for being egocentric, rude and arrogant.",
+          "hypothesis": "Parisians are well-known for being self-centered, rude, and arrogant.",
+          "latency_s": 1.219
+        },
+        {
+          "id": 966,
+          "source": "女性在参观修道院时必须穿裙子，裙子必须及膝，肩膀也要覆盖住。",
+          "reference": "While visiting the monasteries, women are required to wear skirts covering the knees and have their shoulders covered, too.",
+          "hypothesis": "Women must wear skirts that reach the knees and cover the shoulders when visiting monasteries.",
+          "latency_s": 1.205
+        },
+        {
+          "id": 976,
+          "source": "需要注意的主要字母是 c 和 g，因为它们的发音是根据以下元音变化的。",
+          "reference": "The main letters to watch out for are c and g, since their pronunciation varies based on the following vowel.",
+          "hypothesis": "The main letters to pay attention to are c and g, as their pronunciation varies according to the following vowels.",
+          "latency_s": 1.401
+        },
+        {
+          "id": 990,
+          "source": "通常来讲，新加坡是一个非常安全的地方，导航也很容易。到达后你几乎可以买到任何东西。",
+          "reference": "Singapore is generally an extremely safe place to be and very easy to navigate, and you can buy almost anything after arriving.",
+          "hypothesis": "Generally speaking, Singapore is a very safe place with easy navigation. After arriving, you can almost buy anything you need.",
+          "latency_s": 1.516
+        },
+        {
+          "id": 995,
+          "source": "例如，在卢瓦尔河谷和莱茵河谷参观城堡，或者乘游轮去游览多瑙河沿岸好玩的城市，或者沿伊利运河乘船游玩。",
+          "reference": "For example visiting castles in the Loire Valley, the Rhine valley or taking a cruise to interesting cites on the Danube or boating along the Erie Canal.",
+          "hypothesis": "For example, visit castles in the Loire Valley and Rhine Valley, take a cruise to explore the fun cities along the Danube River, or enjoy a boat tour along the Erie Canal.",
+          "latency_s": 2.462
+        },
+        {
+          "id": 998,
+          "source": "与这个节日有关的许多传统也被基督教国家的非信徒和世界各地的非基督徒所接受。",
+          "reference": "Many of the traditions surrounding the holiday have been adopted also by non-believers in Christian countries and non-Christians around the world.",
+          "hypothesis": "Many traditions associated with this festival have also been adopted by non-Christians in Christian countries and people around the world.",
+          "latency_s": 1.687
+        },
+        {
+          "id": 1002,
+          "source": "最初，动物们都是通过游泳、飞行或者漂浮的方式到达了这些岛屿。",
+          "reference": "All animals that originally arrived in the islands came here either by swimming, flying or floating.",
+          "hypothesis": "Initially, the animals arrived at these islands by swimming, flying, or floating.",
+          "latency_s": 1.318
+        }
+      ],
+      "comet": 0.8774,
+      "comet_scores_per_sample": [
+        0.9396,
+        0.8522,
+        0.9072,
+        0.8233,
+        0.8,
+        0.8552,
+        0.861,
+        0.8544,
+        0.9022,
+        0.9233,
+        0.8883,
+        0.906,
+        0.8951,
+        0.863,
+        0.943,
+        0.8823,
+        0.8803,
+        0.8859,
+        0.8767,
+        0.9148,
+        0.9095,
+        0.8952,
+        0.8591,
+        0.7909,
+        0.9421,
+        0.8975,
+        0.8717,
+        0.8745,
+        0.8897,
+        0.827,
+        0.8987,
+        0.8707,
+        0.8648,
+        0.8788,
+        0.8833,
+        0.8559,
+        0.9168,
+        0.9279,
+        0.8806,
+        0.869,
+        0.8643,
+        0.7617,
+        0.8023,
+        0.8944,
+        0.9087,
+        0.86,
+        0.8806,
+        0.9329,
+        0.8362,
+        0.8218,
+        0.8769,
+        0.8683,
+        0.9394,
+        0.8856,
+        0.7663,
+        0.8851,
+        0.8685,
+        0.913,
+        0.9216,
+        0.8576,
+        0.9305,
+        0.884,
+        0.9269,
+        0.8398,
+        0.9342,
+        0.8103,
+        0.9015,
+        0.8834,
+        0.8836,
+        0.8897,
+        0.9079,
+        0.8651,
+        0.9123,
+        0.8597,
+        0.8272,
+        0.9111,
+        0.9111,
+        0.8832,
+        0.8269,
+        0.8412,
+        0.8978,
+        0.84,
+        0.8866,
+        0.8252,
+        0.8204,
+        0.893,
+        0.9137,
+        0.9275,
+        0.8367,
+        0.8422,
+        0.871,
+        0.8988,
+        0.8376,
+        0.9339,
+        0.8518,
+        0.8797,
+        0.8867,
+        0.8757,
+        0.8902,
+        0.9036
+      ],
+      "comet_scored": 100
+    }
+  ],
+  "comet_model": "Unbabel/wmt22-comet-da"
+}
