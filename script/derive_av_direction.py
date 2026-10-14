@@ -123,6 +123,20 @@ def _same_groups(to_direction, want) -> bool:
     return (doc.get("ranges") or {}).get(to_direction) == want
 
 
+def _display(path):
+    """A printable path that never fails: relative inside the repo, absolute anywhere else.
+
+    `relative_to` raises ValueError off-repo. Both writers here print progress, and a formatter
+    that crashes mid-run leaves the derivation half-done while reporting an error unrelated to
+    the work -- the same defect `check()` had, found when a test drove the script against a
+    temporary tree.
+    """
+    try:
+        return path.relative_to(REPO)
+    except ValueError:
+        return path
+
+
 def check() -> int:
     """Report every derived artefact that is missing or out of date; write nothing."""
     bad = []
@@ -143,11 +157,7 @@ def check() -> int:
         # A moved or temporary ranges file still has to be reportable: relative_to raises
         # ValueError off-repo, which used to turn "found drift" into a crash inside the
         # reporter -- the worst place for a formatter to fail (a test hit exactly this).
-        try:
-            shown = path.relative_to(REPO)
-        except ValueError:
-            shown = path
-        print("DRIFT: {} is missing or does not match the derivation".format(shown),
+        print("DRIFT: {} is missing or does not match the derivation".format(_display(path)),
               file=sys.stderr)
     if bad:
         return 1
@@ -169,7 +179,7 @@ def write() -> int:
         print("av-{}: {} rows, columns swapped from av-{}".format(to_direction, rows,
                                                                  from_direction))
         print("{}: {} term rows reversed ({} dropped for a missing side)".format(
-            pack_path.relative_to(REPO), kept, dropped))
+            _display(pack_path), kept, dropped))
         want_groups = forward_groups(from_direction)
         if _same_groups(to_direction, want_groups):
             print("{}: groups for {} already match av-{}".format(

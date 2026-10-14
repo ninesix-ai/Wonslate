@@ -303,6 +303,23 @@ class RegistrationTests(unittest.TestCase):
         self.assertIn("test_diag_sidecar_batch.py", build_suites)
         self.assertIn("test_diag_sidecar_batch.py", ci_suites)
 
+    def test_every_suite_on_disk_is_registered_in_both_places(self):
+        """The pair can agree with each other and still omit a suite entirely.
+
+        AGENTS.md trap 2 is about a suite missing from BOTH lists -- a new `tests/test_*.py`
+        silently never runs locally or in CI, and comparing the two lists against each other
+        cannot see that, because they are consistently wrong. This asserts against the third
+        side (what is on disk), which is what makes "registered" a fact rather than an intention.
+        """
+        build_suites, ci_suites = self.suites()
+        on_disk = {p.name for p in (self.ROOT / "tests").glob("test_*.py")}
+        self.assertEqual(set(), on_disk - build_suites,
+                         "a suite exists but the local gate never runs it")
+        self.assertEqual(set(), on_disk - ci_suites,
+                         "a suite exists but CI never runs it")
+        self.assertEqual(set(), (build_suites | ci_suites) - on_disk,
+                         "a registered suite is missing from the tree")
+
 
 class GateModeTests(unittest.TestCase):
     """The `gate` mode compares settings honestly, on a fake that is not a measurement.

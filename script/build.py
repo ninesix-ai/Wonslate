@@ -191,6 +191,7 @@ def run_ffi_smoke() -> int:
                  "test_install_glossary_pack.py",
                  "test_score_comet.py",
                  "test_run_av_baseline.py",
+                 "test_derive_av_direction.py",
                  "test_xaml_lint.py",
                  "test_pre_commit_hook.py",
                  "test_glossary_hygiene.py",

@@ -520,6 +520,127 @@ class DeriveCheckRangesTests(unittest.TestCase):
             D.RANGES = orig
 
 
+class PublishedHeaderlessArtifactsTests(unittest.TestCase):
+    """Reads the committed evidence: what happens when a file name knows more than its header
+    does. One case uses a fixture, because no committed file exercises the fallback it pins.
+
+    Two published artifacts were written before the identity reached the header, so their
+    top level has no `direction`/`corpus_rows` -- but every run inside them does carry
+    `direction`. The runner must keep filing them under en->zh all the same, and must not let
+    the same file answer for zh->en. `test_bench_domain_av` has the corpus-side version of this
+    rule (CorpusIntegrityTests); this is the reading side, and it is the half that a rebuilt
+    artifact with an empty header would silently break.
+    """
+
+    ENGINE = "ollama-qwen"
+    ORPHAN = "en-zh"                  # direction whose 300-row artifact has no header identity
+    PAIR = "zh-en"                    # whose 300-row identity lives in the legacy-named file
+
+    def _doc(self, direction, domain):
+        import run_av_baseline
+        name = run_av_baseline.evidence_name(self.ENGINE, direction, domain, 300)
+        path = run_av_baseline.EVIDENCE_DIR / name
+        if not path.is_file():
+            self.skipTest("published artifact absent in this checkout: %s" % name)
+        return json.loads(path.read_text(encoding="utf-8")), name
+
+    def test_the_published_artifact_really_lacks_its_header_identity(self):
+        # Records the current state rather than idealising it: if someone ever fills the header
+        # in, this test says so, and the two rules below must still hold either way.
+        doc, name = self._doc(self.ORPHAN, "")
+        self.assertIsNone(doc.get("direction"),
+                          "%s now carries a header; update this test and the handoff note" % name)
+        for run in doc["runs"]:
+            self.assertEqual(self.ORPHAN, run.get("direction"),
+                             "a run inside the en->zh artifact claims another direction")
+
+    def test_the_runner_files_it_under_the_direction_of_its_name_and_records(self):
+        import run_av_baseline
+        by_size = run_av_baseline._arm_runs_by_size(self.ENGINE, "", self.ORPHAN)
+        self.assertIn(300, by_size,
+                      "the 300-row en->zh identity vanished from the report's view")
+        self.assertEqual([self.ORPHAN] * len(by_size[300]),
+                         [r.get("direction") for r in by_size[300]])
+
+    def test_a_lookup_never_answers_for_another_directions_rows(self):
+        # The invariant, stated for every engine and direction rather than for these two files:
+        # every run a per-direction lookup returns must either record this direction or record
+        # nothing at all (the pre-D51 legacy artifacts, which are the published zh->en runs by
+        # rule). A lookup that keys on size alone would let whichever file sorts last answer for
+        # both, and one that ignores the recorded direction would file the legacy baseline under
+        # whichever direction happens to ask -- both print one direction's numbers under the
+        # other's heading. Looping engines matters: for `ollama-qwen` a newer same-size artifact
+        # masks the leak, so only argos and madlad expose it.
+        import run_av_baseline
+        for engine in run_av_baseline.ENGINES:
+            for direction in run_av_baseline.DIRECTIONS:
+                for domain in ("", "av"):
+                    for rows, runs in run_av_baseline._arm_runs_by_size(
+                            engine, domain, direction).items():
+                        for run in runs:
+                            recorded = run.get("direction")
+                            if recorded is None:
+                                self.assertEqual(300, rows,
+                                                "%s/%s: an artifact with no recorded direction at "
+                                                "rows=%d must only be the legacy 300-row one"
+                                                % (engine, direction, rows))
+                                self.assertEqual(self.PAIR, direction)
+                            else:
+                                self.assertEqual(
+                                    direction, recorded,
+                                    "%s: %s's lookup returned a %s run" % (engine, direction,
+                                                                           recorded))
+
+    def test_the_pre_identity_legacy_artifact_belongs_to_its_published_direction(self):
+        # Measured, not assumed: the bench has always written `direction` into each run, so the
+        # legacy-named artifacts do carry it at run level (zh-en) even though their headers predate
+        # the identity. What has to hold is that they are filed under the direction they record and
+        # appear nowhere else -- the lookup keying on file name plus this field is what keeps the
+        # published 300-row baseline from being read as en->zh.
+        import run_av_baseline
+        legacy = run_av_baseline.EVIDENCE_DIR / ("av-domain-%s.json" % self.ENGINE)
+        if not legacy.is_file():
+            self.skipTest("no legacy artifact in this checkout")
+        doc = json.loads(legacy.read_text(encoding="utf-8"))
+        self.assertIsNone(doc.get("direction"), "this case is about headers that stayed silent")
+        for run in doc["runs"]:
+            self.assertEqual(self.PAIR, run.get("direction"))
+        base = run_av_baseline._arm_runs_by_size(self.ENGINE, "", self.PAIR)
+        self.assertIn(300, base, "the published zh->en baseline vanished from the report's view")
+        other = run_av_baseline._arm_runs_by_size(self.ENGINE, "", self.ORPHAN)
+        self.assertEqual([], [r for r in other.get(300, []) if r.get("engine") == self.ENGINE
+                              and r.get("direction") == self.PAIR],
+                         "a zh->en run leaked into the en->zh identity")
+
+    def test_an_artifact_recording_nothing_is_filed_under_the_documented_default(self):
+        # The rule under test is `_run_direction`'s fallback, and no committed file exercises it
+        # (the case above shows why: the bench has always written the field). So it is exercised
+        # on a fixture. An artifact that records no direction must land in exactly ONE identity --
+        # the published zh->en one, by written rule. A default that came out empty would file it
+        # nowhere and the baseline would silently disappear from the report; a fallback keyed on
+        # the loop variable would file it under both, which is D52 all over again.
+        import run_av_baseline
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        evidence = pathlib.Path(tmp.name)
+        run = _run(["a", "b"], scores=[0.7, 0.7], comet=0.7, engine="fakeeng")
+        run.pop("direction")
+        (evidence / "av-domain-fakeeng.json").write_text(
+            json.dumps({"corpus": "av-domain", "generated_at": "x", "runs": [run]},
+                       ensure_ascii=False), encoding="utf-8")
+        orig = run_av_baseline.EVIDENCE_DIR
+        run_av_baseline.EVIDENCE_DIR = evidence
+        self.addCleanup(setattr, run_av_baseline, "EVIDENCE_DIR", orig)
+        filed = {direction: [r.get("engine") for rows, runs in
+                             run_av_baseline._arm_runs_by_size("fakeeng", "", direction).items()
+                             for r in runs]
+                 for direction in run_av_baseline.DIRECTIONS}
+        self.assertEqual(["fakeeng"], filed["zh-en"],
+                         "a directionless artifact was not filed under the published default")
+        self.assertEqual([], filed["en-zh"],
+                         "a directionless artifact leaked into en->zh")
+
+
 class NmtTermContextWordingTests(unittest.TestCase):
     """The prose that says which engines consume a glossary must come from the table.
 
