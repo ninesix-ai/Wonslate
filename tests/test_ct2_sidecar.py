@@ -2087,7 +2087,7 @@ class _GatedBackend:
 class DecodeGateTests(unittest.TestCase):
     """Bound the number of decodes running at once, and say so instead of queueing.
 
-    Measured cause (D30 item 2, `docs/tech/16`): a request whose caller timed out keeps
+    Measured cause (D30 item 2, `docs/tech/20`): a request whose caller timed out keeps
     decoding -- 73% of a full decode is still spent after the caller is gone -- and every
     one of those abandoned decodes slows the work that is still wanted, up to 4.61x at five
     in flight. That is the positive feedback item 004 reported as a ladder; "restart per
@@ -2619,7 +2619,7 @@ class GoneClientTests(unittest.TestCase):
 
     def test_healthy_traffic_leaves_the_counters_and_the_endpoint_alone(self):
         # A control. Exposing these numbers on /health was an open decision and is now
-        # made (2026-10-11, `docs/tech/16` section 7), so the fields DO appear -- but a
+        # made (2026-10-11, `docs/tech/20` section 7), so the fields DO appear -- but a
         # normal request that the caller waited for must not spuriously inflate them: they
         # stay 0. That is the real guarantee here, and it is stronger than the old
         # assertNotIn, which only froze a now-superseded decision.

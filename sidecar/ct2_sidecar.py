@@ -338,7 +338,7 @@ class HealthSignals:
         """The two counts, as a dict so a caller cannot mix them up by position.
 
         Deliberately not part of `snapshot()`: publishing a service's own waste to every client
-        is an outstanding decision (`docs/tech/16` section 7), and a number that appears in a
+        is an outstanding decision (`docs/tech/20` section 7), and a number that appears in a
         contract by accident is hard to take back out.
         """
         with self._lock:
