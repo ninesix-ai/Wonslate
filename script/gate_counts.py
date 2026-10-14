@@ -24,11 +24,13 @@ if both sides counted the same way.
 Usage:
     python script/gate_counts.py parse <log>        # report and verify coverage
     python script/gate_counts.py run [--log NAME]   # run the gate, then report
+    python script/gate_counts.py ci <run-id>        # the same rule over a GitHub run's logs
 Exit code: 0 = every layer attributed and the gate says ALL DONE; 1 = a layer is missing, the
 verdict is absent, or a phase failed. Never 0 merely because nothing matched.
 """
 import argparse
 import datetime
+import json
 import os
 import pathlib
 import re
@@ -169,9 +171,133 @@ def totals_for_local(summary):
 totals_for_ci = totals_for_local
 
 
+def strip_gh_line(line):
+    """Drop GitHub's `<job>\\t<step>\\t<timestamp> ` prefix, and a BOM hiding inside it.
+
+    Every raw line of an Actions log carries it, which defeats the anchored patterns in parse().
+    That is not a cosmetic problem: an unmatched pattern reads as "this layer ran nothing", the
+    same resemblance that made a published figure unreadable once already. Only lines with the
+    full three-field prefix are touched, so a log the tool itself wrote stays as it is.
+    """
+    parts = line.split("\t")
+    rest = "\t".join(parts[2:]) if len(parts) >= 3 else line
+    rest = rest.lstrip("\ufeff")
+    stamp = re.match(r"^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s?", rest)
+    return rest[stamp.end():] if stamp else rest
+
+
 def parse_ci_log(text):
-    """A GitHub run log through the same parser; job headers simply produce no matches."""
-    return parse(text)
+    """One job's log body, through the same parser the local log uses."""
+    stripped = "\n".join(strip_gh_line(l) for l in text.split("\n"))
+    return parse(stripped)
+
+
+def classify_job(name):
+    """Which layer a job measures, or None when it measures none of them.
+
+    The coverage exclusion comes FIRST on purpose. Today's job is called `Rust coverage baseline`,
+    which the `rust engine` test below already skips -- so a check placed after it is dead code
+    that reads like a guard (a mutation probe proved exactly that). Placed before, it also holds
+    if the job is ever renamed to something containing `rust engine`, which is the case it exists
+    for: the coverage job re-measures one target a second way, and counting it as a layer would
+    move the total without a single new test case.
+    """
+    lowered = (name or "").lower()
+    if "coverage" in lowered:
+        return None
+    if "rust engine" in lowered:
+        return "rust"
+    if "python" in lowered or "ffi" in lowered:
+        return "python"
+    if "dotnet" in lowered or ".net" in lowered:
+        return "dotnet"
+    return None
+
+
+def summarize_ci(jobs):
+    """CI's figures under the ledger's own scope: ONE rust leg + python + dotnet.
+
+    The three legs run the same suite on three platforms, so summing them would invent a layer
+    twice over; and if they ever disagree that is a finding about the platforms, not something to
+    average away. A job whose log was never uploaded is named rather than dropped -- whole-run
+    log fetches fail outright in that case, which would otherwise read as "CI reported nothing".
+    """
+    legs, python, dotnet, unreadable, failing = [], 0, 0, [], []
+    seen = {"rust": False, "python": False, "dotnet": False}
+    for job in jobs:
+        layer = classify_job(job.get("name"))
+        if layer is None:
+            continue
+        conclusion = job.get("conclusion")
+        if conclusion not in ("success", "skipped"):
+            failing.append(job.get("name"))
+        if not job.get("log"):
+            unreadable.append(job.get("name"))
+            continue
+        seen[layer] = True
+        s = parse_ci_log(job["log"])
+        if layer == "rust":
+            legs.append((job["name"], s["layers"]["rust"]))
+        elif layer == "python":
+            python += s["layers"]["python"]
+        else:
+            dotnet += s["layers"]["dotnet"]
+
+    missing = []
+    rust = legs[0][1] if legs else 0
+    if not legs:
+        missing.append("rust")
+    elif len({v for _n, v in legs}) != 1:
+        missing.append("rust legs disagree: %s" % sorted(v for _n, v in legs))
+    if not seen["python"]:
+        missing.append("python")
+    if not seen["dotnet"]:
+        missing.append("dotnet")
+    if failing:
+        # On CI the verdict is the set of job conclusions: no log line says "ALL DONE", and a
+        # red job still prints every count it collected before failing.
+        missing.append("verdict")
+    # An unreadable job is reported rather than fatal on its own. Measured: `.NET WPF tests` is a
+    # zero-second job with no uploaded log at all, and treating that as "the run cannot be
+    # confirmed" would raise an alarm on every run for something that carries no tests -- an
+    # alarm people learn to ignore is worse than no alarm. It still costs its layer if that
+    # layer has no other readable source, which is what `seen` above decides.
+    for name in unreadable:
+        layer = classify_job(name)
+        if layer and not seen[layer]:
+            missing.append("job log unreadable for %s (%s layer)" % (name, layer))
+
+    layers = {"rust": rust, "python": python, "dotnet": dotnet}
+    return {"layers": layers, "rust_legs": [v for _n, v in legs], "unreadable": unreadable,
+            "non_success": failing, "total": rust + python + dotnet, "missing": missing}
+
+
+def fetch_ci_jobs(run, gh=None, repo=None):
+    """Per-job logs for a run, fetched tolerantly.
+
+    Asked job by job on purpose: one job in a real run (`.NET WPF tests`) had no uploaded log,
+    which makes a whole-run fetch fail entirely -- and "CI reported nothing" is the exact
+    resemblance this module exists to remove. `gh` is injectable so the shape is testable without
+    a network; it receives an argv list and returns (returncode, stdout, stderr).
+    """
+    gh = gh or _gh_cli
+    code, out, err = gh(["run", "view", run, "--json", "jobs"] + (["--repo", repo] if repo else []))
+    if code != 0:
+        raise RuntimeError("cannot list jobs for %s: %s" % (run, err.strip()[:200]))
+    jobs = json.loads(out)["jobs"]
+    for job in jobs:
+        code, log, err = gh(["run", "view", run, "--log", "--job", str(job["databaseId"])]
+                            + (["--repo", repo] if repo else []))
+        job["log"] = log if code == 0 else None
+        if code != 0:
+            job["log_error"] = err.strip()[:120]
+    return jobs
+
+
+def _gh_cli(args):
+    proc = subprocess.run(["gh"] + args, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=600)
+    return proc.returncode, proc.stdout, proc.stderr
 
 
 def plan_run(log=None):
@@ -228,10 +354,34 @@ def main(argv=None):
     p_run = sub.add_parser("run", help="run build.py --test with pinned output, then report")
     p_run.add_argument("--log", default=None,
                        help="path for the log; must not exist. Default: gate-<UTC>.log")
+    p_ci = sub.add_parser("ci", help="read a GitHub run's per-job logs under the same rule")
+    p_ci.add_argument("run")
+    p_ci.add_argument("--repo", default=None, help="owner/name; omit if gh is already scoped")
     args = parser.parse_args(argv)
 
     if args.mode == "parse":
         return report(parse(read_log(args.log)))
+
+    if args.mode == "ci":
+        try:
+            jobs = fetch_ci_jobs(args.run, repo=args.repo)
+        except (RuntimeError, OSError) as exc:
+            print("cannot read the run: %s" % exc)
+            return 2
+        r = summarize_ci(jobs)
+        print("rust legs (one is counted, they must agree): %s" % r["rust_legs"])
+        print("python %d  dotnet %d  TOTAL = %d" % (r["layers"]["python"],
+                                                    r["layers"]["dotnet"], r["total"]))
+        if r["unreadable"]:
+            print("jobs with no uploaded log: %s" % ", ".join(str(j) for j in r["unreadable"]))
+        if r["non_success"]:
+            print("non-success jobs: %s" % ", ".join(str(j) for j in r["non_success"]))
+        if r["missing"]:
+            print("PARSE COVERAGE FAILURE: %s -- do not quote these numbers"
+                  % "; ".join(r["missing"]))
+            return 1
+        print("verdict ok: every measured job succeeded or was skipped")
+        return 0
 
     plan = plan_run(args.log)
     with open(plan["log"], "w", encoding="utf-8", errors="replace") as sink:

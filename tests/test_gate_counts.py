@@ -275,6 +275,186 @@ class SharedRuleTests(unittest.TestCase):
         self.assertTrue(s["missing"])
 
 
+class CILogShapeTests(unittest.TestCase):
+    """GitHub's log format, taken from a live run rather than imagined.
+
+    Every line here is a real shape captured from run 38499436512: `<job>\t<step>\t<timestamp>Z
+    <text>`, a BOM sitting INSIDE the prefix of a job's first line, three separate rust legs, a
+    job whose log is simply not uploaded, and no `ALL DONE` line anywhere -- that verdict belongs
+    to build.py, while CI states it through job conclusions. Feeding such a log to the anchored
+    parser without stripping is the vacuous case: it matches nothing and reports an empty run.
+    """
+
+    JOB = "Python FFI smoke"
+    STEP = "Python smoke (FFI, sidecar e2e + unit, benchmark path + lint, hook guards)"
+
+    def prefixed(self, step, text, stamp="2026-10-14T02:09:19.8501895Z"):
+        return "%s\t%s\t%s %s" % (self.JOB, step, stamp, text)
+
+    def test_the_anchored_parser_sees_nothing_in_a_raw_github_log(self):
+        # Not a style complaint about the prefix: without stripping, every count comes back zero
+        # and a zero looks like a layer nobody ran. This case is what makes the stripper
+        # load-bearing rather than decorative.
+        raw = "\n".join([
+            self.prefixed(self.STEP, "Ran 111 tests in 41.803s"),
+            self.prefixed(self.STEP, "  passed 46 / failed 0 / skipped 0 / total 46"),
+            self.prefixed(self.STEP, "glossary hygiene gate: PASS (672 rows, 12 file(s))"),
+            ".NET WPF (build + test)\tRun .NET tests\t2026-10-14T02:10:21.3070645Z Passed!  "
+            "- Failed:     0, Passed:   188, Skipped:     0, Total:   188, Duration: 1 s",
+        ])
+        self.assertIn("Ran 111 tests", raw)                    # the text is there...
+        self.assertEqual([], gate_counts.parse(raw)["suites"])  # ...but the parser cannot see it
+
+    def test_a_prefixed_log_yields_the_same_counts_as_the_plain_one(self):
+        raw = "\n".join([
+            self.prefixed(self.STEP, "Ran 111 tests in 41.803s"),
+            self.prefixed(self.STEP, "  passed 46 / failed 0 / skipped 0 / total 46"),
+            self.prefixed(self.STEP, "glossary hygiene gate: PASS (672 rows, 12 file(s))"),
+            self.prefixed(self.STEP, "component license gate: PASS"),
+            self.prefixed(self.STEP, "source lint: PASS"),
+        ])
+        s = gate_counts.parse_ci_log(raw)
+        self.assertEqual(111, s["layers"]["python-unittest"])
+        self.assertEqual(46, s["layers"]["python-checker"])
+        self.assertEqual(3, s["layers"]["python-gate"])
+        self.assertEqual(160, s["layers"]["python"])
+
+    def test_a_bom_inside_the_prefix_does_not_reach_the_text(self):
+        # A real job's first line carries it between the step field and the timestamp. Left in
+        # place it glues itself to the first record, which is exactly how an anchored pattern
+        # silently misses.
+        line = "Python FFI smoke\tSet up job\t\ufeff2026-10-14T02:08:11.4468866Z Ran 3 tests"
+        s = gate_counts.parse_ci_log(line)
+        self.assertEqual(3, s["layers"]["python-unittest"])
+
+    def test_three_rust_legs_are_not_summed_into_the_total(self):
+        # The ledger's CI figure is one rust leg plus python plus dotnet: the legs are the same
+        # suite on three platforms, so adding them would invent a layer twice over.
+        jobs = [
+            {"name": "Rust engine (ubuntu-latest)", "conclusion": "success",
+             "log": "test result: ok. 305 passed; 0 failed"},
+            {"name": "Rust engine (macos-latest)", "conclusion": "success",
+             "log": "test result: ok. 305 passed; 0 failed"},
+            {"name": "Rust engine (windows-latest)", "conclusion": "success",
+             "log": "test result: ok. 305 passed; 0 failed"},
+            {"name": self.JOB, "conclusion": "success",
+             "log": self.prefixed(self.STEP, "Ran 322 tests in 41.8s")},
+            {"name": ".NET WPF (build + test)", "conclusion": "success",
+             "log": "Passed!  - Failed:     0, Passed:   188, Skipped:     0, Total:   188"},
+        ]
+        r = gate_counts.summarize_ci(jobs)
+        self.assertEqual(305, r["layers"]["rust"])         # one leg, not three
+        # This fixture's python job prints a single `Ran` line and no gate verdict, so its
+        # layer is 322 and nothing is added for gates -- written down because 325 was the
+        # first figure that came to mind, and it was the sum of two different logs.
+        self.assertEqual(322, r["layers"]["python"])
+        self.assertEqual(305 + 322 + 188, r["total"])
+        self.assertEqual(3, len(r["rust_legs"]))
+
+    def test_disagreeing_rust_legs_are_a_finding_not_an_average(self):
+        jobs = [
+            {"name": "Rust engine (ubuntu-latest)", "conclusion": "success",
+             "log": "test result: ok. 305 passed; 0 failed"},
+            {"name": "Rust engine (macos-latest)", "conclusion": "success",
+             "log": "test result: ok. 304 passed; 0 failed"},
+            {"name": self.JOB, "conclusion": "success", "log": "Ran 1 tests in 0.1s"},
+            {"name": ".NET WPF (build + test)", "conclusion": "success",
+             "log": "Passed!  - Failed: 0, Passed: 1, Skipped: 0, Total: 1"},
+        ]
+        r = gate_counts.summarize_ci(jobs)
+        self.assertIn("rust legs disagree", ", ".join(r["missing"]))
+
+    def test_a_job_whose_log_was_never_uploaded_is_reported_not_dropped(self):
+        # Measured: `.NET WPF tests` (job 115643256012) has no log on the run this fixture came
+        # from, and `gh run view --log` for the whole run then fails outright -- which would read
+        # as "CI reported nothing" unless the unreadable job is named.
+        r = gate_counts.summarize_ci([
+            {"name": "Rust engine (ubuntu-latest)", "conclusion": "success",
+             "log": "test result: ok. 305 passed"},
+            {"name": self.JOB, "conclusion": "success", "log": "Ran 1 tests in 0.1s"},
+            {"name": ".NET WPF tests", "conclusion": None, "log": None},
+        ])
+        self.assertIn(".NET WPF tests", ", ".join(r["unreadable"]))
+        self.assertIn("dotnet", ", ".join(r["missing"]))
+
+    def test_the_ci_verdict_comes_from_job_conclusions(self):
+        # No CI log contains build.py's ALL DONE line, so verdict must not be inferred from
+        # counts -- a red job still prints every per-layer number it got before failing.
+        ok = [{"name": "Rust engine (ubuntu-latest)", "conclusion": "success",
+               "log": "test result: ok. 2 passed"},
+              {"name": self.JOB, "conclusion": "success", "log": "Ran 1 tests in 0.1s"},
+              {"name": ".NET WPF (build + test)", "conclusion": "success",
+               "log": "Passed!  - Failed: 0, Passed: 1, Skipped: 0, Total: 1"}]
+        self.assertEqual([], [m for m in gate_counts.summarize_ci(ok)["missing"]
+                              if m.startswith("verdict")])
+        red = [dict(j) for j in ok]
+        red[1]["conclusion"] = "failure"
+        self.assertIn("verdict", ", ".join(gate_counts.summarize_ci(red)["missing"]))
+
+    def test_unmeasured_jobs_do_not_silently_become_a_zero_layer(self):
+        # The coverage job re-runs one rust target a second way and the license gate job audits
+        # manifests; counting either as a test layer would move the total without any new case.
+        # Both spellings of the coverage job are checked: today's name does not contain
+        # `rust engine` and is skipped by accident, so only the renamed shape proves the
+        # exclusion is placed where it can do its job.
+        self.assertIsNone(gate_counts.classify_job("Rust coverage baseline"))
+        self.assertIsNone(gate_counts.classify_job("Rust engine coverage baseline"))
+        self.assertIsNone(gate_counts.classify_job("License compliance gate"))
+        r = gate_counts.summarize_ci([
+            {"name": "Rust coverage baseline", "conclusion": "success",
+             "log": "test result: ok. 305 passed"},
+            {"name": "Rust engine coverage baseline", "conclusion": "success",
+             "log": "test result: ok. 305 passed"},
+            {"name": "License compliance gate", "conclusion": "success", "log": "ok"},
+            {"name": self.JOB, "conclusion": "success", "log": "Ran 1 tests in 0.1s"},
+            {"name": ".NET WPF (build + test)", "conclusion": "success",
+             "log": "Passed!  - Failed: 0, Passed: 1, Skipped: 0, Total: 1"},
+        ])
+        self.assertEqual(0, r["layers"]["rust"])
+        self.assertIn("rust", ", ".join(r["missing"]))
+
+
+class CiFetchTests(unittest.TestCase):
+    """The fetch seam is injectable, so the tolerant-per-job shape is testable offline."""
+
+    JOBS_JSON = '{"jobs": [' \
+        '{"databaseId": 1, "name": "Python FFI smoke", "conclusion": "success"},' \
+        '{"databaseId": 2, "name": ".NET WPF tests", "conclusion": "success"}]}'
+
+    def fake_gh(self, fail_id):
+        """Fail exactly one job's log fetch -- the shape a real run showed.
+
+        Keyed on the job id rather than on the `--job` flag, which is present for every job and
+        would make this fake fail all of them (the first version did, and the assertion below is
+        what catches that: it names which log came back)."""
+        def gh(args):
+            if "--json" in args:
+                return 0, CiFetchTests.JOBS_JSON, ""
+            if fail_id in args:
+                return 1, "", "log not found: %s" % fail_id
+            return 0, self.prefixed_body(), ""
+        return gh
+
+    @staticmethod
+    def prefixed_body():
+        return "Python FFI smoke\tRun tests\t2026-10-14T02:09:19.8501895Z Ran 7 tests in 1s\n"
+
+    def test_a_job_without_an_uploaded_log_is_kept_and_named(self):
+        jobs = gate_counts.fetch_ci_jobs("42", gh=self.fake_gh("2"), repo="o/r")
+        # Both jobs survive the fetch; the unreadable one (job 2) comes back with log=None so the
+        # summary can say which layer it therefore could not measure. Order follows the jobs list.
+        self.assertEqual([self.prefixed_body(), None], [j["log"] for j in jobs])
+        r = gate_counts.summarize_ci(jobs)
+        self.assertIn(".NET WPF tests", r["unreadable"])
+        self.assertIn("dotnet", ", ".join(r["missing"]))
+
+    def test_a_failed_jobs_listing_is_an_error_not_an_empty_run(self):
+        def gh(args):
+            return 1, "", "HTTP 401"
+        with self.assertRaises(RuntimeError):
+            gate_counts.fetch_ci_jobs("42", gh=gh)
+
+
 class RegistrationTests(unittest.TestCase):
     """The tool exists only if something is obliged to keep it working."""
 
