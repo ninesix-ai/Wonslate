@@ -34,6 +34,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Self-sign output so local smokes repeat | `sign.bat` |
 | Measure what a long batch actually costs (D24/D30 probes; `--help` for the eight modes; `reload` prices a self-reset, `abandon` prices work nobody waits for, `gate` picks the decode-slot limit, `queue` sizes the queue a batch of waiters needs, and `--corpus` drives a run with distinct sentences reported pass against pass) | `python script/diag_sidecar_batch.py load --corpus script/eval-data/av-zh-en --n 900 --out-json run.json` |
 | Check an output for invisible characters, on either or both engine tiers (D42) | `python script/diag_invisible_chars.py both` |
+| Quote test counts from a gate log. It refuses to report while any layer is unattributed, and `run` pins the CLI's output language so the log stays readable (a localised or UTF-16 log makes every pattern miss, which reads like a layer that never ran) | `python script/gate_counts.py parse <log>` / `... run [--log NAME]` |
 
 ## 3. Traps that have already cost someone a session
 
