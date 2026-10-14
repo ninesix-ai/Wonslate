@@ -190,7 +190,7 @@ def run_ffi_smoke() -> int:
                  "test_bench_domain_av.py", "test_domain_pack_loader.py",
                  "test_install_glossary_pack.py",
                  "test_score_comet.py",
-                 "test_run_av_baseline.py",
+                 "test_run_av_baseline.py", "test_evidence_identity.py",
                  "test_derive_av_direction.py",
                  "test_gate_counts.py",
                  "test_xaml_lint.py",

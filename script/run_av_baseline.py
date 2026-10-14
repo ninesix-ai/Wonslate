@@ -65,7 +65,8 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 # bench call, so a second copy of that rule here would eventually disagree with the writer --
 # and disagree in the direction of aborting a multi-hour matrix run mid-way.
 sys.path.insert(0, str(REPO / "script"))
-from bench_domain_av import evidence_name, _ffi_id  # noqa: E402
+from bench_domain_av import (evidence_name, ollama_model_identity,  # noqa: E402
+                             DEFAULT_OLLAMA_MODEL, _ffi_id)
 EVIDENCE_DIR = REPO / "docs" / "evidence"
 REPORT_PATH = REPO / "docs" / "av-domain-benchmark.md"
 RANGES_PATH = REPO / "script" / "av_domain_ranges.json"
@@ -95,7 +96,7 @@ SIDECAR_PORTS = {"argos": 11435, "madlad": 11436}
 # "madlad" for the MADLAD checkpoint. The mapping keeps one source of truth.
 SIDECAR_BACKENDS = {"argos": "ct2", "madlad": "madlad"}
 OLLAMA_URL = "http://127.0.0.1:11434/api/tags"
-OLLAMA_MODEL = "qwen3:8b"
+OLLAMA_MODEL = DEFAULT_OLLAMA_MODEL   # the shipped default; an arm may dial another
 DIRECTIONS = ("zh-en", "en-zh")   # en->zh was derived under S12 T2; both corpora are in the repo
 ENGINES = ("argos", "madlad", "ollama-qwen")
 # Which engines can act on a glossary term context at all, keyed by the FFI id the Rust side
@@ -159,7 +160,7 @@ def preflight(args) -> list[str]:
         problems.append(
             f"Ollama not reachable at {OLLAMA_URL}. Start it with "
             f"`ollama serve` in a separate window, and make sure "
-            f"`ollama pull {OLLAMA_MODEL}` has finished.")
+            f"`ollama pull {ollama_model_identity()}` has finished.")
     return problems
 
 
@@ -234,7 +235,11 @@ def run_bench(engine: str, direction: str, domain: str, n: int | None,
     if av_root:
         cmd += ["--av-root", str(av_root)]
     rows = corpus_rows or _corpus_rows(direction, n, av_root)
-    expected = EVIDENCE_DIR / evidence_name(engine, direction, domain, rows)
+    # The expected path has to be the path the writer will actually choose, and the model
+    # is now part of that identity: with the env pointing at a candidate, preflight would
+    # otherwise watch for the baseline's file and abort on "not written" after a good run.
+    model = ollama_model_identity() if _ffi_id(engine) == "ollama" else None
+    expected = EVIDENCE_DIR / evidence_name(engine, direction, domain, rows, model=model)
     _hr(f"Bench: engine={engine} dir={direction} domain={domain or '(unscoped)'}"
         + (f" n={n}" if n else "") + f" rows={rows}")
     subprocess.check_call(cmd)

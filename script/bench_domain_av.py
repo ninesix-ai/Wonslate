@@ -399,7 +399,46 @@ def _run_one(engine_id, direction, src, tgt, domain=""):
     return hypotheses, metrics, failures
 
 
-def evidence_name(engine_id, direction, domain="", n=None):
+# The AI leg's model is chosen by the environment, and the chain below is the one
+# translator-engine/src/config.rs resolves (LT_* first, then WONSLATE_*, then the bare
+# name). It is listed here rather than imported because a Python harness cannot read the
+# Rust config; test_evidence_identity.py is the drift guard that fails if the two lists
+# ever disagree, and ModelIdentityResolutionTests pins both sides of every key.
+OLLAMA_MODEL_KEYS = ("LT_OLLAMA_MODEL", "WONSLATE_OLLAMA_MODEL", "OLLAMA_MODEL")
+DEFAULT_OLLAMA_MODEL = "qwen3:8b"
+
+
+def ollama_model_identity(lookup=None):
+    """Which model the AI leg will actually dial, from an injectable lookup.
+
+    Tests pass a dict's ``get`` so neither direction of the chain depends on the host
+    environment (AGENTS section 3.12); production passes nothing and gets ``os.environ``.
+    A blank or whitespace-only value counts as unset, matching ``resolve_av_root``.
+    """
+    lookup = os.environ.get if lookup is None else lookup
+    for key in OLLAMA_MODEL_KEYS:
+        value = lookup(key)
+        if value and value.strip():
+            return value.strip()
+    return DEFAULT_OLLAMA_MODEL
+
+
+def _model_tag(model):
+    """File-system-safe tag for a model name, or "" when it is the shipped default.
+
+    The default deliberately gets no tag: every published artefact was written under a
+    name without one, and renaming the baseline would strand them out of the report --
+    the same reason ``n=None`` keeps the old shape. Only a *different* model needs a file
+    of its own, because otherwise a candidate run replaces the published qwen3:8b
+    evidence in place and silently.
+    """
+    if not model or model == DEFAULT_OLLAMA_MODEL:
+        return ""
+    tag = re.sub(r"[^0-9A-Za-z._-]+", "-", model).strip("-.")
+    return "-{}".format(tag) if tag else ""
+
+
+def evidence_name(engine_id, direction, domain="", n=None, model=None):
     """File name for one arm's evidence -- the identity of the measurement.
 
     Engine plus domain was enough while there was exactly one corpus and one direction.
@@ -409,17 +448,22 @@ def evidence_name(engine_id, direction, domain="", n=None):
     name; two repeats of the *same* measurement still share one file, because pairing
     them is what produces the report's noise floor.
 
-    `n=None` (the corpus's full length) keeps the older published artefacts readable: the
+    ``n=None`` (the corpus's full length) keeps the older published artefacts readable: the
     300-row runs recorded before this change carry no size marker, and inventing one now
     would strand them out of the report.
+
+    ``model`` extends the same rule to the AI leg: the checkpoint behind ``ollama-qwen`` is
+    selectable through the environment, so it is part of the identity. It is ignored for
+    the CT2 legs, whose engine name already names the only model they can load.
     """
     tag = "-{}".format(domain) if domain else ""
     size = "" if n is None else "-n{}".format(n)
-    return "av-domain-{}{}-{}{}.json".format(engine_id, tag, direction, size)
+    model_tag = _model_tag(model) if engine_id == "ollama-qwen" else ""
+    return "av-domain-{}{}-{}{}{}.json".format(engine_id, tag, direction, size, model_tag)
 
 
 def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, domain="",
-                    failures=None, run_index=1, adherence=None):
+                    failures=None, run_index=1, adherence=None, model=None):
     """Persist one engine's run so a later COMET pass or diff report can
     pick it up. Layout mirrors docs/evidence/flores-benchmark-*.json.
 
@@ -436,7 +480,7 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
     import json
 
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    out = EVIDENCE_DIR / evidence_name(engine_id, direction, domain, len(src))
+    out = EVIDENCE_DIR / evidence_name(engine_id, direction, domain, len(src), model=model)
     # An identity this file does not carry cannot be recovered from its name alone once
     # legacy names coexist, and a report that guesses has been wrong before: state it.
     identity = {"direction": direction, "corpus_rows": len(src)}
@@ -445,6 +489,10 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
         "engine": engine_id,
         "direction": direction,
         "domain": domain,
+        # Which checkpoint answered an AI-leg run. The engine id says "ollama-qwen" for
+        # any model dialed through it, so without this field a reader holding the JSON
+        # could not tell the baseline from a candidate even though the file name can.
+        "ollama_model": model if engine_id == "ollama-qwen" else None,
         "requested": n if n is not None else len(src),
         "evaluated": answered,
         "scored": answered,
@@ -498,6 +546,9 @@ def main(argv=None):
         src, tgt = src[:args.n], tgt[:args.n]
     hypotheses, metrics, failures = _run_one(args.engine, args.direction, src, tgt,
                                     args.domain)
+    # Resolve the model the same way the product will, so the file name and the file's own
+    # header record which model answered rather than assuming the shipped default.
+    model = ollama_model_identity() if _ffi_id(args.engine) == "ollama" else None
     samples = [{"id": i, "source": s, "hypothesis": h}
                for i, (s, h) in enumerate(zip(src, hypotheses))]
     pairs = load_pack_pairs(args.direction, args.glossary_pack)
@@ -505,7 +556,7 @@ def main(argv=None):
     out = _write_evidence(args.engine, args.direction, src, tgt,
                           hypotheses, metrics, args.n, args.domain,
                           failures=failures, run_index=args.run_index,
-                          adherence=adherence)
+                          adherence=adherence, model=model)
     print("wrote", out)
     if failures:
         # Loud on purpose (D31): these rows are out of the denominators, so this run
