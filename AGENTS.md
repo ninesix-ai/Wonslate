@@ -71,7 +71,20 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
    through `tt_glossary_import_pack` and never passes `distill/term_extractor.rs`, so
    a mis-labelled row can still enter the store and the extractor's check will not
    stop it. The gate that does catch it is `tests/test_glossary_hygiene.py` (D20).
-   Keep it registered.
+   Keep it registered. Judging by *script family* is not enough inside one family: zh,
+   ja, ko and yue all resolve to `cjk`, and Han, kana and hangul share that class, so a
+   Chinese-authored pack declaring `ja` satisfied every family check (D63, measured:
+   the gate printed PASS for exactly such a file). The gate now also bans a sibling's
+   exclusive script per row and requires a pack that declares its own pair to show that
+   language's script somewhere -- document-level, never per row, because six of the
+   fourteen shipped Japanese rows are legitimate kanji-only nouns. `lang.rs` keeps its
+   family-only predicate on purpose (Difference 2 in the gate's docstring): at runtime
+   the question is "did it write the target language at all", and demanding kana would
+   penalise those same kanji-only translations. When adding a language, note that an
+   unclassified code is *exempt*, not merely unchecked -- a shipped pack must declare
+   only codes the table knows, which `tests/test_glossary_hygiene_rules.py` enforces,
+   and the gate's Latin class is deliberately wider than `is_ascii_alphabetic` so
+   diacritic-only words (Polish has some) are not read as a wrong script.
 5. **A SKIP is not a pass.** When Windows application control blocks the freshly built
    native library, `script/build.py` reports the suites that cross the FFI boundary as
    SKIP instead of FAIL, because the block is an environment condition and not a
