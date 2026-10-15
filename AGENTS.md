@@ -35,6 +35,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Measure what a long batch actually costs (D24/D30 probes; `--help` for the eight modes; `reload` prices a self-reset, `abandon` prices work nobody waits for, `gate` picks the decode-slot limit, `queue` sizes the queue a batch of waiters needs, and `--corpus` drives a run with distinct sentences reported pass against pass) | `python script/diag_sidecar_batch.py load --corpus script/eval-data/av-zh-en --n 900 --out-json run.json` |
 | Check an output for invisible characters, on either or both engine tiers (D42) | `python script/diag_invisible_chars.py both` |
 | Quote test counts from a gate log. It refuses to report while any layer is unattributed, and `run` pins the CLI's output language so the log stays readable (a localised or UTF-16 log makes every pattern miss, which reads like a layer that never ran) | `python script/gate_counts.py parse <log>` / `... run [--log NAME]` |
+| Keep every name-based decision honest about the value behind the name (D68 privacy whitelist vs `*_URL`; D69 `REGISTERED_DEPS` vs the bytes a downloader actually fetched). `--self-test` plants one violation per rule class and requires all of them to fire, so a rule that stopped matching cannot report a clean run | `python script/check_name_guards.py` [--self-test] |
 
 ## 3. Traps that have already cost someone a session
 

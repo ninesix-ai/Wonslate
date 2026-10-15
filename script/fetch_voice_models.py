@@ -36,15 +36,53 @@ import pathlib
 import sys
 import tarfile
 import time
+import urllib.error
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "script"))
 
 from sidecar.ct2_sidecar import default_model_dir  # noqa: E402  (data-dir single source of truth)
+import net_guard                                   # noqa: E402  (the fetch policy)
 
 RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 USER_AGENT = "wonslate-fetch-voice/1.0"
+# Release assets are served from github.com and redirected to a per-upload host under
+# objects.githubusercontent.com, so the suffix is what makes redirects land; both are
+# re-checked hop by hop by net_guard rather than trusted once (defect D69: this script used
+# to be a bare urlopen with neither host nor integrity checks).
+ALLOWED_HOSTS = frozenset({"github.com", "objects.githubusercontent.com"})
+ALLOWED_HOST_SUFFIXES = (".githubusercontent.com",)
+
+# Declared for script/check_name_guards.py. sense-voice sits in UNPINNED_EXCEPTIONS
+# because the release API returned a null digest for that 1.0 GB asset and it is not on
+# this machine to baseline from -- so it is written down as a known gap instead of looking
+# covered. `--only asr` therefore fails closed with UnpinnedAsset unless --allow-unpinned
+# is passed, and that flag prints which asset it is skipping.
+DOWNLOADS = ("silero_vad.onnx",
+             "kokoro-int8-multi-lang-v1_1.tar.bz2",
+             "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2")
+UNPINNED_EXCEPTIONS = ("sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2",)
+
+# Pins with the provenance of each value stated. As of 2026-10-15 the GitHub release API
+# publishes a sha256 `digest` per asset, and:
+#   silero_vad.onnx -- upstream digest, **confirmed against the copy on this machine**;
+#   kokoro-int8-multi-lang-v1_1.tar.bz2 -- upstream digest. Not re-verifiable locally,
+#     because only the unpacked tree is kept here and the archive is gone: the pin still
+#     guards every future fetch, and says so rather than pretending it was checked now.
+# sherpa-onnx-sense-voice-...tar.bz2 is deliberately **absent**: the API returned a null
+# digest for that 1.0 GB asset and it is not on this machine to baseline from. An empty
+# entry would read as "checked", which is the opposite of what happened; fetching it
+# therefore requires --allow-unpinned, and that flag prints which asset is unpinned.
+EXPECTED_SHA256 = {
+    "silero_vad.onnx": (
+        "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+        "GitHub release asset digest 2026-10-15, matched against the local copy"),
+    "kokoro-int8-multi-lang-v1_1.tar.bz2": (
+        "a1e94694776049035c4f2c6529f003aaece993c76aae9a78995831c3c4dcafc6",
+        "GitHub release asset digest 2026-10-15 (archive not on disk to re-verify)"),
+}
 
 # name -> (kind, url, archive?, required files once unpacked)
 COMPONENTS = {
@@ -75,28 +113,39 @@ def say(tag, msg=""):
     print("[{}] {}".format(tag, msg).rstrip(), flush=True)
 
 
-def download(url, dest, attempts=4, chunk=1 << 20):
-    """Download with resumable-ish retries; reports progress every 50 MB."""
+def download(url, dest, attempts=4, allow_unpinned=False, chunk=1 << 20):
+    """Fetch one asset through the shared policy, verifying its pinned digest.
+
+    Policy refusals stop the retry loop at once -- a missing pin or a checksum mismatch
+    is not something another four attempts at the same URL can resolve.
+    """
+    name = pathlib.Path(dest).name
+    pin = EXPECTED_SHA256.get(name)
     for i in range(1, attempts + 1):
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=300) as response, open(dest, "wb") as out:
-                total, mark = 0, 0
-                while True:
-                    block = response.read(chunk)
-                    if not block:
-                        break
-                    out.write(block)
-                    total += len(block)
-                    if total - mark >= 50 << 20:
-                        mark = total
-                        say("fetch", "  {} {:.0f} MB".format(dest.name, total / 1e6))
-            say("fetch", "{} ({:.1f} MB)".format(dest.name, total / 1e6))
+            digest, size = net_guard.fetch(
+                url, dest, ALLOWED_HOSTS, ALLOWED_HOST_SUFFIXES,
+                expected_sha256=pin[0] if pin else None,
+                digest_source=pin[1] if pin else None,
+                allow_unpinned=allow_unpinned, user_agent=USER_AGENT,
+                timeout=300, chunk=chunk, report=say, progress_every=50 << 20)
+            say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
+                name, size / 1e6, digest[:16],
+                "" if pin else " UNPINNED (--allow-unpinned)"))
             return True
-        except Exception as exc:                      # noqa: BLE001 - transient network errors
-            say("fetch", "attempt {}/{} failed: {}: {}".format(
-                i, attempts, type(exc).__name__, exc))
-            time.sleep(5)
+        except net_guard.UnpinnedAsset as exc:
+            say("fetch", "REFUSED: {}".format(exc))
+            return False
+        except net_guard.GuardError as exc:
+            text = str(exc)
+            if ("checksum mismatch" in text or "not allowlisted" in text
+                    or "disallowed" in text or "not https" in text or "non-public" in text):
+                say("fetch", "REFUSED: {}".format(exc))
+                return False
+            say("fetch", "attempt {}/{} failed: {}".format(i, attempts, exc))
+        except (urllib.error.URLError, OSError) as exc:
+            say("fetch", "attempt {}/{} failed: {}".format(i, attempts, exc))
+        time.sleep(5)
     return False
 
 
@@ -133,23 +182,51 @@ def verify(target, required):
     return None
 
 
-def fetch(key, dest_root, force):
+def fetch(key, dest_root, force, allow_unpinned=False):
     folder, url, is_archive, required = COMPONENTS[key]
     target = dest_root / folder
     target.mkdir(parents=True, exist_ok=True)
+    _before, name = url.rsplit("/", 1)
+    archive = dest_root / name
+    pin = EXPECTED_SHA256.get(name)
 
     if verify(target, required) is None and not force:
-        say("cached", "{} -> {}".format(key, target))
+        # Be exact about what a cache hit proves. The layout is always checked; the digest
+        # is re-checked only when the archive is still on disk -- for an archive component
+        # the unpacked tree is what gets kept, so there is nothing left to hash. Printing
+        # "cached" over that difference would claim a verification that did not happen.
+        extra = "; cached archive digest re-verified"
+        if archive.is_file() and pin:
+            got = net_guard.sha256_of(archive)
+            if got != pin[0]:
+                say("verify", "FAIL {} cached archive is sha256 {}, pin says {}".format(
+                    key, got[:16], pin[0][:16]))
+                return False
+        elif pin:
+            extra = "; digest was enforced at download time only (archive no longer present)"
+        else:
+            extra = "; UNPINNED asset, nothing to verify"
+        say("cached", "{} -> {} (layout verified{})".format(key, target, extra))
         return True
 
-    _, name = url.rsplit("/", 1)
-    archive = dest_root / name
     if force or not (archive.is_file() and archive.stat().st_size > 100_000):
         say("fetch", "{} <- {}".format(key, url))
-        if not download(url, archive):
+        if not download(url, archive, allow_unpinned=allow_unpinned):
             return False
+    elif pin:
+        # A file of the right size is not the right file: check it before trusting it.
+        got = net_guard.sha256_of(archive)
+        if got != pin[0]:
+            say("fetch", "{} on disk is sha256 {}, pin says {} -- re-fetching".format(
+                name, got[:16], pin[0][:16]))
+            if not download(url, archive, allow_unpinned=allow_unpinned):
+                return False
+        else:
+            say("fetch", "{} cached and digest-verified ({:.1f} MB)".format(
+                name, archive.stat().st_size / 1e6))
     else:
-        say("fetch", "{} cached ({:.1f} MB)".format(name, archive.stat().st_size / 1e6))
+        say("fetch", "{} cached ({:.1f} MB) but UNPINNED: no digest to check it against".format(
+            name, archive.stat().st_size / 1e6))
 
     if is_archive:
         if force:
@@ -175,6 +252,9 @@ def main(argv=None):
     parser.add_argument("--dest", default=None,
                         help="target root (default: <data_dir>/models)")
     parser.add_argument("--force", action="store_true", help="re-download and re-unpack")
+    parser.add_argument("--allow-unpinned", action="store_true",
+                        help="fetch an asset even when no sha256 is pinned for it "
+                             "(prints which asset is unpinned; default refuses)")
     args = parser.parse_args(argv)
 
     only = [k.strip() for k in args.only.split(",") if k.strip()]
@@ -190,7 +270,8 @@ def main(argv=None):
     dest_root.mkdir(parents=True, exist_ok=True)
     say("*", "target root: {}".format(dest_root))
 
-    failed = [k for k in only if not fetch(k, dest_root, args.force)]
+    failed = [k for k in only
+              if not fetch(k, dest_root, args.force, args.allow_unpinned)]
     print("", flush=True)
     if failed:
         say("*", "FAILED: {}".format(", ".join(failed)))

@@ -98,6 +98,28 @@ ollama pull qwen3:8b
 
 模型落盘位置（默认）：`<data_dir>/models/argos`、`<data_dir>/models/madlad`。换 7B：把 CT2 转换目录（含 `model.bin` + `spiece.model`）放到任意路径，启动 sidecar 时 `--model-dir` 指过去。
 
+### 5.1 来源与完整性策略（2026-10-15 起）
+
+三个下载脚本（`fetch_argos_models.py` / `fetch_madlad_model.py` / `fetch_voice_models.py`）现在走**同一条**策略（`script/net_guard.py`）：
+
+| 规则 | 内容 |
+|---|---|
+| 传输 | 只允许 `https`；**每一次重定向重新判定**（不是一次信任） |
+| 主机 | 各脚本自带白名单：HuggingFace 及 `*.hf.co` CDN、`argos-net.com`、`github.com` 与 `*.githubusercontent.com`。后缀按**标签边界**匹配，所以 `huggingface.co.evil.example` 这类拼接不会被误放行 |
+| 地址 | 连接前解析域名并拒绝私有／回环／链路本地／保留地址（这个工具可以用 `$HF_ENDPOINT` 指向镜像，因此需要防 SSRF） |
+| 完整性 | 每个文件比对**钉住的 sha256**，不匹配就删除临时文件并报错；**已缓存的文件同样复核**（缓存分支是正常运行的快路径，只比大小的话会接受一个同长度的替换件） |
+| 无钉值 | **默认拒绝**并说明原因；`--allow-unpinned` 可显式放行，且会把“这个资产未钉值”打印出来 |
+
+钉值的**出处**分两级，脚本里逐条标注（一个没有来源的哈希是主张，不是证据）：
+
+- **上游权威**：MADLAD 的 `model.bin`、`spiece.model` 取 HuggingFace LFS 公布的 sha256，并已和本机现有副本**逐字节核对一致**；语音侧 `silero_vad.onnx`、`kokoro-int8-multi-lang-v1_1.tar.bz2` 取 GitHub release 的 `digest` 字段（前者同样与本机一致）。
+- **本地基线**：Argos 的官方 index **完全不提供校验和**（2026-10-15 实测其字段只有 `argos_version`/`code`/`from_*`/`to_*`/`links`/`package_version`），所以这两个包的哈希是从在用副本算出来的——它们能防**今后的漂移与替换**，不声称能证明**当初字节的来源**。MADLAD 的两个非 LFS 小文件同理（上游只给 git blob 的 sha1，不是同一函数，无法对照）。
+- **有意留空**：`sherpa-onnx-sense-voice-…tar.bz2`（约 1.0 GB）上游 `digest` 为空，本机也没有可作基线的副本，因此不填——取它需要 `--allow-unpinned`。写一个空值会读成“已校验”，恰好相反。
+
+Argos 还有一层：包的真实下载地址来自那份 index 的 `links` 数组（旧代码取 `links[0]`，而实测 100 条中有 25 条是 `ipfs://`）。现在**先按白名单筛再取**，被跳过的条目会打印出来，不静默丢弃；因此一份被替换的 index 只能造成拒绝，不能造成投毒——被钉的包仍要命中自己的哈希。
+
+> 对你意味着什么：若上游**重新打包**同名文件（Argos 官方升级包内容而文件名不变是最可能的一种），脚本会以 `REFUSED: checksum mismatch` 停下而不是静默收下新字节。这是有意的：请先核对新值的来源（上游发布页或 release 的 `digest`），再更新脚本顶部的 `EXPECTED_SHA256`，并在其 `source` 字段里写清日期与出处。`--allow-unpinned` 只用于临时取用，不该成为默认。
+
 ## 6. 开发参考机（本文档实测数据来源）
 
 | 项 | 值 |

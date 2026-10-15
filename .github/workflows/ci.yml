@@ -91,6 +91,7 @@ jobs:
           python tests/test_evidence_identity.py
           python tests/test_derive_av_direction.py
           python tests/test_gate_counts.py
+          python tests/test_net_guard.py
           python tests/test_xaml_lint.py
           python tests/test_pre_commit_hook.py
           python tests/test_glossary_hygiene.py

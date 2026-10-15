@@ -14,13 +14,20 @@ same rule as the backend and translator-engine/src/config.rs (LT_DATA_DIR /
 WONSLATE_DATA_DIR override, then the per-OS user data directory). Nothing here
 writes into the git working tree.
 
-Endpoint policy (SSRF-hardened for a tool that users may point at mirrors via
-$HF_ENDPOINT): https only, hosts restricted to an allowlist of public
-HuggingFace endpoints, redirects to other hosts rejected, and each host's
-addresses are resolved and checked against private/loopback ranges before
-connecting.
+Endpoint policy: enforced by script/net_guard.py, the one fetch policy shared with
+fetch_argos_models.py and fetch_voice_models.py -- https only, hosts restricted to an
+allowlist of public HuggingFace endpoints, redirects to other hosts rejected, and each
+host's addresses resolved and checked against private/loopback ranges before connecting
+(the tool is SSRF-reachable because $HF_ENDPOINT lets a user point it at a mirror).
 
-Path policy: every write goes through a tempfile.mkstemp handle (no dynamic
+Integrity policy (defect D69): every file is checked against a pinned sha256 before it is
+renamed into place, and verify() re-checks the digests of whatever is already in the
+target directory, so a cache hit or a hand-copied file cannot skip the rule. Each pin
+carries its provenance in EXPECTED_SHA256: two are upstream HuggingFace LFS oids that
+were confirmed against the local copy, two are local baselines because the repo publishes
+no sha256 for non-LFS files. That difference is stated rather than smoothed over.
+
+Path policy: every write goes through a tempfile.mkstemp handle inside net_guard.fetch (no dynamic
 path is ever opened), and the final os.replace target is normalized with
 os.path.realpath, rejected if it contains "..", and verified to stay inside
 the requested destination directory before the rename.
@@ -37,20 +44,18 @@ Usage:
 Exit code: 0 = every file is present and verified, 1 = something failed.
 """
 import argparse
-import ipaddress
 import os
 import pathlib
-import socket
 import sys
-import tempfile
 import time
 import urllib.error
-import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "script"))
 
 from sidecar.ct2_sidecar import default_madlad_model_dir  # noqa: E402  (single source of truth)
+import net_guard                                          # noqa: E402  (the fetch policy)
 
 REPO = "Heng666/madlad400-3b-mt-ct2-int8"
 # model.bin is the 2.9 GB int8 checkpoint; spiece.model is the tokenizer the
@@ -58,71 +63,63 @@ REPO = "Heng666/madlad400-3b-mt-ct2-int8"
 # the vocabulary from model metadata, but keeping them makes the directory
 # self-describing and re-usable by other tooling).
 FILE_NAMES = ("model.bin", "spiece.model", "shared_vocabulary.json", "config.json")
+# What this script can download, stated for script/check_name_guards.py: it refuses a pin
+# that names nothing downloadable, and a downloadable file that is neither pinned nor
+# listed as an exception. Kept as an explicit tuple rather than `= FILE_NAMES` so that the
+# day the two drift apart, the gate reports it instead of inheriting the mistake.
+DOWNLOADS = ("model.bin", "spiece.model", "shared_vocabulary.json", "config.json")
+UNPINNED_EXCEPTIONS = ()
 MIN_SIZES = {"model.bin": 1_000_000_000, "spiece.model": 1_000_000}
 FALLBACK_ENDPOINTS = ("https://hf-mirror.com", "https://huggingface.co")
-# Redirects and $HF_ENDPOINT may only land on HuggingFace's own public hosts:
-# the two site domains plus the CDN hosts (cdn-lfs.hf.co, us.aws.cdn.hf.co,
-# ...) that /resolve/ redirects large files to.
-ALLOWED_HOST_SUFFIXES = (".hf.co", ".huggingface.co", ".hf-mirror.com")
+# Redirects and $HF_ENDPOINT may only land on HuggingFace's own public hosts: the two
+# site domains plus the CDN hosts (cdn-lfs.hf.co, us.aws.cdn.hf.co, ...) that /resolve/
+# redirects large files to. The policy itself lives in script/net_guard.py so all three
+# downloaders answer to one set of rules (defect D69: this script was hardened while the
+# Argos and voice ones were bare urlopen calls).
 ALLOWED_HOSTS = frozenset({"hf-mirror.com", "huggingface.co"})
+ALLOWED_HOST_SUFFIXES = (".hf.co", ".huggingface.co", ".hf-mirror.com")
 USER_AGENT = "wonslate-fetch-madlad/1.0"
 
-
-def host_allowed(hostname):
-    return hostname in ALLOWED_HOSTS or hostname.endswith(ALLOWED_HOST_SUFFIXES)
+# Pinned digests with their provenance stated, because a hash with no source is a claim:
+#   model.bin / spiece.model  -- the HuggingFace LFS oid published by the repo's tree API,
+#     read 2026-10-15, and **confirmed against the copy already on this machine**: the
+#     computed digests match byte for byte, so these are upstream-authoritative values.
+#   shared_vocabulary.json / config.json -- small files that are NOT LFS objects, so the
+#     tree API only offers a git blob sha1, which is a different function and cannot be
+#     compared to a sha256. These two are local baselines: they detect drift and
+#     replacement from here on, and do not prove where the bytes originally came from.
+EXPECTED_SHA256 = {
+    "model.bin": (
+        "77b9fd9ab97c1259d07089b5f854393dad81bc5fb5647d3f9a5d101c94f40daa",
+        "HuggingFace LFS oid 2026-10-15, matched against the local copy"),
+    "spiece.model": (
+        "ef11ac9a22c7503492f56d48dce53be20e339b63605983e9f27d2cd0e0f3922c",
+        "HuggingFace LFS oid 2026-10-15, matched against the local copy"),
+    "shared_vocabulary.json": (
+        "c327551ce3ca6efc7b437e11a267f79979893332dda8a1d146e2c950815193f8",
+        "local baseline 2026-10-15 (non-LFS file: upstream publishes only a git sha1)"),
+    "config.json": (
+        "90fb54962455a4e0a0bc7235c0f063d7e46d9c1a1ae003af8059809abd6aeece",
+        "local baseline 2026-10-15 (non-LFS file: upstream publishes only a git sha1)"),
+}
 
 
 def say(tag, msg=""):
     print("[{}] {}".format(tag, msg).rstrip(), flush=True)
 
 
-def endpoint_allowed(url):
-    """https + allowlisted host + no private/loopback resolved address."""
-    try:
-        parts = urllib.request.urlparse(url)
-    except ValueError:
-        return False, "unparseable URL"
-    if parts.scheme != "https" or parts.hostname is None or not host_allowed(parts.hostname):
-        return False, "host {} is not allowlisted".format(parts.hostname)
-    try:
-        infos = socket.getaddrinfo(parts.hostname, 443, proto=socket.IPPROTO_TCP)
-    except OSError as exc:
-        return False, "cannot resolve {}: {}".format(parts.hostname, exc)
-    for info in infos:
-        address = ipaddress.ip_address(info[4][0])
-        if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved:
-            return False, "{} resolves to a non-public address ({})".format(parts.hostname, address)
-    return True, ""
-
-
 def endpoints():
+    """The bases $HF_ENDPOINT / the fallbacks allow, after the policy has looked at them."""
     override = os.environ.get("HF_ENDPOINT", "").strip().rstrip("/")
     ordered = ((override,) if override else ()) + FALLBACK_ENDPOINTS
     usable = []
     for base in ordered:
-        ok, reason = endpoint_allowed(base)
-        if ok:
+        _host, reason = net_guard.check_url(base + "/", ALLOWED_HOSTS, ALLOWED_HOST_SUFFIXES)
+        if not reason:
             usable.append(base)
         else:
             say("endpoint", "skipping {}: {}".format(base or "(empty)", reason))
     return usable
-
-
-class _AllowlistedRedirect(urllib.request.HTTPRedirectHandler):
-    """Refuse redirects that leave the allowlist instead of silently following."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        ok, _ = endpoint_allowed(newurl)
-        if not ok:
-            raise urllib.error.URLError("redirect to a non-allowlisted host: {}".format(newurl))
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-    # Python 3.10's HTTPRedirectHandler predates 308 support and raises plain
-    # HTTPError; hf-mirror answers with 308, so teach it the 307 behaviour.
-    http_error_308 = urllib.request.HTTPRedirectHandler.http_error_307
-
-
-_OPENER = urllib.request.build_opener(_AllowlistedRedirect)
 
 
 def final_path(dest_dir, leaf):
@@ -141,51 +138,73 @@ def final_path(dest_dir, leaf):
     return joined
 
 
-def download(leaf, dest_dir, force, attempts=4):
-    """Download one repo file into dest_dir (atomic mkstemp -> os.replace)."""
+def download(leaf, dest_dir, force, attempts=4, allow_unpinned=False):
+    """Fetch one repo file through the shared policy, verifying its pinned digest.
+
+    Policy refusals (host, scheme, private address, checksum, missing pin) end the loop
+    at once: re-downloading the same URL cannot fix any of them, and four silent retries
+    of a checksum mismatch would read like a network problem instead of what it is.
+    """
     try:
         target = final_path(dest_dir, leaf)
     except ValueError as exc:
         say("verify", str(exc))
         return False
-    if os.path.isfile(target) and not force and os.path.getsize(target) >= MIN_SIZES.get(leaf, 1):
-        say("fetch", "{} cached ({:.1f} MB)".format(leaf, os.path.getsize(target) / 1e6))
+
+    pin = EXPECTED_SHA256.get(leaf)
+    if os.path.isfile(target) and not force and pin:
+        # The cached branch is what a normal run takes, so it is checked too -- a size
+        # test alone would accept a replaced file of the same length.
+        got = net_guard.sha256_of(target)
+        if got == pin[0]:
+            say("fetch", "{} cached and digest-verified ({:.1f} MB)".format(
+                leaf, os.path.getsize(target) / 1e6))
+            return True
+        say("fetch", "{} on disk is sha256 {}, pin says {} -- re-fetching".format(
+            leaf, got[:16], pin[0][:16]))
+    elif os.path.isfile(target) and not force:
+        say("fetch", "{} cached ({:.1f} MB) but unpinned: nothing to check it against".format(
+            leaf, os.path.getsize(target) / 1e6))
         return True
 
     for i in range(1, attempts + 1):
         for base in endpoints():
             url = "{}/{}/resolve/main/{}".format(base, REPO, leaf)
-            fd, tmp_path = tempfile.mkstemp(dir=dest_dir, suffix=".part")
             try:
-                request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-                with _OPENER.open(request, timeout=60) as response, \
-                        os.fdopen(fd, "wb") as out:
-                    total = 0
-                    while True:
-                        chunk = response.read(1 << 20)
-                        if not chunk:
-                            break
-                        out.write(chunk)
-                        total += len(chunk)
-                os.replace(tmp_path, target)
-                say("fetch", "{} ({:.1f} MB)".format(leaf, total / 1e6))
+                digest, size = net_guard.fetch(
+                    url, target, ALLOWED_HOSTS, ALLOWED_HOST_SUFFIXES,
+                    expected_sha256=pin[0] if pin else None,
+                    digest_source=pin[1] if pin else None,
+                    allow_unpinned=allow_unpinned, user_agent=USER_AGENT,
+                    timeout=60, chunk=1 << 20)
+                say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
+                    leaf, size / 1e6, digest[:16],
+                    "" if pin else " UNPINNED (--allow-unpinned)"))
                 return True
-            except Exception as exc:              # noqa: BLE001 - report and try the next endpoint
-                say("fetch", "attempt {}/{} failed ({}): {}: {}".format(
-                    i, attempts, base, type(exc).__name__, exc))
-                try:
-                    os.close(fd)                  # fdopen already closed it on success paths only
-                except OSError:
-                    pass
-                finally:
-                    if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
+            except net_guard.UnpinnedAsset as exc:
+                say("fetch", "REFUSED: {}".format(exc))
+                return False
+            except net_guard.GuardError as exc:
+                text = str(exc)
+                if ("checksum mismatch" in text or "not allowlisted" in text
+                        or "disallowed" in text or "not https" in text
+                        or "non-public" in text):
+                    say("fetch", "REFUSED: {}".format(exc))
+                    return False
+                say("fetch", "attempt {}/{} failed ({}): {}".format(i, base, exc))
+            except (urllib.error.URLError, OSError) as exc:
+                say("fetch", "attempt {}/{} failed ({}): {}".format(i, base, exc))
             time.sleep(4)
     return False
 
 
 def verify(dest_dir):
-    """Return a problem description when the layout is incomplete, else None."""
+    """Return a problem description when the layout is incomplete, else None.
+
+    The digest check runs here as well as in download(): main() always calls verify, so a
+    file that arrived by some other route (hand-copied, restored from a backup) still has
+    to match the pin before the script says the checkpoint is in place.
+    """
     for leaf in FILE_NAMES:
         try:
             target = final_path(dest_dir, leaf)
@@ -197,6 +216,12 @@ def verify(dest_dir):
         size = os.path.getsize(final_path(dest_dir, leaf))
         if size < minimum:
             return "{} truncated ({} bytes)".format(leaf, size)
+    for leaf, (expected, _source) in EXPECTED_SHA256.items():
+        target = final_path(dest_dir, leaf)
+        if os.path.isfile(target):
+            got = net_guard.sha256_of(target)
+            if got != expected:
+                return "{} is sha256 {}, pin says {}".format(leaf, got[:16], expected[:16])
     return None
 
 
@@ -205,6 +230,9 @@ def main(argv=None):
     parser.add_argument("--dest", default=None,
                         help="target directory (default: <data_dir>/models/madlad)")
     parser.add_argument("--force", action="store_true", help="re-download existing files")
+    parser.add_argument("--allow-unpinned", action="store_true",
+                        help="fetch a file even when no sha256 is pinned for it "
+                             "(prints which file is unpinned; default refuses)")
     args = parser.parse_args(argv)
 
     dest_dir = os.path.realpath(args.dest) if args.dest \
@@ -216,7 +244,8 @@ def main(argv=None):
     say("*", "repo: {}".format(REPO))
     say("*", "target: {}".format(dest_dir))
 
-    failed = [leaf for leaf in FILE_NAMES if not download(leaf, dest_dir, args.force)]
+    failed = [leaf for leaf in FILE_NAMES
+              if not download(leaf, dest_dir, args.force, allow_unpinned=args.allow_unpinned)]
 
     print("", flush=True)
     problem = verify(dest_dir)
