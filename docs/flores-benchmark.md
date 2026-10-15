@@ -156,6 +156,8 @@ python script/measure_latency.py --engine madlad --port 11436 --n 30 --already-r
 
 > 仅适用于**跨二进制**的判定，不改变各臂内部的读数本身：同一 build 内的重复仍照常给地板。
 
+> **适用面（D71）**：同一规则现在覆盖**全部四个写证据的 harness**（`bench_flores` / `bench_domain_av` / `bench_translation` / `bench_tm`）以及 `diag_sidecar_batch` 的取证 json，它们都走同一个 `install_glossary_pack.measurement_identity()`——四处各写一套“何时、对哪个构建”正是 D70/D71 的成因。两条机械守门（`tests/test_run_identity.py`）：时间戳必须带偏移（禁止无 `%z` 的 `time.strftime`），且**不注入参数的那条默认路径也要能跑通**（只看注入分支会错过生产路径）。
+
 ## 局限性
 
 - **100 句/方向**（devtest 共 1012 句）：语料级 COMET 的抽样波动约 ±0.005-0.01，方向间差距小于 0.01 的不宜过度解读；

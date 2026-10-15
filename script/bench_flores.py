@@ -50,7 +50,7 @@ from bench_translation import (  # noqa: E402  (single source of engine clients)
     Engine, build_engines, score, write_json,
 )
 from sidecar.ct2_sidecar import default_data_dir  # noqa: E402  (shared data dir)
-from install_glossary_pack import engine_build_identity  # noqa: E402  (build attribution)
+from install_glossary_pack import engine_build_identity, measurement_identity  # noqa: E402
 
 EVIDENCE_DIR = ROOT / "docs" / "evidence"
 
@@ -75,11 +75,15 @@ def build_identity():
 
 def identity_fields():
     """The run fields that make a repeat attributable. Never omit a key: a reader diffing
-    two evidence files must be able to tell 'no id recorded' from 'field absent'."""
-    sha, source = build_identity()
-    return {"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "engine_build_sha": sha,
-            "engine_build_source": source}
+    two evidence files must be able to tell 'no id recorded' from 'field absent'.
+
+    Delegates to `measurement_identity` so this harness cannot drift from the others -- four
+    call sites writing four kinds of timestamp is what D70/D71 are about.
+    """
+    fields = measurement_identity()
+    _BUILD_IDENTITY["sha"], _BUILD_IDENTITY["source"] = (
+        fields["engine_build_sha"], fields["engine_build_source"])
+    return fields
 DEFAULT_FLORES_SUBDIR = pathlib.Path("benchmarks") / "flores101"
 FLORES_DIR_ENV = "WONSLATE_FLORES_DIR"
 

@@ -153,6 +153,27 @@ def engine_build_identity(lib=None):
     return digest.hexdigest()[:12], which
 
 
+def measurement_identity(now=None, lib=None):
+    """The three fields that make one measurement attributable on its own.
+
+    Lives here, next to `engine_build_identity`, so every harness stamps evidence the same
+    way. Four call sites writing four variants of "when, and against what" is how D70 and
+    D71 happened: one evidence file dated only to the day, another stamped in local time
+    with no offset, so neither pair of runs could be ordered or compared afterwards.
+
+    UTC with an explicit offset, always. A naive timestamp cannot be placed relative to
+    another machine's, and "we cannot tell which came first" is exactly what these fields
+    exist to prevent.
+    """
+    import datetime
+
+    sha, source = engine_build_identity(lib=lib)
+    when = now or datetime.datetime.now(datetime.timezone.utc)
+    return {"generated_at": when.isoformat(),
+            "engine_build_sha": sha,
+            "engine_build_source": source}
+
+
 def _load_engine():
     """Find and load translator_engine, set the two argtypes we call, and
     return the CDLL. Errors are surfaced with the exact rebuild command so

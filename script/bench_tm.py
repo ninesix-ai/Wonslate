@@ -72,6 +72,10 @@ import time
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "script"))
+
+from install_glossary_pack import measurement_identity  # noqa: E402  (evidence identity)
 SIDECAR = ROOT / "sidecar" / "ct2_sidecar.py"
 
 # Derived, not measured: the cloud price this project quotes for its cost model
@@ -453,7 +457,10 @@ def main() -> int:
             _p("[bench] sidecar stopped")
 
     report = {
-        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        # Local time with no offset (what this used to write) cannot be ordered against
+        # another machine's run, so it is not a usable identity: UTC with an explicit
+        # offset, plus which engine build answered. Defect D71.
+        **measurement_identity(),
         "corpus": {"file": args.corpus.name, "rows": len(corpus),
                    "sha256": hashlib.sha256(args.corpus.read_bytes()).hexdigest()},
         "config": {"requests": len(stream), **stream_model,

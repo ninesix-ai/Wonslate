@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT / "script"))
 
 import bench_domain_av as bench       # noqa: E402
 import run_av_baseline as rab         # noqa: E402
+import install_glossary_pack as bench_identity   # noqa: E402  (home of measurement_identity)
 
 
 class FakeLib:
@@ -199,6 +200,90 @@ class StatusColumnDistinguishesCauses(unittest.TestCase):
     def test_a_real_floor_still_decides_the_delta(self):
         text = rab._status(True, True, 0, 0.001, 0.02, repeats=2, floor_note=None)
         self.assertIn("噪声地板", text)
+
+
+class SharedIdentityTests(unittest.TestCase):
+    """D71: two more harnesses stamped "when" in ways that could not be compared."""
+
+    def test_timestamp_is_utc_with_an_offset(self):
+        # A naive local timestamp cannot be ordered against another machine's run, which is
+        # exactly how bench_tm's `time.strftime("%Y-%m-%dT%H:%M:%S")` failed: readable, not
+        # comparable. Parsing and checking tzinfo is the difference between the two.
+        fields = bench_identity.measurement_identity()
+        parsed = datetime.datetime.fromisoformat(fields["generated_at"])
+        self.assertIsNotNone(parsed.tzinfo, fields["generated_at"])
+        self.assertEqual(fields.keys(), {"generated_at", "engine_build_sha",
+                                         "engine_build_source"})
+
+    def test_injected_time_is_still_utc_aware(self):
+        # Fixing the clock in a test must not be what introduces the naive timestamp.
+        fields = bench_identity.measurement_identity(
+            now=datetime.datetime(2026, 10, 15, tzinfo=datetime.timezone.utc))
+        self.assertTrue(fields["generated_at"].endswith("+00:00"), fields["generated_at"])
+
+    def test_every_evidence_writer_uses_the_one_helper(self):
+        """Wiring rule: a harness that writes evidence must stamp identity through
+        `measurement_identity` (or the helpers that call it). D70 was one harness
+        forgetting; D71 was two harnesses each inventing a different way to be wrong."""
+        writers = ("bench_flores.py", "bench_domain_av.py", "bench_translation.py",
+                   "bench_tm.py")
+        for name in writers:
+            with self.subTest(name):
+                text = (ROOT / "script" / name).read_text(encoding="utf-8")
+                self.assertTrue("measurement_identity(" in text or "identity_fields(" in text,
+                                "%s writes evidence without the shared identity helper" % name)
+
+    def test_no_naive_timestamp_expression_survives(self):
+        # The shape bench_tm had. Banning it in source beats discovering it in a report.
+        offenders = []
+        for path in (ROOT / "script").glob("*.py"):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for line in text.split("\n"):
+                if ("time.strftime(" in line and "%z" not in line
+                        and not line.lstrip().startswith("#")):
+                    offenders.append("%s: %s" % (path.name, line.strip()[:70]))
+        self.assertEqual([], offenders,
+                         "offset-less timestamps make runs unorderable: %s" % offenders)
+
+    def test_av_run_records_the_stronger_source_label(self):
+        # A hash of the loaded library is a stronger claim than one of the artefact on
+        # disk; the field that distinguishes them must never be silently missing.
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = bench.EVIDENCE_DIR
+            bench.EVIDENCE_DIR = pathlib.Path(tmp) / "ev"
+            try:
+                out = bench._write_evidence("argos", "en-zh", ["x"], ["y"], ["z"],
+                                            {}, 1, build_sha="a" * 12,
+                                            now=datetime.datetime(2026, 10, 15,
+                                                                  tzinfo=datetime.timezone.utc))
+                injected = json.loads(out.read_text(encoding="utf-8"))["runs"][0]
+                self.assertEqual(injected["engine_build_source"], "injected")
+                for key in ("generated_at", "engine_build_sha", "engine_build_source"):
+                    self.assertIn(key, injected)
+            finally:
+                bench.EVIDENCE_DIR = saved
+
+    def test_av_default_path_works_without_injected_arguments(self):
+        """The un-injected path is what production takes, so it must be covered too.
+
+        The first draft of this file injected `build_sha`/`now` in every case and stayed
+        green while breaking the suites that call `_write_evidence` plainly -- a helper
+        imported inside another function is invisible until someone takes the other branch.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = bench.EVIDENCE_DIR
+            bench.EVIDENCE_DIR = pathlib.Path(tmp) / "ev"
+            try:
+                out = bench._write_evidence("madlad", "zh-en", ["a", "b"], ["x", "y"],
+                                            ["p", "q"], {}, 2)
+                run = json.loads(out.read_text(encoding="utf-8"))["runs"][0]
+            finally:
+                bench.EVIDENCE_DIR = saved
+        parsed = datetime.datetime.fromisoformat(run["generated_at"])
+        self.assertIsNotNone(parsed.tzinfo, run["generated_at"])
+        self.assertEqual(
+            {k for k in run if k.startswith("engine_build")},
+            {"engine_build_sha", "engine_build_source"})
 
 
 if __name__ == "__main__":

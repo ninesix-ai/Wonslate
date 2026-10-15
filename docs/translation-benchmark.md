@@ -3,6 +3,8 @@
 > **口径分工（2026-10-03 起）**：本报告（自建 108 句集）是**回归基线**——引擎升级后防回退的内部参照；**对外宣称一律使用 FLORES-101 + COMET 公认基准**（[flores-benchmark.md](flores-benchmark.md)，qwen3:8b 全 18 方向平均 COMET 0.8798）。两套口径不可互相替代。
 >
 > 引擎实测于开发参考机（Ryzen 7 7840H / 32 GB / RTX 4050 6 GB），硬件档位说明见 [hardware-requirements.md](hardware-requirements.md)。逐句原始记录（每个假设译文 + 每次延迟）在 [evidence/translation-benchmark.json](evidence/translation-benchmark.json)。
+>
+> **测量身份（2026-10-15 起，缺陷 D71）**：本报告的证据原先**只有一个文件级的 `date`（精度到日）**，每个 run 不带自己的时间也不带“哪个引擎构建答的”——同一天跑两次就分不出先后，也无法回答“这个分数是哪次重建之前拿的”。现在每个 run 与 `flores-benchmark-*.json` 一样带 `generated_at`（**UTC 带偏移**）+ `engine_build_sha` + `engine_build_source`，字段含义与读法见 [flores-benchmark.md](flores-benchmark.md) 的“每个 run 自带的身份”一节；`date` 保留以兼容现有读者。2026-10-15 之前的证据文件只有 `date`，属“未记录”，不是“同一批次”。
 
 ## 结论（TL;DR）
 

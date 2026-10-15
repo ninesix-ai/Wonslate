@@ -55,6 +55,7 @@ reason (REQ-F3), and the environment a verdict was reached in belongs with the v
 Dependencies: psutil (process sampling) and git (only for `race --rev`).
 """
 import argparse
+import datetime
 import http.client
 import json
 import math
@@ -315,7 +316,12 @@ def run_meta(args, mode):
     return {"mode": mode, "backend": args.backend, "pair": "%s->%s" % (args.src, args.tgt),
             "corpus": args.corpus or None, "requested_calls": args.n,
             "retention_limit": RETENTION_LIMIT,
-            "started_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(args.started_at)),
+            # UTC with an offset. This was `time.strftime(..., time.localtime(...))`, i.e.
+            # local wall time with nothing to say which zone: two of these records from two
+            # machines could not be ordered, and these JSONs are cited as evidence for
+            # D24/D30 (defect D71, third instance).
+            "started_at": datetime.datetime.fromtimestamp(
+                args.started_at, datetime.timezone.utc).isoformat(),
             "note": "seconds are client-side wall time around one POST, one fresh connection"
                     " per call; the service ran in this same process"}
 

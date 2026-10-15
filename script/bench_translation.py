@@ -46,6 +46,9 @@ import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "script"))
+
+from install_glossary_pack import measurement_identity  # noqa: E402  (evidence identity)
 
 DATA_PATH = ROOT / "script" / "bench_translation_pairs.json"
 EVIDENCE_DIR = ROOT / "docs" / "evidence"
@@ -292,6 +295,10 @@ def main(argv=None):
 
     stamp = datetime.date.today().isoformat()
     record = {"date": stamp, "segments_per_direction": 6,
+              # A date-only field is what this file used to carry, which cannot separate two
+              # runs on the same day and says nothing about the build that answered (D71).
+              # `generated_at` is UTC with an offset; `date` stays for existing readers.
+              "generated_at": measurement_identity()["generated_at"],
               "qwen_model": args.qwen_model, "runs": []}
 
     for engine in engines:
@@ -318,6 +325,9 @@ def main(argv=None):
                 "latency_mean_s": None if not lats else round(statistics.mean(lats), 2),
                 "latency_median_s": None if not lats else round(statistics.median(lats), 2),
                 "errors": errors,
+                # Per-run identity: this file is cited for published engine numbers, and a
+                # run that carries no time and no build cannot be re-attributed later.
+                **measurement_identity(),
                 "samples": [
                     {"source": s, "reference": r, "hypothesis": h}
                     for (s, r), h in zip(segs, hyps)

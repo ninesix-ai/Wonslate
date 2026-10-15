@@ -359,7 +359,7 @@ def engine_build_sha(lib=None):
     fallback belongs to `engine_build_identity`'s second mode, where `which` records that
     the value names an artefact rather than the library a process loaded.
     """
-    from install_glossary_pack import engine_build_identity  # noqa: WPS433 (shared with flores)
+    from install_glossary_pack import engine_build_identity, measurement_identity  # noqa: WPS433
 
     if lib is None:
         lib = _LIB_CACHE["lib"]
@@ -491,7 +491,7 @@ def evidence_name(engine_id, direction, domain="", n=None, model=None):
 
 def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, domain="",
                     failures=None, run_index=1, adherence=None, model=None,
-                    build_sha="unset", now=None):
+                    build_sha="unset", build_source=None, now=None):
     """Persist one engine's run so a later COMET pass or diff report can
     pick it up. Layout mirrors docs/evidence/flores-benchmark-*.json.
 
@@ -513,10 +513,21 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
     `engine_build_sha` is stored as null rather than guessed: it means "this run was
     produced without a loaded engine library", not "identical to the others"."""
     import json
+    from install_glossary_pack import measurement_identity  # noqa: WPS433 (same style as json)
 
-    if build_sha == "unset":
-        build_sha = engine_build_sha()
-    stamp = (now or datetime.datetime.now(datetime.timezone.utc)).isoformat()
+    if build_sha == "unset" and now is None:
+        # Default path goes through the shared helper, so this harness cannot drift from the
+        # flores one in how it stamps time or which build it names.
+        identity = measurement_identity()
+        stamp, build_sha, build_source = (identity["generated_at"],
+                                          identity["engine_build_sha"],
+                                          identity["engine_build_source"])
+    else:
+        # Injectable for tests, which must be able to fix both halves of the identity.
+        stamp = (now or datetime.datetime.now(datetime.timezone.utc)).isoformat()
+        if build_sha == "unset":
+            build_sha = engine_build_sha()
+        build_source = "injected"
 
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     out = EVIDENCE_DIR / evidence_name(engine_id, direction, domain, len(src), model=model)
@@ -536,6 +547,10 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
         # "repeats" differing here are not repeats of one measurement.
         "generated_at": stamp,
         "engine_build_sha": build_sha,
+        # Which of the two the value came from: a hash of the library this process loaded is
+        # a stronger claim than a hash of whatever artefact is on disk, and the reader has
+        # to be able to tell them apart (the flores evidence records the same distinction).
+        "engine_build_source": build_source,
         "requested": n if n is not None else len(src),
         "evaluated": answered,
         "scored": answered,
