@@ -663,6 +663,10 @@ class HealthSignalsTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")          # unchanged semantics
         self.assertEqual(payload["backend"], "stub")       # unchanged fields
         self.assertEqual(payload["requests_served"], 0)
+        # D72: a caller that starts this service needs to prove the instance answering is the
+        # one it started -- "health answered" is worthless on a port someone else grabbed. The
+        # stub server runs in this process, so the published pid has to be ours, not a guess.
+        self.assertEqual(payload["pid"], os.getpid())
         self.assertEqual(payload["latency_samples"], 0)
         self.assertIsNone(payload["last_latency_p50"],
                           "no sample was taken, so a percentile must not be 0.0")

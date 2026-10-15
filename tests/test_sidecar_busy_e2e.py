@@ -90,6 +90,7 @@ _ORIGINAL_DATA_ENV = {key: os.environ.get(key)
 # *which* claims were not verified, instead of printing one line and looking like a smaller suite.
 CHECKS = (
     "gate refuses a second decode on the real checkpoint",
+    "the gated service proved which process it is",
     "the gated service is the one the engine dialed",
     "with the shipped budget the engine waits and the real checkpoint answers",
     "with no budget the same request loses its translation to demo",
@@ -366,6 +367,9 @@ class GatedCheckpoint:
         self.proc = None
         self.eng = None
         self.up = False
+        # Set once the service is proven ours: which port we drew and which pid answered. Read
+        # by the assertions so a failure can name the instance instead of guessing about it.
+        self.started_port = self.started_pid = None
 
     def __enter__(self):
         if self.up:
@@ -383,17 +387,48 @@ class GatedCheckpoint:
                     "OLLAMA_URL"):
             env[key] = DEAD
         env["WONSLATE_DATA_DIR"] = str(pathlib.Path(self.store.name) / "sidecar-data")
-        cmd = [sys.executable, str(SIDECAR), "--backend", "madlad", "--port", str(self.port),
-               "--model-dir", str(model_dir), "--decode-slots", "1"]
-        if self.queue_wait_ms:
-            cmd += ["--queue-wait-ms", str(self.queue_wait_ms)]
-        # Added only when non-zero, so the `queue_wait_ms=0` service is started with byte-identical
-        # arguments to the one the budget grid measured: "off" has to be provably the old command
-        # line, not a new one that happens to behave like the old.
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL, env=env)
-        if not _wait_health(self.url):
-            raise Precondition("gated service never answered /health")
+
+        # Start the gated service and prove the process answering is the one we started.
+        #
+        # `_free_port()` reserves a port and releases it; the child binds it afterwards, so in
+        # between another process can take it. Health would then be served by someone else,
+        # every counter read from the wrong instance, and the episode's assertions would fail in
+        # a way that reads like engine misbehaviour (defect D72: this suite went red inside the
+        # full gate and green on its own, which is what a port race looks like). Re-drawing the
+        # port is the fix; silently trusting the first answer is what broke.
+        reason = "gated service never answered /health"
+        for _attempt in range(3):
+            self.port = _free_port()
+            self.url = f"http://127.0.0.1:{self.port}"
+            cmd = [sys.executable, str(SIDECAR), "--backend", "madlad", "--port", str(self.port),
+                   "--model-dir", str(model_dir), "--decode-slots", "1"]
+            if self.queue_wait_ms:
+                cmd += ["--queue-wait-ms", str(self.queue_wait_ms)]
+            # Added only when non-zero, so the `queue_wait_ms=0` service is started with byte-identical
+            # arguments to the one the budget grid measured: "off" has to be provably the old command
+            # line, not a new one that happens to behave like the old.
+            self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                         stderr=subprocess.DEVNULL, env=env)
+            if not _wait_health(self.url):
+                reason = "gated service on port %d never answered /health" % self.port
+                self._reap()
+                continue
+            answered_by = _health(self.url).get("pid")
+            if not answered_by:
+                # No pid published means no proof, and assuming "it's ours" is the mistake that
+                # started this. Older sidecars do answer without it, so say which case we are in.
+                reason = ("port %d answered /health without a pid, so the instance cannot be "
+                          "identified" % self.port)
+                self._reap()
+                continue
+            if answered_by == self.proc.pid:
+                break
+            reason = ("port %d was answered by pid %s while this episode started pid %s"
+                      % (self.port, answered_by, self.proc.pid))
+            self._reap()
+        else:
+            raise Precondition(reason)
+        self.started_port, self.started_pid = self.port, answered_by
 
         # Pay the checkpoint load inside a call that is not part of any measurement.
         with urllib.request.urlopen(
@@ -418,18 +453,23 @@ class GatedCheckpoint:
         self.eng.init("{}")
         return self
 
-    def __exit__(self, *_exc):
-        if self.eng is not None:
-            try:
-                self.eng.shutdown()
-            except Exception:
-                pass
+    def _reap(self):
+        """Stop a service we are about to abandon, so a retry does not leave it holding a port."""
         if self.proc is not None:
             self.proc.terminate()
             try:
                 self.proc.wait(timeout=10)
             except Exception:
                 self.proc.kill()
+            self.proc = None
+
+    def __exit__(self, *_exc):
+        if self.eng is not None:
+            try:
+                self.eng.shutdown()
+            except Exception:
+                pass
+        self._reap()
         self.store.cleanup()
         return False
 
@@ -540,6 +580,11 @@ def run_suite() -> int:
         return ck.summary()
 
     with lab:
+        # The port is drawn, released, and then bound by the child, so "health answered" is not
+        # yet evidence that it was *our* service answering. Assert the identity before anything
+        # else measures it -- this is the guard that D72 showed was missing.
+        ck.ok("the gated service proved which process it is")
+
         # --- episode 1: the shipped budget, slot held for one short decode ----------------
         on = lab.episode("12000", SHORT_TEXT)
         if on is None:

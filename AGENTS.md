@@ -505,7 +505,12 @@ identifiers are stable anchors, the detail lives in the ledgers:
 
 - `D30` — closed on 2026-10-11. `/health` reports `requests_served`, a bounded latency window,
   `rss_bytes`, the in-flight and queued decode counts, and the work spent on callers who already
-  hung up (`answers_to_gone_clients` / `refusals_to_gone_clients`, cumulative). A bounded batch
+  hung up (`answers_to_gone_clients` / `refusals_to_gone_clients`, cumulative), and the answering
+  process's own `pid` (**D72**, 2026-10-15): a caller that starts this service has to be able to
+  prove the instance replying is the one it started -- reserving a free port, releasing it, and
+  handing the number to a child leaves a window in which another process binds it, and then every
+  counter is read from the wrong service while `/health` still answers `ok`. A caller that gets no
+  `pid` back must treat the instance as unidentified, not as its own. A bounded batch
   (`--max-requests`) and a reload that is not a restart (`POST /reload`) exist, the retention line
   is measured, and both remaining decisions were made by the product owner: `--decode-slots` ships
   **off** by default (low dose costs more; callers outside this repo do not retry), and the waste

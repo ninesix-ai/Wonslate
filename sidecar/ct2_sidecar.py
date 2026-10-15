@@ -29,8 +29,11 @@ tests/mock_sidecar_server.py):
                          behind the timeout of text nobody wants any more.
     GET  /health      -> 200 {"status":"ok","backend":"<mock|ct2>","requests_served",...,
                          "decodes_in_flight":N,"decodes_queued":N,"requests_until_exit":N|null,
-                         "answers_to_gone_clients":N,"refusals_to_gone_clients":N}
+                         "answers_to_gone_clients":N,"refusals_to_gone_clients":N,"pid":N}
                          (LIVENESS only)
+                         pid is the answering process, so a caller that started this service can
+                         prove it is talking to that one and not to another instance that grabbed
+                         the port first. 0 means the platform did not give one.
                          requests_until_exit is null unless the process was started with
                          --max-requests; it never invents a countdown it will not honour.
                          decodes_in_flight is measured, not inferred: it is how many decodes are
@@ -364,6 +367,12 @@ class HealthSignals:
                 "latency_samples": len(ordered),
                 "last_latency_p50": _percentile(ordered, 0.50),
                 "last_latency_p99": _percentile(ordered, 0.99),
+                # Which OS process is answering. Cheap to publish and it is the only thing
+                # that lets a caller prove the endpoint it dialed is the instance it started:
+                # a test that reserves a free port, closes it, and then hands that number to
+                # a child process has a window where someone else can bind it, and every
+                # counter would then be read from the wrong process (defect D72).
+                "pid": os.getpid(),
                 "rss_bytes": process_rss_bytes()}
 
 

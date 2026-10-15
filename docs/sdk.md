@@ -421,6 +421,8 @@ python -m sidecar.ct2_sidecar --backend mock  --port 11435   # 无依赖调试
   3. **`W` 怎么定**：法则 **`W ≥ 排在这个调用方前面的全部解码`**（不是一个解码），且 `BoundedSemaphore` 不承诺先到先服务 ⇒ **留余量、别贴着测到的秒数配**；上限 3600 s（`QUEUE_WAIT_CEILING_S`，D46：超出后 CPython 抛 `OverflowError`、连接被断而不是被拒）。
   4. **配之前先读服务自己的数**：`GET /health` 的 `decodes_queued`（D47）告诉你当时几人在排；`last_latency_p99` 而非 `p50` 描述页面量级（实测同一瞬间 p50=1.84 s、p99=25.18 s，而 `Retry-After` 只按 p50 承诺了 2 s——按它定价会系统性买少）。
 
+  5. **确认“应答者就是你启动的那个实例”**：`GET /health` 的 `pid`（D72）是**应答进程自己的 OS pid**。常见陷阱是“先绑一个空闲端口、释放、再把那个端口号交给子进程去 bind”——中间那段时间里另一个进程可以抢走该端口，于是你的健康检查仍会拿到 `200 ok`，但那是**别人的服务**在应答，所有计数都记在错误的实例上。pid 不等于你启动的那个进程，就说明你在测一个不是自己起的服务；字段不存在（旧版 sidecar）按“无法确认”处理，**不要假定是自己的**。
+
   真检查点实测（madlad en→zh，一条 ~25 s 解码挡在前面，`docs/evidence/queue-wait-madlad.json`）：
 
   | `--queue-wait-ms W` | 调用方实耗 | 结果 | 你的超时下限 |
