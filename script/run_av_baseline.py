@@ -448,10 +448,57 @@ def _mean_of(runs, pick):
     return (sum(vals) / len(vals)) if vals else None
 
 
+def _build_groups(runs):
+    """Split runs by the build they were measured against (defect D70).
+
+    Three buckets, kept apart deliberately: runs sharing a recorded build id, runs whose
+    build id is known to differ, and runs written before D70 that carry no id at all. The
+    last one is not "the same as the others" -- it is "unknown", and reading unknown as
+    equal is how S13 T3 came to average numbers taken from two different DLLs.
+    """
+    grouped = {}
+    for run in runs:
+        grouped.setdefault(run.get("engine_build_sha"), []).append(run)
+    return grouped
+
+
 def _spread(runs):
-    """Within-arm drift across repeats -- the noise floor for any delta."""
-    vals = [r.get("comet") for r in runs if r.get("comet") is not None]
-    return (max(vals) - min(vals)) if len(vals) >= 2 else None
+    """Within-arm drift across repeats **of one build** -- the noise floor for any delta.
+
+    Max minus min over runs of two different builds measures the builds, not the sampling
+    noise, so it is not returned. None here means "these runs give no floor"; `_spread_note`
+    says which of the three reasons applies.
+    """
+    best = None
+    for group in _build_groups(runs).values():
+        vals = [r.get("comet") for r in group if r.get("comet") is not None]
+        if len(vals) >= 2:
+            spread = max(vals) - min(vals)
+            best = spread if best is None else min(best, spread)
+    return best
+
+
+def _spread_note(runs):
+    """What weakens the floor taken from these runs, or None when nothing does.
+
+    D57/D58 applies here: a floor with several opposite readings printed as one sentence
+    sends the reader to redo work that exists, or to trust a number that is really two
+    builds' difference. Reported even when a floor *was* computed -- runs that carry no id
+    at all are not known to share a build, and silently treating "unknown" as "same" is
+    exactly the mistake D70 is about; the number stays available, the caveat travels with it.
+    """
+    scored = [r for r in runs if r.get("comet") is not None]
+    if len(runs) < 2:
+        return None                                   # genuinely not repeated
+    if len(scored) < 2:
+        return "repeats-unscored"
+    ids = {r.get("engine_build_sha") for r in scored}
+    known = {i for i in ids if i}
+    if len(known) > 1 or (None in ids and known):
+        return "repeats-across-builds"
+    if None in ids:
+        return "repeats-build-id-unknown"
+    return None
 
 
 def _term_context_for(engine) -> bool:
@@ -478,7 +525,7 @@ def term_context_sides():
 
 
 def _status(has_base, has_scope, failed_rows, delta, noise_floor, repeats=1,
-            term_context=True) -> str:
+            term_context=True, floor_note=None) -> str:
     """The verdict column, and the only place allowed to write 完整.
 
     D31: this used to read `has_base and has_scope` -- two files exist -- and printed
@@ -509,18 +556,32 @@ def _status(has_base, has_scope, failed_rows, delta, noise_floor, repeats=1,
         tail = "；未复采，无噪声地板" if repeats < 2 else "；已复采 %d 次" % repeats
         return head + "；对照不适用（该后端不施加术语上下文），Δ 为构造使然，不作术语效果解读" + tail
     if noise_floor is None:
-        # "no floor" has two opposite causes that read the same unless they are told apart:
-        # a single run, or repeats that were measured while COMET has not been scored yet --
-        # labelling the second one "not repeated" would erase the fact that the arm was
-        # sampled twice.
-        tail = ("；已复采 %d 次，但 COMET 未打分故无地板" % repeats
-                if repeats >= 2 else "；未复采，无噪声地板")
+        # "no floor" has several opposite causes that read the same unless they are told
+        # apart: a single run; repeats measured while COMET has not been scored yet; and
+        # (D70) repeats taken against **different builds of the engine**, which are not
+        # repeats of one measurement at all. Labelling the last one "not repeated" would
+        # send someone to re-run work that exists; labelling it as a floor would let a
+        # two-build difference be read as sampling noise.
+        if floor_note == "repeats-across-builds":
+            tail = "；已复采 %d 次但跨不同被测二进制，不得合并为噪声地板（D70）" % repeats
+        elif floor_note == "repeats-build-id-unknown":
+            tail = "；已复采 %d 次但部分 run 无二进制身份（D70 之前），不能假定同一批次" % repeats
+        elif floor_note == "repeats-unscored" or repeats >= 2:
+            tail = "；已复采 %d 次，但 COMET 未打分故无地板" % repeats
+        else:
+            tail = "；未复采，无噪声地板"
     elif delta is None:
         tail = "；Δ 未测（COMET 尚未打分）"
     elif abs(delta) <= noise_floor:
         tail = "；Δ 在噪声地板 ±%.4f 内，不足以归因" % noise_floor
     else:
         tail = "；Δ 超噪声地板 ±%.4f" % noise_floor
+    if noise_floor is not None and floor_note == "repeats-across-builds":
+        # A floor computed across two builds measures the builds; say so next to the number
+        # instead of suppressing it, so the reader can still see what was collected.
+        tail += "；但该地板跨不同被测二进制，不可信（D70）"
+    elif noise_floor is not None and floor_note == "repeats-build-id-unknown":
+        tail += "；但该地板假定重复同批（run 未记二进制身份，D70 之前）"
     return head + tail
 
 
@@ -568,6 +629,9 @@ def summarize_engine(engine, base_runs, scope_runs) -> dict:
     failed_rows = sum(len(r.get("failed") or []) for r in base_runs + scope_runs)
     floors = [f for f in (_spread(base_runs), _spread(scope_runs)) if f is not None]
     noise_floor = max(floors) if floors else None
+    # Which arm's missing floor gets named, and why: the report must not have to re-derive
+    # it from the run list.
+    floor_note = _spread_note(base_runs) or _spread_note(scope_runs)
 
     per_pair, paired_n = [], None
     for b, s in zip(base_runs, scope_runs):
@@ -610,7 +674,8 @@ def summarize_engine(engine, base_runs, scope_runs) -> dict:
         "repeats": max(len(base_runs), len(scope_runs)),
         "status": _status(has_base, has_scope, failed_rows, delta, noise_floor,
                           max(len(base_runs), len(scope_runs)),
-                          term_context=_term_context_for(engine)),
+                          term_context=_term_context_for(engine),
+                          floor_note=floor_note),
     }
 
 

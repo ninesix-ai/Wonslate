@@ -50,8 +50,36 @@ from bench_translation import (  # noqa: E402  (single source of engine clients)
     Engine, build_engines, score, write_json,
 )
 from sidecar.ct2_sidecar import default_data_dir  # noqa: E402  (shared data dir)
+from install_glossary_pack import engine_build_identity  # noqa: E402  (build attribution)
 
 EVIDENCE_DIR = ROOT / "docs" / "evidence"
+
+# One identity per process: the artefact on disk cannot change underneath a run that is
+# already measuring, and re-hashing a 12 MB library per direction would only cost time.
+_BUILD_IDENTITY = {"taken": False, "sha": None, "source": None}
+
+
+def build_identity():
+    """(sha, source) of the engine build this run's numbers belong to.
+
+    `source` is part of the answer, not decoration: 'loaded' means the library actually
+    mapped into this process, while 'release'/'debug' means the artefact on disk -- which
+    a reader needs in order to know how strong the attribution is (defect D70).
+    """
+    if not _BUILD_IDENTITY["taken"]:
+        sha, source = engine_build_identity()
+        _BUILD_IDENTITY["sha"], _BUILD_IDENTITY["source"] = sha, source
+        _BUILD_IDENTITY["taken"] = True
+    return _BUILD_IDENTITY["sha"], _BUILD_IDENTITY["source"]
+
+
+def identity_fields():
+    """The run fields that make a repeat attributable. Never omit a key: a reader diffing
+    two evidence files must be able to tell 'no id recorded' from 'field absent'."""
+    sha, source = build_identity()
+    return {"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "engine_build_sha": sha,
+            "engine_build_source": source}
 DEFAULT_FLORES_SUBDIR = pathlib.Path("benchmarks") / "flores101"
 FLORES_DIR_ENV = "WONSLATE_FLORES_DIR"
 
@@ -180,6 +208,22 @@ def _load_resumable(out_path, sample_ids, collecting_keys=()):
     collecting_keys = set(collecting_keys)
     preserved = [run for run in previous.get("runs", [])
                  if (run["engine"], run["direction"]) not in collecting_keys]
+    # Resume is where two builds silently end up inside one file: run 1 against the old
+    # DLL, this continuation against the new one, and the report cannot tell them apart
+    # afterwards (defect D70, as found in S13 T3). Keep them -- discarding measurements is
+    # worse -- but say it at the moment the mixture is made.
+    prior_ids = {run.get("engine_build_sha") for run in preserved}
+    now_sha, _source = build_identity()
+    if len(prior_ids - {None}) > 1 or (None in prior_ids and len(prior_ids) > 1):
+        print("[identity] resuming {} run(s) measured against different or unrecorded "
+              "engine builds ({}): their spread is not a noise floor".format(
+                  len(preserved), ", ".join(sorted(str(i)[:12] for i in prior_ids))),
+              flush=True)
+    elif preserved and now_sha and prior_ids - {None, now_sha}:
+        print("[identity] resuming run(s) measured against {} while this process is {}: "
+              "spreads across them are not a noise floor".format(
+                  sorted(i[:12] for i in prior_ids - {None, now_sha})[0], now_sha[:12]),
+              flush=True)
     print("[resume] {} sample(s) already stored in {}, keeping {} stored run(s)".format(
         sum(len(v) for v in done.values()), out_path.name, len(preserved)),
         flush=True)
@@ -338,7 +382,7 @@ def main(argv=None):
                 record["runs"].append({
                     "engine": engine.id, "direction": "{}->{}".format(src, tgt),
                     "partial": True, "chrf": None, "bleu": None,
-                    "samples": list(samples)})
+                    "samples": list(samples), **identity_fields()})
                 write_json(out_path, record)
             chrf, bleu = (score(hyps, refs, tgt) if hyps else (None, None))
             record["runs"] = [r for r in record["runs"]
@@ -349,6 +393,7 @@ def main(argv=None):
                 "bleu": None if bleu is None else round(bleu, 1),
                 "latency_mean_s": None if not lats else round(statistics.mean(lats), 2),
                 "errors": errors,
+                **identity_fields(),
                 "samples": sorted(samples, key=lambda s: s["id"])})
             write_json(out_path, record)
             print("[{}] {}->{}  chrF={}  BLEU={}  mean={}s{}".format(

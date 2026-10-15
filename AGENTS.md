@@ -450,6 +450,16 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     three-argument `tt_glossary_delete` keeps addressing the generic row -- widening an existing
     export's arity was measured to be worse than adding one, because a caller compiled against
     the old signature gets no error at all, just a plausible answer aimed at another row.
+20. **A repeat is only a repeat if it measured against the same engine build.** `--run-index`
+    appends into one evidence file and `--resume` keeps the earlier runs in it, so a rebuilt
+    DLL puts two different measurements inside what looks like one arm's noise series -- and
+    max-minus-min across two builds measures the *builds*, not sampling. Every run therefore
+    carries `generated_at` plus `engine_build_sha` / `engine_build_source` (defect D70, found
+    in S13 T3). `tt_version()` cannot serve: it returns `CARGO_PKG_VERSION`, which is `0.1.0`
+    for every rebuild of the same checkout. Keep "no id recorded" distinct from "same id" --
+    `_spread()` in `script/run_av_baseline.py` takes a floor from one build only, and
+    `_status()` names the three different reasons a floor is missing rather than printing one
+    sentence for all of them, which is D57/D58's rule applied to this column.
 
 ## 4. Conventions and invariants
 

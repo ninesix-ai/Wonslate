@@ -107,6 +107,12 @@ python script/run_av_baseline.py --report-only      # 只重出报告（不动�
 
 ## 其他测量身份（跨语向 / 扩样）
 
+> **还有一层身份：哪个构建答的**（2026-10-15 起，缺陷 D70）。本目录每个 run 与
+> `flores-benchmark-*.json` 一样带 `generated_at` / `engine_build_sha` / `engine_build_source`
+> 三个字段（规则与读法见 [flores-benchmark.md](flores-benchmark.md) 的“每个 run 自带的身份”一节）。区别在于 AV harness 以
+> `--run-index` 往同一文件里**追加** repeat：若新 repeat 与被追加的旧 runs 不同构建，脚本会在写入当场
+> 打印一行 `[identity] … NOT a noise floor`，不等到报告时才发现。2026-10-14 及之前采集的证据无这三个字段，属于“未记录”。
+
 > 本节数字与上表同口径（配对差 + 同臂地板），但样本集不同，不可与上表混用。子领域分组按语料行序取，反向语料是同一批行的列对调，因此同组名指同一批句子；行数少于分组表的身份只列出覆盖到的那几组。**
 
 ### 语向 en-zh · 300 句

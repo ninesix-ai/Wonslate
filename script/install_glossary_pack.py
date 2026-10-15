@@ -110,6 +110,49 @@ def import_pack(lib, pack):
     return int(parsed.get("imported", 0))
 
 
+def engine_build_identity(lib=None):
+    """(sha256[:12], which) for the engine build a measurement should be attributed to.
+
+    Two ways to answer, in order of trustworthiness:
+      1. a loaded CDLL was handed over -- hash the file `CDLL._name` names, i.e. the library
+         really mapped into this process;
+      2. nothing is loaded (a separate reporting process, e.g. run_av_baseline reading old
+         evidence) -- hash the build artefact on disk, release before debug, and say which
+         one via `which`.
+
+    `tt_version()` is not usable here: it returns `CARGO_PKG_VERSION`, which stays `0.1.0`
+    across every rebuild, so it cannot separate two builds of one checkout (defect D70).
+
+    Only the digest and a label are returned, never the path: evidence JSONs are committed
+    under `docs/evidence/`, and an absolute path would publish one developer's disk layout
+    into the public repository.
+
+    Note the limit of what this identifies: it is the **engine library**. An arm that runs
+    through a sidecar or Ollama has two more moving parts (the sidecar's code and the model
+    checkpoint), which the engine id and `ollama_model` fields cover instead.
+    """
+    import hashlib
+
+    path = getattr(lib, "_name", None) if lib is not None else None
+    which = "loaded"
+    if not path:
+        for candidate in _LIB_CANDIDATES:
+            if candidate.exists():
+                path, which = str(candidate), (
+                    "release" if "release" in candidate.parts else "debug")
+                break
+    if not path:
+        return None, None
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+    except OSError:
+        return None, None
+    return digest.hexdigest()[:12], which
+
+
 def _load_engine():
     """Find and load translator_engine, set the two argtypes we call, and
     return the CDLL. Errors are surfaced with the exact rebuild command so

@@ -342,6 +342,33 @@ def load_pack_pairs(direction, pack_path=None):
 _LIB_CACHE = {"lib": None}
 
 
+def engine_build_sha(lib=None):
+    """A short sha256 of the engine build this measurement belongs to.
+
+    Delegates to `install_glossary_pack.engine_build_identity`, the one place that knows
+    where the library lives and how it was loaded -- a second copy of that logic would be
+    free to disagree with the first, which is the mistake D64 was about.
+
+    Why a file hash and not `tt_version()`: that export returns `CARGO_PKG_VERSION`, which
+    stays `0.1.0` across every rebuild and cannot tell two builds of one checkout apart
+    (defect D70: S13 T3's repeats straddled a rebuilt DLL and the evidence said nothing).
+
+    The write side deliberately does NOT fall back to hashing whatever build artefact is
+    on disk: a rebuild after the measurement would then get blamed for it, which is a wrong
+    attribution rather than an honest absence. `None` is written as null instead. The disk
+    fallback belongs to `engine_build_identity`'s second mode, where `which` records that
+    the value names an artefact rather than the library a process loaded.
+    """
+    from install_glossary_pack import engine_build_identity  # noqa: WPS433 (shared with flores)
+
+    if lib is None:
+        lib = _LIB_CACHE["lib"]
+    if lib is None:
+        return None
+    sha, _which = engine_build_identity(lib=lib)
+    return sha
+
+
 def _load_engine_for_translate():
     lib = _LIB_CACHE["lib"]
     if lib is not None:
@@ -463,7 +490,8 @@ def evidence_name(engine_id, direction, domain="", n=None, model=None):
 
 
 def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, domain="",
-                    failures=None, run_index=1, adherence=None, model=None):
+                    failures=None, run_index=1, adherence=None, model=None,
+                    build_sha="unset", now=None):
     """Persist one engine's run so a later COMET pass or diff report can
     pick it up. Layout mirrors docs/evidence/flores-benchmark-*.json.
 
@@ -476,8 +504,19 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
     `run_index` is the repeat slot: 1 starts a fresh series -- stale repeats from an
     older build must not pose as noise controls for this one -- while 2..n append to
     `runs`, which is the array score_comet.py already iterates and the report can
-    average to separate a terminology effect from ollama's sampling noise."""
+    average to separate a terminology effect from ollama's sampling noise.
+
+    Each run also carries its own `generated_at` and `engine_build_sha` (defect D70).
+    The file-level timestamp cannot serve that purpose: every append rewrites it, so a
+    three-repeat file records only its last write and silently re-dates the earlier
+    repeats -- which is how S13 T3 lost track of which DLL a number came from. A null
+    `engine_build_sha` is stored as null rather than guessed: it means "this run was
+    produced without a loaded engine library", not "identical to the others"."""
     import json
+
+    if build_sha == "unset":
+        build_sha = engine_build_sha()
+    stamp = (now or datetime.datetime.now(datetime.timezone.utc)).isoformat()
 
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     out = EVIDENCE_DIR / evidence_name(engine_id, direction, domain, len(src), model=model)
@@ -493,6 +532,10 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
         # any model dialed through it, so without this field a reader holding the JSON
         # could not tell the baseline from a candidate even though the file name can.
         "ollama_model": model if engine_id == "ollama-qwen" else None,
+        # When this repeat was measured, and against which build of the engine. Two
+        # "repeats" differing here are not repeats of one measurement.
+        "generated_at": stamp,
+        "engine_build_sha": build_sha,
         "requested": n if n is not None else len(src),
         "evaluated": answered,
         "scored": answered,
@@ -517,9 +560,24 @@ def _write_evidence(engine_id, direction, src, tgt, hypotheses, metrics, n, doma
             earlier = list(previous.get("runs") or [])
         except (ValueError, OSError):
             earlier = []          # unreadable: start clean rather than lose the run
+
+    # Name the mixture at the moment it is created, not three reports later. The older
+    # repeats are kept -- deleting them would destroy real measurements -- but a
+    # within-arm spread taken across two builds is not a noise floor, and someone reading
+    # only this artifact has to be able to see that.
+    prior_ids = {r.get("engine_build_sha") for r in earlier}
+    clashing = sorted(i for i in prior_ids
+                      if i and build_sha and i != build_sha)
+    if clashing:
+        print("[identity] run %d of this arm joins runs measured against another build "
+              "(%s vs %s): their within-arm spread is NOT a noise floor"
+              % (run_index, ", ".join(clashing), build_sha), flush=True)
+    elif None in prior_ids and earlier:
+        print("[identity] run %d of this arm joins runs recorded before D70, which carry no "
+              "build id: they cannot be assumed to share this build" % run_index, flush=True)
     payload = {
         "corpus": "av-domain",
-        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "generated_at": stamp,
         "runs": earlier + [run],
     }
     # The identity belongs to the artifact, not to the write that opened it: a second repeat
