@@ -230,7 +230,11 @@ python script/fetch_voice_models.py --only all
 
 - **备份 / 迁移**：整体拷贝数据目录即可。
 - **清空记忆库**：关闭应用后删除 `data/translator_tm.json` 与 `data/glossary.json`。
-- **隐私**：翻译文本只在本机流转（sidecar 仅绑定 `127.0.0.1`）；勾选隐私模式后连本机 Ollama 也不会被调用。
+- **隐私**：翻译文本只在本机流转。sidecar 服务只绑定 `127.0.0.1`，默认地址也是它；**勾选隐私模式后**，即
+  使有人把 `WONSLATE_ARGOS_URL` / `WONSLATE_MADLAD_URL` 配到了别的机器，本次请求也不会把文本发
+  出去——该引擎会被钳制回内置词典引擎作答，并在结果里点名被拒的地址；连本机 Ollama 也不会被
+  调用。需要注意隐私模式**不关闭本机落盘**（TM 与术语表仍写硬盘）。完整判据、留存清单与不适用的
+  入口见 [privacy-architecture.md](privacy-architecture.md)。
 
 ## 11. 常见问题（FAQ）
 

@@ -52,6 +52,81 @@ pub trait Translator: Send + Sync {
     fn is_reachable(&self) -> bool {
         true
     }
+
+    /// The address this engine would dial, when it dials one at all.
+    ///
+    /// `None` for engines that run in-process. Exposed because the privacy message has
+    /// to name what was refused: an operator who set `WONSLATE_MADLAD_URL` and watched
+    /// the engine get clamped needs to see the address that caused it, not guess.
+    fn endpoint(&self) -> Option<&str> {
+        None
+    }
+
+    /// Whether every address this engine can dial stays on this machine.
+    ///
+    /// Default `true` -- an engine that makes no network calls cannot leak. A networked
+    /// engine overrides it, and answers from the address it *resolved*, never from a
+    /// shipped constant, because the resolved address is the one the text travels to.
+    fn reaches_only_loopback(&self) -> bool {
+        true
+    }
+}
+
+/// Is `url`'s host this machine's loopback?
+///
+/// Deliberately narrow, and it fails closed. Accepted: an IPv4 in 127.0.0.0/8 written
+/// as four decimal octets, the IPv6 `::1`, and the name `localhost`. Rejected:
+/// everything else, including shapes that a given stack might happen to route locally
+/// (`127.1`, `0.0.0.0`, an IPv4-mapped `::ffff:127.0.0.1`, a missing or unparseable
+/// scheme). The reason for the narrowness is the asymmetry of the mistake: a false
+/// `true` here ships source text off the device while a false `false` only costs a
+/// fallback that the response says out loud.
+///
+/// Written by hand rather than pulled from a URL crate on purpose -- every new
+/// dependency has to be registered in `license_gate.rs` `REGISTERED_DEPS`, and this
+/// needs eight lines of parsing.
+pub fn url_host_is_loopback(url: &str) -> bool {
+    let Some(rest) = url.split_once("://").map(|(_, tail)| tail) else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    // A userinfo section may contain '@' and even ':'; the host is after the last one.
+    let hostport = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+
+    if let Some(bracketed) = hostport.strip_prefix('[') {
+        return bracketed.split(']').next().unwrap_or("") == "::1";
+    }
+    // A bare ':' in an unbracketed authority that is not a hostname:port pair is a
+    // malformed IPv6 literal -- take the part before the last colon and let the checks
+    // below refuse anything that is not one of the three accepted shapes.
+    let host = hostport.rsplit_once(':').map(|(h, _)| h).unwrap_or(hostport);
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+
+    if host == "localhost" {
+        return true;
+    }
+    let mut octets = host.split('.');
+    let (Some(first), true) = (octets.next(), host.starts_with("127.")) else {
+        return false;
+    };
+    first == "127"
+        && octets.count() == 3
+        && host
+            .split('.')
+            .all(|o| !o.is_empty() && o.len() <= 3 && o.parse::<u8>().is_ok())
+}
+
+/// Whether an engine may run while `privacy=true` is in force.
+///
+/// Two independent axes, and both have to hold. The id whitelist (`is_local_engine`) is
+/// necessary but not sufficient: `argos` and `madlad` are known-local *by id* while
+/// their address comes from `ARGOS_URL` / `MADLAD_URL` through the same env prefix
+/// chain that excluded `ollama` for exactly that reason (defect D68). So a request is
+/// privacy-safe only if the id is whitelisted *and* the engine that id resolves to
+/// dials nothing outside this machine.
+pub fn is_privacy_safe(id: &str) -> bool {
+    let engine = get_engine(id);
+    is_local_engine(id) && engine.reaches_only_loopback()
 }
 
 /// Reachability of an engine id, without holding an instance.
@@ -153,7 +228,12 @@ mod tests {
 
     #[test]
     fn local_engines_are_privacy_safe() {
-        // Privacy-mode invariant basis: engines that never leave the machine.
+        // Privacy-mode invariant basis, id axis only: an engine that never leaves the
+        // machine by construction. This is necessary but not sufficient -- `argos` and
+        // `madlad` pass here while their address comes from the environment, which is the
+        // whole of defect D68. The address axis is `only_the_loopback_shapes_count_as_on_
+        // device` below, and the two together are covered end to end by
+        // `tests/privacy_loopback_e2e.rs`.
         assert!(is_local_engine("demo"));
         assert!(is_local_engine("argos"));
         assert!(is_local_engine("madlad"));
@@ -172,6 +252,72 @@ mod tests {
     fn unknown_engines_are_not_local() {
         // Fail-closed: an id we do not know must default to "not local".
         assert!(!is_local_engine("no-such-engine"));
+    }
+
+    #[test]
+    fn only_the_loopback_shapes_count_as_on_device() {
+        // Table-driven, because the cases that matter are the shapes some stack might
+        // happen to route locally and that must still be refused: a false `true` here
+        // ships the user's text to another host.
+        let accepted = [
+            "http://127.0.0.1:11435",
+            "http://127.5.5.5:11436/translate",
+            "http://localhost:11436",
+            "http://LOCALHOST:11436",
+            "http://[::1]:11435",
+            "http://user:pass@127.0.0.1:11435",   // userinfo must not hide the host
+        ];
+        let refused = [
+            "http://192.168.2.121:50621",          // the address D68 was measured on
+            "http://10.0.0.5:11435",
+            "https://translate.example.com",
+            "http://127.0.0.1.evil.com:11435",     // looks like 127/8, is a hostname
+            "http://127.1:11435",                  // shorthand, not four octets
+            "http://0.0.0.0:11435",                // reaches every interface
+            "http://[::ffff:127.0.0.1]:11435",     // IPv4-mapped, not the loopback literal
+            "127.0.0.1:11435",                     // no scheme: nothing to prove
+            "",
+            "http://",
+            "http://:11435",
+        ];
+        for url in accepted {
+            assert!(url_host_is_loopback(url), "loopback shape refused: {url}");
+        }
+        for url in refused {
+            assert!(!url_host_is_loopback(url), "off-device shape accepted: {url}");
+        }
+    }
+
+    #[test]
+    fn the_address_verdict_survives_being_held_as_a_trait_object() {
+        // The pipeline holds Box<dyn Translator>, and SidecarTranslator also has an
+        // inherent endpoint(); an inherent method shadowing the trait one would leave the
+        // clamp reading a different answer than this test asserts.
+        use std::time::Duration;
+        let local = sidecar::SidecarTranslator::with_url(
+            "madlad", "http://127.0.0.1:11436".into(), Duration::from_millis(200));
+        let remote = sidecar::SidecarTranslator::with_url(
+            "madlad", "http://192.168.2.121:11436".into(), Duration::from_millis(200));
+        assert!(local.reaches_only_loopback());
+        assert!(!remote.reaches_only_loopback());
+
+        let boxed: Box<dyn Translator> = Box::new(remote);
+        assert!(!boxed.reaches_only_loopback(), "dyn dispatch lost the address verdict");
+        assert_eq!(boxed.endpoint(), Some("http://192.168.2.121:11436"));
+    }
+
+    #[test]
+    fn privacy_safety_needs_both_axes_and_never_asks_the_host() {
+        // Asserted only where the answer cannot depend on the machine: demo reads no
+        // environment, and the id axis settles ollama and unknown ids whatever the
+        // environment says. argos/madlad deliberately NOT asserted here -- their verdict
+        // depends on ARGOS_URL/MADLAD_URL, so testing them at this level would let the
+        // developer's shell decide the outcome (the exact shape of D36/D41). That pair is
+        // covered in tests/privacy_loopback_e2e.rs, on a pinned environment.
+        assert!(is_privacy_safe("demo"));
+        assert!(!is_privacy_safe("ollama"));
+        assert!(!is_privacy_safe("qwen"));
+        assert!(!is_privacy_safe("no-such-engine"));
     }
 
     #[test]

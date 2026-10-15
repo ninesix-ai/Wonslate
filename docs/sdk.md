@@ -12,7 +12,7 @@
 | 官方 .NET / Python SDK 包 | ⏳ 规划中（未发布） | 发布前请按本文直接绑定 FFI |
 | CLI / REST API / MCP Server / 批量接口 | ⏳ 规划中（未实现） | sidecar 的**内部通道**已有批量入参 `texts`（仅 `127.0.0.1`，见 §8）；对外的 REST / CLI 批量仍待实现，桌面端批量请在调用方循环；见 [terminology.md](terminology.md) |
 
-设计原则：所有对外形态（界面 / SDK / 未来的 CLI、REST、MCP）最终都调用同一 Rust 核心 `tt_translate_full`——**隐私模式、不静默降级、置信度门控等不变量与图形界面完全一致**；绑定层不复制业务逻辑。
+设计原则：所有对外形态（界面 / SDK / 未来的 CLI、REST、MCP）最终都调用同一 Rust 核心 `tt_translate_full`——**隐私模式**、不静默降级、置信度门控等不变量与图形界面完全一致；绑定层不复制业务逻辑。隐私不变量的实际判据、被保护的入口清单与已知边界（含上面那条：兼容入口 `tt_translate` 不在保护范围内）写在 [privacy-architecture.md](privacy-architecture.md)。
 
 ## 2. 快速开始
 
@@ -192,7 +192,7 @@ int main(void) {
 | 函数 | 原型 | 说明 |
 |---|---|---|
 | `tt_translate_full` | `char* tt_translate_full(const char* request_json)` | **推荐入口**：TM + 路由 + 蒸馏 + 置信度的完整流水线（§5.1 / §5.2） |
-| `tt_translate` | `char* tt_translate(engine_id, input, lang_pair)` | 兼容旧接口：`lang_pair` 以 `-` 分隔（如 `"en-zh"`）。内部 `mode=full`、`privacy=false`、`use_tm=false`（**不读写 TM**）；`engine_id` 非空 = 锁定该引擎且不升级；未知 id 显式回落 `demo` 并在 `message` 说明 |
+| `tt_translate` | `char* tt_translate(engine_id, input, lang_pair)` | 兼容旧接口：`lang_pair` 以 `-` 分隔（如 `"en-zh"`）。内部 `mode=full`、`privacy=false`、`use_tm=false`（**不读写 TM**）；`engine_id` 非空 = 锁定该引擎且不升级；未知 id 显式回落 `demo` 并在 `message` 说明。**该入口内部 `privacy=false`，因此不提供隐私保证**——需要隐私保证的调用方必须走 `tt_translate_full` 并显式置 `privacy: true` |
 
 ### 4.3 TM（翻译记忆库）
 
@@ -228,7 +228,7 @@ int main(void) {
 | `source_lang` | string | `"auto"` | 空串等同 `"auto"`；当前自动检测只区分 zh / en |
 | `target_lang` | string | `""` | 目标语言代码，必填 |
 | `mode` | string | `"full"` | `"realtime"` 或 `"full"`；其它值一律按 `full` |
-| `privacy` | bool | `false` | `true` 时强制本地（禁止 AI 升级，非本地引擎被钳制） |
+| `privacy` | bool | `false` | `true` 时本次请求只在**本机**完成。判据有两条，缺一不可：引擎 id 在已知本地名单内，**且该 id 本次实际解析出的服务地址是本机回环**（`127.0.0.0/8`、`::1`、`localhost`）。任一不满足即钳制为内置 `demo`，禁止 AI 升级，并在 `message` 里点名被拒的那个地址。之所以要第二条：`WONSLATE_ARGOS_URL` / `WONSLATE_MADLAD_URL` 能把按 id 算本地的引擎指向另一台机器（缺陷 D68，2026-10-14 修）。完整判据与被保护的入口见 [privacy-architecture.md](privacy-architecture.md) |
 | `use_tm` | bool | `true` | 是否使用 TM（读 + 写） |
 | `engine_id` | string | `""` | 显式引擎 id（§6）：非空 = 锁定不升级 |
 | `domain` | string | `""` | 领域标签。非空时只注入**该领域中出现在本次源文里的术语**（泛域行仍可参与）；一个都没命中时 `message` 会明说（不静默）；该领域本身无行时另有措辞，两者可区分。这些措辞始终描述**实际作答的那个引擎**（`engine` 字段），不会拿未被调用的引擎的能力来解释本次结果。界面当前不设置 |

@@ -95,18 +95,48 @@ pub fn translate_full(mut req: TranslateRequest) -> Result<TranslateResponse, En
         router::resolve(&req)
     };
 
-    // L0 hard invariant, enforced here rather than only in the router: under
-    // privacy the engine that actually runs must be local, even when an
-    // explicit engine_id bypassed router::resolve. Fail-closed -- any id not
-    // known to be local (including future cloud engines) is clamped to demo
-    // and the clamp is surfaced in `message`, never silent.
+    // L0 hard invariant, enforced here rather than only in the router: under privacy the
+    // engine that actually runs must stay on this machine, even when an explicit
+    // engine_id bypassed router::resolve. Fail-closed on two axes -- the id has to be
+    // known-local *and* the address that id resolved to has to be loopback (defect D68:
+    // the id whitelist alone left ARGOS_URL / MADLAD_URL able to point a "local" engine at
+    // another host, and a default privacy request dialed it). Either refusal is surfaced
+    // in `message`, never silent.
     let mut privacy_clamp: Option<String> = None;
-    if req.privacy && !engine::is_local_engine(&plan.local_engine_id) {
-        privacy_clamp = Some(format!(
-            "privacy mode: non-local engine '{}' clamped to local 'demo'",
-            plan.local_engine_id
-        ));
+    if req.privacy && !engine::is_privacy_safe(&plan.local_engine_id) {
+        // Constructed only to name the address in the message; the verdict above already
+        // stands on its own. An operator who set WONSLATE_MADLAD_URL and watched the engine
+        // get clamped has to be told which address was refused, or the clamp reads like a
+        // bug (REQ-B2's rule that a refusal explains itself).
+        let refused = engine::get_engine(&plan.local_engine_id);
+        privacy_clamp = Some(match engine::is_local_engine(&plan.local_engine_id) {
+            false => format!(
+                "privacy mode: non-local engine '{}' clamped to local 'demo'",
+                plan.local_engine_id
+            ),
+            true => match refused.endpoint() {
+                Some(addr) => format!(
+                    "privacy mode: engine '{}' dials {}, which is not this machine's \
+                     loopback; clamped to local 'demo'",
+                    plan.local_engine_id, addr
+                ),
+                // Local by id, yet nothing says where it dials. Not a thing that exists
+                // today, but the branch must not be able to call an unproven engine safe.
+                None => format!(
+                    "privacy mode: engine '{}' cannot demonstrate it stays on this machine; \
+                     clamped to local 'demo'",
+                    plan.local_engine_id
+                ),
+            },
+        });
         plan.local_engine_id = "demo".into();
+        // Defensive and, as of D68, unexercised: both routes into this branch already
+        // leave `upgrade_engine_id` empty (the router's privacy branch hard-codes it, and
+        // an explicit engine_id never upgrades), so deleting this line keeps every test
+        // green -- the mutation run said so out loud rather than being told. It stays
+        // because "clamped to a local engine" and "may still escalate to the AI" are
+        // contradictory states, and the contradiction should be refused here, where the
+        // clamp lives, not inherited from whatever the router happened to build.
         plan.upgrade_engine_id = None;
         plan.confidence_threshold = 0.0;
     }

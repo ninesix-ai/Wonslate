@@ -17,3 +17,4 @@
 |---|---|
 | [hardware-requirements.md](hardware-requirements.md) | 模型 × 档位 × 硬件门槛、配置入口（环境变量）、模型获取 |
 | [translation-benchmark.md](translation-benchmark.md) | Argos / MADLAD / Qwen3 三引擎质量与速度实测对比（原始数据见 [evidence/](evidence/)） |
+| [privacy-architecture.md](privacy-architecture.md) | 隐私不可旁路的架构级说明（面向审计方／采购方）：`privacy=true` 的实际判据（引擎 id × 本次解析出的地址）、全部网络出口清单、本机留存范围、不在这份保证内的入口，以及可自行复跑的验证命令 |

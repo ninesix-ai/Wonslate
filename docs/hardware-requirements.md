@@ -55,7 +55,7 @@ Get-Process python,ollama* | Select-Object ProcessName, @{n='RAM_MB';e={[math]::
 | `WONSLATE_FLORES_DIR` | FLORES-101 基准数据根目录（仅评测脚本读；`--flores-root` 又优先于它） | `<数据目录>/benchmarks/flores101` |
 | `WONSLATE_ARGOS_EXE` / `WONSLATE_ARGOS_ARGS` | UI 启动时拉起 Argos sidecar 的命令；留空 = 只探测已运行的服务 | `python` / `-m sidecar.ct2_sidecar --backend ct2 --port 11435` |
 | `WONSLATE_MADLAD_EXE` / `WONSLATE_MADLAD_ARGS` | 同上，MADLAD 插槽（端口 11436） | `python` / `-m sidecar.ct2_sidecar --backend madlad --port 11436` |
-| `WONSLATE_ARGOS_URL` / `WONSLATE_MADLAD_URL` | sidecar 地址覆盖（默认 127.0.0.1:11435/11436） | — |
+| `WONSLATE_ARGOS_URL` / `WONSLATE_MADLAD_URL` | sidecar 地址覆盖（默认 127.0.0.1:11435/11436）。**隐私模式（`privacy=true`）下只接受回环地址**：指到非回环地址时该引擎不会被调用，而是钳制为内置 `demo` 并在 `message` 里点名被拒的地址（D68）；非隐私请求不受此限制，可照旧指向局域网／容器地址 | — |
 | `WONSLATE_SIDECAR_TIMEOUT_MS` | 引擎侧对 sidecar **单次请求**的超时（默认 30000 ms；`LT_SIDECAR_TIMEOUT_MS` 旧拼写优先） | `5000` |
 | `WONSLATE_SIDECAR_RETRY_MS` | 引擎侧为一个 `429 busy` **最多等多久**（默认 12000 ms；`LT_SIDECAR_RETRY_MS` 旧拼写优先）。只在服务带 `--decode-slots` 启动时才会花到，因此对现有部署是零代价；它只封顶等待，不封顶翻译，所以最坏耗时是它加上上面那个超时。**预算是按整步 `Retry-After` 花的**（一步 = 服务自己 p50 的上取整，负载越重越大）：小于一步的非零值不会睡任何一秒，行为等同于 `0` | `0` = 不等，被拒即降级；`20000` ≈ 在 p50 升至 7 s 时还能等两步 |
 | `WONSLATE_OLLAMA_MODEL` | L3 升级模型（默认 `qwen3:8b`） | `qwen3:14b` |

@@ -94,6 +94,21 @@ impl OllamaTranslator {
         Self::from_lookup(&|k| std::env::var(k).ok())
     }
 
+    /// Build with a given address, model and timeout taken as shipped.
+    ///
+    /// The seam exists because the privacy verdict is about *this* address: without a
+    /// constructor that accepts one, the only way to observe it would be to export
+    /// `OLLAMA_URL`, which lets a developer's shell decide the outcome -- the shape of
+    /// D36/D41, and precisely why the D68 mutation run first found this engine's address
+    /// check unexercised. `SidecarTranslator::with_url` is the same idea.
+    pub fn with_url(url: String) -> Self {
+        Self {
+            url,
+            model: DEFAULT_MODEL.to_string(),
+            timeout: Duration::from_millis(DEFAULT_TIMEOUT_MS),
+        }
+    }
+
     /// The same resolution against an arbitrary environment.
     ///
     /// Split out because the interesting part of a prefix chain is *both* sides of every
@@ -177,6 +192,18 @@ impl OllamaTranslator {
 impl Translator for OllamaTranslator {
     fn name(&self) -> &'static str {
         "ollama-qwen"
+    }
+
+    /// The address it resolved, so the privacy axis does not depend on this engine being
+    /// absent from the id whitelist. Today it is excluded there (D68's basis), but an
+    /// engine that dials a network should answer for its own address: if somebody later
+    /// decides a loopback Ollama counts as local, the address check still has to hold.
+    fn endpoint(&self) -> Option<&str> {
+        Some(&self.url)
+    }
+
+    fn reaches_only_loopback(&self) -> bool {
+        crate::engine::url_host_is_loopback(&self.url)
     }
 
     fn translate(&self, text: &str, source: &str, target: &str) -> Option<String> {
@@ -285,6 +312,19 @@ mod tests {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
         move |k: &str| owned.iter().find(|(name, _)| name == k).map(|(_, v)| v.clone())
+    }
+
+    #[test]
+    fn the_ai_engine_answers_for_its_own_address() {
+        // This engine is excluded from the privacy id whitelist for one reason: its URL is
+        // env-overridable. The second axis of the guard has to be observable without going
+        // through the environment, or nothing would keep it honest if the first axis were
+        // ever relaxed (the mutation run for D68 caught exactly this gap).
+        let local = OllamaTranslator::with_url("http://127.0.0.1:11434".into());
+        let remote = OllamaTranslator::with_url("http://10.0.0.5:11434".into());
+        assert!(local.reaches_only_loopback(), "the shipped loopback endpoint was refused");
+        assert!(!remote.reaches_only_loopback(), "an off-device address was called on-device");
+        assert_eq!(remote.endpoint(), Some("http://10.0.0.5:11434"));
     }
 
     #[test]

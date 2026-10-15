@@ -228,6 +228,16 @@ impl Translator for SidecarTranslator {
         self.id
     }
 
+    /// The resolved address, which is what the privacy decision has to be made on -- not
+    /// the shipped default, since `ARGOS_URL` / `MADLAD_URL` can point it anywhere.
+    fn endpoint(&self) -> Option<&str> {
+        Some(&self.url)
+    }
+
+    fn reaches_only_loopback(&self) -> bool {
+        crate::engine::url_host_is_loopback(&self.url)
+    }
+
     fn translate(&self, text: &str, source: &str, target: &str) -> Option<String> {
         let text = text.trim();
         if text.is_empty() {
