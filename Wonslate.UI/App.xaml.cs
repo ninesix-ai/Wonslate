@@ -104,11 +104,32 @@ public partial class App : Application
         lock (_gate)
         {
             var sb = new StringBuilder(_engineLine);
-            if (_argos is { } argos) sb.Append(" · argos=").Append(argos.State);
-            if (_madlad is { } madlad) sb.Append(" · madlad=").Append(madlad.State);
+            if (_argos is { } argos) AppendEndpoint(sb, "argos", argos);
+            if (_madlad is { } madlad) AppendEndpoint(sb, "madlad", madlad);
             text = sb.ToString();
         }
         _window?.Dispatcher.Invoke(() => _vm?.SetDiagnostics(text));
+    }
+
+    /// <summary>
+    /// One endpoint on the diagnostics line. A bare `Failed` would send the operator to restart a
+    /// service that is answering perfectly well: what they need to know is that the port belongs
+    /// to a *different* sidecar, so the knobs just configured never took effect (defect D73).
+    /// `Unproven` is deliberately not shown -- the endpoint works, and a warning nobody can act on
+    /// becomes noise that people learn to ignore.
+    /// </summary>
+    private static void AppendEndpoint(StringBuilder sb, string name, SidecarManager manager)
+    {
+        sb.Append(" · ").Append(name).Append('=').Append(manager.State);
+        switch (manager.LastIdentityVerdict)
+        {
+            case Identity.Foreign:
+                sb.Append("（端口被另一个 sidecar 占用，本次启动的参数未生效）");
+                break;
+            case Identity.Exited:
+                sb.Append("（本程序启动的 sidecar 已退出，端口上是旧实例）");
+                break;
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

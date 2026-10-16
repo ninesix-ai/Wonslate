@@ -72,7 +72,9 @@ ROOT = HERE.parent
 SIDECAR = ROOT / "sidecar" / "ct2_sidecar.py"
 
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(ROOT / "script"))
 import test_phase1_ffi as ffi  # noqa: E402
+from sidecar_identity import OURS, classify, health_answer  # noqa: E402  (one identity rule)
 
 DEAD = "http://127.0.0.1:1"
 
@@ -197,20 +199,13 @@ def _post(url: str, text: str, timeout: float = 300.0):
 
 
 def _health(url: str) -> dict:
+    """Read the counters off whatever service answers. Identity is a separate question, decided
+    once at start-up through `sidecar_identity` (D72/D73); this helper never claims ownership."""
     try:
-        with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=2) as r:
+        with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=2) as r:  # lint-allow: liveness-only
             return json.loads(r.read().decode("utf-8"))
     except Exception:
         return {}
-
-
-def _wait_health(url: str, timeout: float = 30.0) -> bool:
-    end = time.time() + timeout
-    while time.time() < end:
-        if _health(url).get("status") == "ok":
-            return True
-        time.sleep(0.2)
-    return False
 
 
 def _wait_slot_busy(url: str, timeout: float = 20.0):
@@ -409,26 +404,21 @@ class GatedCheckpoint:
             # line, not a new one that happens to behave like the old.
             self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
                                          stderr=subprocess.DEVNULL, env=env)
-            if not _wait_health(self.url):
-                reason = "gated service on port %d never answered /health" % self.port
-                self._reap()
-                continue
-            answered_by = _health(self.url).get("pid")
-            if not answered_by:
-                # No pid published means no proof, and assuming "it's ours" is the mistake that
-                # started this. Older sidecars do answer without it, so say which case we are in.
-                reason = ("port %d answered /health without a pid, so the instance cannot be "
-                          "identified" % self.port)
-                self._reap()
-                continue
-            if answered_by == self.proc.pid:
+            # One shared rule decides what the answer means (script/sidecar_identity.py); this
+            # call site only owns the retry policy. Strict on purpose: an older sidecar that
+            # answers without a pid is not evidence that it is the one we launched, and a
+            # measurement may not accept "probably mine".
+            answered, their_pid = health_answer(self.url)
+            label, detail = classify(self.proc.pid, self.proc.poll(), their_pid,
+                                     answered=answered)
+            if label == OURS:
+                self.started_pid = their_pid
                 break
-            reason = ("port %d was answered by pid %s while this episode started pid %s"
-                      % (self.port, answered_by, self.proc.pid))
+            reason = "%s: %s" % (self.url, detail)
             self._reap()
         else:
             raise Precondition(reason)
-        self.started_port, self.started_pid = self.port, answered_by
+        self.started_port = self.port
 
         # Pay the checkpoint load inside a call that is not part of any measurement.
         with urllib.request.urlopen(

@@ -35,6 +35,23 @@ internal enum Readiness
     Unknown,
 }
 
+/// <summary>
+/// Is who answered actually who we launched (defect D73). Mirrors `script/sidecar_identity.py`:
+/// the desktop and a benchmark run share one sidecar contract, so the two sides must not drift
+/// into different definitions of "good enough".
+/// </summary>
+internal enum Identity
+{
+    /// <summary>The responder is ours, or there was nothing to prove (external service mode).</summary>
+    Ours,
+    /// <summary>The responder named a pid that is not our process, while ours still runs.</summary>
+    Foreign,
+    /// <summary>Our process is gone yet the port answered: it cannot be ours.</summary>
+    Exited,
+    /// <summary>Something answered without publishing a pid (a sidecar older than D72).</summary>
+    Unproven,
+}
+
 /// <summary>Spec for one sidecar endpoint. An empty BaseUrl or ExePath carries dedicated meaning (see SidecarManager).</summary>
 internal sealed record SidecarSpec(
     string Name,
@@ -84,11 +101,19 @@ internal sealed class SidecarManager
     private readonly Func<string, Readiness>? _ready;
     private readonly Func<string, bool>? _warm;
 
+    // D73: which process is answering /health, and which process we launched. Injectable on
+    // purpose -- the built-in versions need a real socket and a real child, and the state
+    // machine that decides "Ready" must be testable without either.
+    private readonly Func<string, (bool Answered, int? Pid)>? _healthIdentity;
+    private readonly Func<(int? Pid, int? ExitCode)>? _ownedProcess;
+
     // Guards _proc / _processOwned / _state: Start runs on a worker thread while the UI
     // thread (or Stop at shutdown) may read the state at any moment.
     private readonly object _gate = new();
     private Process? _proc;
     private bool _processOwned;
+    private string? _anomaly;
+    private Identity? _lastIdentity;
     private SidecarState _state = SidecarState.Stopped;
 
     public SidecarState State { get { lock (_gate) { return _state; } } }
@@ -104,7 +129,9 @@ internal sealed class SidecarManager
         Action<int>? sleep,
         Action<SidecarSpec>? kill = null,
         Func<string, Readiness>? readyProbe = null,
-        Func<string, bool>? warmPost = null)
+        Func<string, bool>? warmPost = null,
+        Func<string, (bool Answered, int? Pid)>? healthIdentity = null,
+        Func<(int? Pid, int? ExitCode)>? ownedProcess = null)
     {
         _spec = spec;
         _launch = launch;
@@ -113,6 +140,8 @@ internal sealed class SidecarManager
         _kill = kill;
         _ready = readyProbe;
         _warm = warmPost;
+        _healthIdentity = healthIdentity;
+        _ownedProcess = ownedProcess;
     }
 
     /// <summary>Production constructor: no injection, the built-in launcher, health probe, readiness probe and warm-up post are used.</summary>
@@ -148,6 +177,27 @@ internal sealed class SidecarManager
         {
             if (SafeProbe())
             {
+                // Alive is not the same as usable, and usable is not the same as ours. A survivor
+                // of an earlier session answers /health just as well as the process we launched a
+                // second ago, so trusting the probe alone used to report Ready while the knobs this
+                // launch was asked for had never taken effect (defect D73). Identity is settled
+                // before any readiness verdict is published.
+                var (who, why) = ObserveIdentity();
+                lock (_gate)
+                {
+                    _anomaly = who == Identity.Ours ? null : why;
+                    _lastIdentity = who == Identity.Ours ? null : who;
+                }
+                if (who is Identity.Foreign or Identity.Exited)
+                {
+                    // Something owns that port, and it is not ours. Failing here is the honest
+                    // half: the state stops claiming a configuration that is not running, and the
+                    // anomaly names the responder so the operator has something to act on. The
+                    // process we launched is released, never the stranger's.
+                    SetState(SidecarState.Failed);
+                    ReleaseOwnedProcess();
+                    return false;
+                }
                 // Alive is not the same as usable. Readiness is a second, separate
                 // verdict, and a cold answer settles at Warming: failing there would run
                 // ReleaseOwnedProcess() and kill a sidecar that is merely still loading.
@@ -212,6 +262,100 @@ internal sealed class SidecarManager
     }
 
     private void SetState(SidecarState next) { lock (_gate) { _state = next; } }
+
+    /// <summary>
+    /// Why the last Start refused to treat the endpoint as its own, or null when it did.
+    /// Surfaced by the shell's diagnostics line: "not ours" and "not there" need different
+    /// remedies, and a bare Failed state would tell the operator to restart something that is
+    /// already running fine.
+    /// </summary>
+    public string? StartAnomaly { get { lock (_gate) { return _anomaly; } } }
+
+    /// <summary>
+    /// Which identity verdict the last Start reached, or null when it was `Ours`. Structured as
+    /// well as textual on purpose: the diagnostics line is user-facing Chinese, and a sentence
+    /// assembled from a verdict reads better than a logged English detail pasted into a label.
+    /// The two failures that cost the user a wrong "ready" are Foreign and Exited (D73).
+    /// </summary>
+    public Identity? LastIdentityVerdict { get { lock (_gate) { return _lastIdentity; } } }
+
+    /// <summary>One identity question, asked once per Start after the endpoint answered.</summary>
+    private (Identity Label, string Detail) ObserveIdentity()
+    {
+        var (pid, exitCode) = _ownedProcess is { } ? _ownedProcess() : OwnedProcess();
+        var (answered, answererPid) = _healthIdentity is { }
+            ? _healthIdentity(_spec.HealthUrl)
+            : DefaultHealthIdentity(_spec.HealthUrl);
+        if (!answered)
+        {
+            // Reached only in a race (the probe said alive, this one did not). Not a verdict
+            // about ownership, so it must not fail a working endpoint.
+            return (Identity.Unproven, "the endpoint stopped answering between the two probes");
+        }
+        return ClassifyIdentity(pid, exitCode, answererPid);
+    }
+
+    /// <summary>
+    /// The rule, as pure arithmetic: same four branches as `sidecar_identity.classify` in
+    /// script/, kept in step by the tests on both sides.
+    /// </summary>
+    internal static (Identity Label, string Detail) ClassifyIdentity(
+        int? procPid, int? exitCode, int? answererPid)
+    {
+        if (procPid is null)
+            return (Identity.Ours, "no process was launched by us; an external service is taken as asked for");
+        if (answererPid is not null && answererPid == procPid)
+            return (Identity.Ours, $"answered by pid {answererPid}, the process we started");
+        if (exitCode is not null)
+            return (Identity.Exited, $"our process (pid {procPid}) exited with code {exitCode} while the "
+                                     + $"port answered{(answererPid is int other ? $" by pid {other}" : " without identifying itself")}");
+        if (answererPid is not null)
+            return (Identity.Foreign, $"port answered by pid {answererPid}, not our process (pid {procPid})");
+        return (Identity.Unproven, $"port answered without a pid (a sidecar older than D72?), our process "
+                                   + $"pid {procPid} is still running");
+    }
+
+    /// <summary>Our launched process as (pid, exit code while dead), or (null, null) if we started none.</summary>
+    private (int? Pid, int? ExitCode) OwnedProcess()
+    {
+        Process? proc;
+        lock (_gate) { proc = _proc; }
+        if (proc is null) return (null, null);
+        try
+        {
+            return proc.HasExited ? ((int?)proc.Id, proc.ExitCode) : ((int?)proc.Id, null);
+        }
+        catch
+        {
+            // A process we cannot read is still a process we launched: report the pid and no
+            // exit code rather than inventing a death we did not observe.
+            return (proc.Id, null);
+        }
+    }
+
+    /// <summary>
+    /// GET /health and read `(answered, pid)`. `answered` is false on any transport failure or
+    /// non-200; `pid` is null when the body does not publish one, which is reported as unknown
+    /// rather than as a match (defect D73, and the field D72 added).
+    /// </summary>
+    private static (bool Answered, int? Pid) DefaultHealthIdentity(string url)
+    {
+        try
+        {
+            using var resp = Http.GetAsync(url).GetAwaiter().GetResult();
+            if (resp.StatusCode != HttpStatusCode.OK) return (false, null);
+            using var doc = System.Text.Json.JsonDocument.Parse(
+                resp.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            if (doc.RootElement.TryGetProperty("pid", out var element)
+                    && element.TryGetInt64(out var value))
+                return (true, (int)value);
+            return (true, null);
+        }
+        catch
+        {
+            return (false, null);
+        }
+    }
 
     private bool SafeProbe()
     {

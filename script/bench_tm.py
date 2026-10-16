@@ -76,6 +76,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "script"))
 
 from install_glossary_pack import measurement_identity  # noqa: E402  (evidence identity)
+from sidecar_identity import SidecarIdentityError, wait_until_ours  # noqa: E402  (D73)
 SIDECAR = ROOT / "sidecar" / "ct2_sidecar.py"
 
 # Derived, not measured: the cloud price this project quotes for its cost model
@@ -174,8 +175,10 @@ def build_stream(corpus: list[str], requests: int, new_ratio: float, seed: int,
 # ---------------------------------------------------------------- sidecar
 
 def sidecar_healthy(url: str) -> bool:
+    """Is something listening? Used only to decide whether to reuse an outside service; the
+    identity of a sidecar we launched ourselves is settled by `sidecar_identity` (D73)."""
     try:
-        with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=2) as resp:
+        with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=2) as resp:  # lint-allow: liveness-only
             return resp.status == 200
     except Exception:
         return False
@@ -203,16 +206,20 @@ def ensure_sidecar(args, child_env: dict) -> subprocess.Popen | None:
         cmd += ["--model-dir", str(args.model_dir)]
     _p(f"[bench] starting sidecar: {' '.join(cmd)}")
     proc = subprocess.Popen(cmd, cwd=str(ROOT), env=child_env)
-    deadline = time.time() + 90
-    while time.time() < deadline:
-        if sidecar_healthy(args.sidecar_url):
-            _p("[bench] sidecar ready")
-            return proc
-        if proc.poll() is not None:
-            raise SystemExit(f"sidecar exited early with code {proc.returncode}")
-        time.sleep(0.5)
-    proc.kill()
-    raise SystemExit("sidecar did not become healthy within 90s")
+    # Reaching this line means we decided to launch our own, so an answer from the port has to
+    # come from that process. Reusing a stranger here would quietly benchmark a sidecar started
+    # with different arguments (D73) -- the branch above that reuses an outside service is
+    # deliberate; this one is not allowed to mistake a survivor for our own child.
+    try:
+        label, detail = wait_until_ours(args.sidecar_url, proc, timeout=90, interval=0.5)
+    except SidecarIdentityError as bad:
+        proc.kill()
+        raise SystemExit("the sidecar we started could not be identified: %s" % bad)
+    _p("[bench] sidecar ready (%s)" % detail)
+    if label == "unproven":
+        _p("[bench] NOTE: that sidecar answers /health without a pid, so this run cannot prove "
+           "the service is the one just launched rather than an older one on the same port.")
+    return proc
 
 
 # ---------------------------------------------------------------- engine

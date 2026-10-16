@@ -67,6 +67,7 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "script"))
 from bench_domain_av import (evidence_name, ollama_model_identity,  # noqa: E402
                              DEFAULT_OLLAMA_MODEL, _ffi_id)
+from sidecar_identity import SidecarIdentityError, wait_until_ours  # noqa: E402  (D73)
 EVIDENCE_DIR = REPO / "docs" / "evidence"
 REPORT_PATH = REPO / "docs" / "av-domain-benchmark.md"
 RANGES_PATH = REPO / "script" / "av_domain_ranges.json"
@@ -173,7 +174,14 @@ def _probe_url(url: str, timeout: float = 2.0) -> bool:
 
 
 def _sidecar_running(port: int) -> bool:
-    return _probe_url(f"http://127.0.0.1:{port}/health", timeout=1.0)
+    """Is *something* serving this port? A preflight question, not an identity claim.
+
+    Callers here use it to tell the operator "no engine is listening" or "one is already up".
+    Deciding whether the service on a port is the one we launched is a different question and
+    lives in `sidecar_identity` (defect D73); keeping the two apart is why this line carries an
+    explicit annotation instead of being silently whitelisted at file level.
+    """
+    return _probe_url(f"http://127.0.0.1:{port}/health", timeout=1.0)  # lint-allow: liveness-only
 
 
 def _start_sidecar(engine: str, port: int) -> subprocess.Popen:
@@ -184,19 +192,26 @@ def _start_sidecar(engine: str, port: int) -> subprocess.Popen:
     proc = subprocess.Popen(
         [sys.executable, str(SIDECAR_PY), "--backend", backend, "--port", str(port)],
         stdout=log, stderr=log, cwd=REPO, env=env)
-    deadline = time.time() + 120
-    while time.time() < deadline:
-        if _sidecar_running(port):
-            print(f"  [sidecar] {engine} ready on {port} (backend={backend})")
-            return proc
-        if proc.poll() is not None:
-            raise SystemExit(
-                f"{engine} sidecar exited early (code {proc.returncode})\n"
-                f"  command: python {SIDECAR_PY} --backend {backend} --port {port}\n"
-                f"  log:     {log.name}")
-        time.sleep(2)
-    proc.terminate()
-    raise SystemExit(f"{engine} sidecar did not become healthy on {port} in 120s")
+    # "Someone answers /health" is not "this is the service we just started": a survivor of an
+    # earlier batch usually owns the port, our child cannot bind it and dies, and every number
+    # then comes off a service launched with *other* arguments while the log says `ready`.
+    # Defect D73; the order matters too -- polling health first used to short-circuit the
+    # exit-code check below, which was written but never reached.
+    try:
+        label, detail = wait_until_ours("http://127.0.0.1:%d" % port, proc, timeout=120,
+                                        interval=2.0)
+    except SidecarIdentityError as bad:
+        proc.terminate()
+        raise SystemExit("%s sidecar could not be identified on port %d: %s\n"
+                         "  something else owns that port -- stop it rather than waiting longer\n"
+                         "  command: python %s --backend %s --port %d\n  log: %s"
+                         % (engine, port, bad, SIDECAR_PY, backend, port, log.name))
+    if label == "unproven":
+        print("  [sidecar] %s answered on %d without a pid (pre-D72 sidecar): %s"
+              % (engine, port, detail))
+    else:
+        print("  [sidecar] %s ready on %d (backend=%s; %s)" % (engine, port, backend, detail))
+    return proc
 
 
 def install_pack() -> None:

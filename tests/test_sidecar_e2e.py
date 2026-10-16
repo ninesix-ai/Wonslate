@@ -28,7 +28,9 @@ SIDECAR = ROOT / "sidecar" / "ct2_sidecar.py"
 
 # Reuse the ctypes Engine wrapper + dll locator from the FFI smoke test.
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent / "script"))
 import test_phase1_ffi as ffi  # noqa: E402
+from sidecar_identity import SidecarIdentityError, wait_until_ours  # noqa: E402  (D73)
 
 
 def _free_port() -> int:
@@ -37,19 +39,6 @@ def _free_port() -> int:
     port = s.getsockname()[1]
     s.close()
     return port
-
-
-def _wait_health(base: str, timeout: float = 10.0) -> bool:
-    end = time.time() + timeout
-    while time.time() < end:
-        try:
-            with urllib.request.urlopen(base.rstrip("/") + "/health", timeout=1) as r:
-                if r.status == 200:
-                    return True
-        except Exception:
-            pass
-        time.sleep(0.1)
-    return False
 
 
 def main() -> int:
@@ -67,10 +56,16 @@ def main() -> int:
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     try:
-        if not _wait_health(url):
-            ck.fail("sidecar start", f"mock sidecar never became ready at {url}")
+        # Strict mode: a measurement must not accept a service that will not identify itself.
+        # An answer from the port is not proof that the mock launched above is answering it --
+        # if a stranger owns that port, every assertion below runs against something else.
+        try:
+            _label, detail = wait_until_ours(url, proc, timeout=10.0, interval=0.1,
+                                             allow_unproven=False)
+        except SidecarIdentityError as bad:
+            ck.fail("sidecar start", str(bad))
             return ck.summary()
-        ck.ok(f"mock sidecar ready at {url}")
+        ck.ok("mock sidecar ready at %s (%s)" % (url, detail))
 
         try:
             dll = ffi._find_dll()
