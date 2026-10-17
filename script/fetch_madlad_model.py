@@ -56,6 +56,7 @@ sys.path.insert(0, str(ROOT / "script"))
 
 from sidecar.ct2_sidecar import default_madlad_model_dir  # noqa: E402  (single source of truth)
 import net_guard                                          # noqa: E402  (the fetch policy)
+import model_origin                                       # noqa: E402  (what version landed)
 
 REPO = "Heng666/madlad400-3b-mt-ct2-int8"
 # model.bin is the 2.9 GB int8 checkpoint; spiece.model is the tokenizer the
@@ -108,6 +109,16 @@ def say(tag, msg=""):
     print("[{}] {}".format(tag, msg).rstrip(), flush=True)
 
 
+def _record_origin(dest_dir, leaf, digest, revision):
+    """Write what landed, beside it. `version` is the revision we were told to fetch, which for
+    `main` is deliberately weak -- so the digest is stored next to it and `check_model_updates.py`
+    compares bytes rather than trusting the label.
+    """
+    model_origin.record(dest_dir, asset=leaf, version=revision, sha256=digest,
+                        url="{}/{}/resolve/{}".format(FALLBACK_ENDPOINTS[0], REPO, revision),
+                        fetcher="fetch_madlad_model.py", kind=revision)
+
+
 def endpoints():
     """The bases $HF_ENDPOINT / the fallbacks allow, after the policy has looked at them."""
     override = os.environ.get("HF_ENDPOINT", "").strip().rstrip("/")
@@ -138,8 +149,14 @@ def final_path(dest_dir, leaf):
     return joined
 
 
-def download(leaf, dest_dir, force, attempts=4, allow_unpinned=False):
+def download(leaf, dest_dir, force, attempts=4, allow_unpinned=False, revision="main"):
     """Fetch one repo file through the shared policy, verifying its pinned digest.
+
+    `revision` is the version knob (GA-13): the default follows the moving `main` branch, while a
+    commit sha or tag pins the directory to one upstream state. Whatever was chosen gets written
+    into `wonslate-origin.json` beside the file, because "we fetch from main" is not a fact a
+    later reader can reconstruct -- the bytes under it change and nothing else records which
+    generation this checkout belongs to.
 
     Policy refusals (host, scheme, private address, checksum, missing pin) end the loop
     at once: re-downloading the same URL cannot fix any of them, and four silent retries
@@ -159,6 +176,9 @@ def download(leaf, dest_dir, force, attempts=4, allow_unpinned=False):
         if got == pin[0]:
             say("fetch", "{} cached and digest-verified ({:.1f} MB)".format(
                 leaf, os.path.getsize(target) / 1e6))
+            # Recorded here too: an existing checkout is exactly the case where nobody knows
+            # which revision it came from, and the origin file is what makes it knowable.
+            _record_origin(dest_dir, leaf, pin[0], revision)
             return True
         say("fetch", "{} on disk is sha256 {}, pin says {} -- re-fetching".format(
             leaf, got[:16], pin[0][:16]))
@@ -169,7 +189,7 @@ def download(leaf, dest_dir, force, attempts=4, allow_unpinned=False):
 
     for i in range(1, attempts + 1):
         for base in endpoints():
-            url = "{}/{}/resolve/main/{}".format(base, REPO, leaf)
+            url = "{}/{}/resolve/{}/{}".format(base, REPO, revision, leaf)
             try:
                 digest, size = net_guard.fetch(
                     url, target, ALLOWED_HOSTS, ALLOWED_HOST_SUFFIXES,
@@ -180,6 +200,7 @@ def download(leaf, dest_dir, force, attempts=4, allow_unpinned=False):
                 say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
                     leaf, size / 1e6, digest[:16],
                     "" if pin else " UNPINNED (--allow-unpinned)"))
+                _record_origin(dest_dir, leaf, digest, revision)
                 return True
             except net_guard.UnpinnedAsset as exc:
                 say("fetch", "REFUSED: {}".format(exc))
@@ -230,6 +251,10 @@ def main(argv=None):
     parser.add_argument("--dest", default=None,
                         help="target directory (default: <data_dir>/models/madlad)")
     parser.add_argument("--force", action="store_true", help="re-download existing files")
+    parser.add_argument("--rev", default="main",
+                        help="which upstream revision to fetch: a branch (default, it moves), a "
+                             "tag, or a commit sha for a reproducible install. Whatever is used "
+                             "is recorded in wonslate-origin.json next to the checkpoint")
     parser.add_argument("--allow-unpinned", action="store_true",
                         help="fetch a file even when no sha256 is pinned for it "
                              "(prints which file is unpinned; default refuses)")
@@ -245,7 +270,8 @@ def main(argv=None):
     say("*", "target: {}".format(dest_dir))
 
     failed = [leaf for leaf in FILE_NAMES
-              if not download(leaf, dest_dir, args.force, allow_unpinned=args.allow_unpinned)]
+              if not download(leaf, dest_dir, args.force, allow_unpinned=args.allow_unpinned,
+                              revision=args.rev)]
 
     print("", flush=True)
     problem = verify(dest_dir)

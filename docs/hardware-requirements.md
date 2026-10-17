@@ -122,6 +122,32 @@ Argos 还有一层：包的真实下载地址来自那份 index 的 `links` 数�
 
 > 对你意味着什么：若上游**重新打包**同名文件（Argos 官方升级包内容而文件名不变是最可能的一种），脚本会以 `REFUSED: checksum mismatch` 停下而不是静默收下新字节。这是有意的：请先核对新值的来源（上游发布页或 release 的 `digest`），再更新脚本顶部的 `EXPECTED_SHA256`，并在其 `source` 字段里写清日期与出处。`--allow-unpinned` 只用于临时取用，不该成为默认。
 
+### 5.2 版本记录与“上游有没有新版”（2026-10-17 起）
+
+上面的策略只回答“是不是那份字节”；本节回答另一半：“装的是哪一版、怎么知道上游发了新版”（GA-13）。
+
+三个下载脚本成功装好后，会在**自己的目录里**留一份 `wonslate-origin.json`：哪个版本、字节哈希、来源 URL、何时取的。三家上游对“版本”的说法本来就不同，这里如实分开记，**不抹成一个字符串**：
+
+| 资产 | 版本从哪来 | 记法 |
+|---|---|---|
+| Argos | 官方 index 的 `package_version`（这个字段一直都有，只是过去没人记） | 按语向分别记录，`en_zh` 与 `zh_en` 可以不同版本 |
+| 语音（sherpa-onnx） | 写在 asset 文件名里（`…-v1_1`、`…-2024-07-17`），release tag 只是长期存在的桶 | `version` 记文件名、`kind` 记 tag |
+| MADLAD | 上游不发版本号；它从 `main` 取，而 `main` 的内容会动 | 记 `revision` + 实际哈希，比对按字节而不是按标签 |
+
+MADLAD 现在有版本旋钮：`--rev <分支|tag|commit sha>`，默认 `main`。**要可复现的装机就传 commit sha**，选了什么会写进 origin 记录。
+
+查上游是否已发新版：
+
+```bash
+python script/check_model_updates.py                    # 全部三类
+python script/check_model_updates.py --only argos        # 只看 Argos
+python script/check_model_updates.py --dest <目录> --only argos
+```
+
+退出码是**三态**，因为“没查到”与“没有新版”是两件事：`0` 已比对且无更新、`2` 上游有更新、`1` 至少一处没能查到（离线、无权限、origin 记录不可用）。目录还没有记录时报 `unrecorded` 并保持 `0`——新机器就是新机器，不是错误。
+
+它需要访问上游，所以**不进门禁序列**；它的判读逻辑由 `tests/test_model_updates.py` 用注入的假上游响应离线覆盖（包括“探针失败时必须报 1 而不是 0”那一条）。
+
 ## 6. 开发参考机（本文档实测数据来源）
 
 | 项 | 值 |

@@ -95,6 +95,7 @@ jobs:
           python tests/test_run_identity.py
           python tests/test_sidecar_identity.py
           python tests/test_unreachable_guards.py
+          python tests/test_model_updates.py
           python tests/test_xaml_lint.py
           python tests/test_pre_commit_hook.py
           python tests/test_glossary_hygiene.py

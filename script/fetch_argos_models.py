@@ -57,6 +57,13 @@ sys.path.insert(0, str(ROOT / "script"))
 
 from sidecar.ct2_sidecar import default_model_dir  # noqa: E402  (single source of truth)
 import net_guard                                    # noqa: E402  (the fetch policy)
+import model_origin                                 # noqa: E402  (which version landed, GA-13)
+
+# Pair code -> the `package_version` the index states for it, filled by load_index(). The
+# upstream has always published this and we never kept it, which is why "which generation is
+# installed" was unanswerable (GA-13). It is recorded beside the link map instead of changing
+# the map's shape, so `--list` and the fetch loop keep reading exactly what they read before.
+PACKAGE_VERSIONS = {}
 
 # The index is small JSON; a CDN mirror is tried first because GitHub raw is
 # unreliable on some networks. These two hosts serve *the index*, and are deliberately
@@ -154,6 +161,7 @@ def load_index():
             chosen = pick_link(entry.get("links") or [], pair)
             if chosen:
                 links[pair] = chosen
+                PACKAGE_VERSIONS[pair] = entry.get("package_version")
         say("index", "{} pair(s) resolvable via {}".format(len(links), url))
         return links
     raise SystemExit("could not read the Argos index; last error: {}".format(last))
@@ -179,6 +187,9 @@ def pick_link(urls, pair):
 def download(url, dest, attempts=4, allow_unpinned=False):
     """Fetch one package through the policy and verify it against its pinned digest.
 
+    Returns the digest on success and False on failure: the caller needs the value to record
+    which generation landed, and returning it beats hashing an 85 MB archive a second time.
+
     Which failures are retried matters: a missing pin, a refused host or a checksum
     mismatch will not fix themselves by downloading the same URL four more times, so those
     end the attempt loop immediately. Only transport errors retry.
@@ -195,7 +206,7 @@ def download(url, dest, attempts=4, allow_unpinned=False):
             say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
                 name, size / 1e6, digest[:16],
                 "" if pin else " UNPINNED (--allow-unpinned)"))
-            return True
+            return digest
         except net_guard.UnpinnedAsset as exc:
             say("fetch", "REFUSED: {}".format(exc))
             return False
@@ -239,7 +250,7 @@ def verify(target):
     return None
 
 
-def fetch_pair(pair, link, dest_root, force, allow_unpinned=False):
+def fetch_pair(pair, link, dest_root, force, allow_unpinned=False, version=None):
     archive = dest_root / link.rsplit("/", 1)[-1]
     # Name the unpacked directory after the archive (translate-en_zh-1_9),
     # matching Argos' own convention for unpacked packages.
@@ -262,11 +273,14 @@ def fetch_pair(pair, link, dest_root, force, allow_unpinned=False):
 
     if force or not cached_ok:
         say("fetch", "{} <- {}".format(pair, link))
-        if not download(link, archive, allow_unpinned=allow_unpinned):
+        digest = download(link, archive, allow_unpinned=allow_unpinned)
+        if not digest:
             return False
     else:
         say("fetch", "{} cached and digest-verified ({:.1f} MB)".format(
             pair, archive.stat().st_size / 1e6))
+        # The pin is what the cached copy just matched, so it is the digest being recorded.
+        digest = pin[0] if pin else None
 
     if force and target.is_dir():
         shutil.rmtree(target)
@@ -278,6 +292,11 @@ def fetch_pair(pair, link, dest_root, force, allow_unpinned=False):
     if problem:
         say("verify", "FAIL {}: {}".format(pair, problem))
         return False
+    if digest:
+        # Recorded beside the unpacked package: which pair version, which bytes, when. Without
+        # this the answer to "is there a newer Argos package" is "we do not know what we have".
+        model_origin.record(target, asset=pair, version=version, sha256=digest, url=link,
+                            fetcher="fetch_argos_models.py", kind=archive.name)
     say("verify", "OK   {} -> {}".format(pair, target))
     return True
 
@@ -315,7 +334,8 @@ def main(argv=None):
             say("fetch", "SKIP {}: not offered by the index (see --list)".format(pair))
             failed.append(pair)
             continue
-        if not fetch_pair(pair, link, dest_root, args.force, args.allow_unpinned):
+        if not fetch_pair(pair, link, dest_root, args.force, args.allow_unpinned,
+                          version=PACKAGE_VERSIONS.get(pair)):
             failed.append(pair)
 
     print("", flush=True)

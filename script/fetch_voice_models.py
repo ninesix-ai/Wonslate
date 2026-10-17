@@ -45,6 +45,7 @@ sys.path.insert(0, str(ROOT / "script"))
 
 from sidecar.ct2_sidecar import default_model_dir  # noqa: E402  (data-dir single source of truth)
 import net_guard                                   # noqa: E402  (the fetch policy)
+import model_origin                                # noqa: E402  (which version landed, GA-13)
 
 RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 USER_AGENT = "wonslate-fetch-voice/1.0"
@@ -116,6 +117,9 @@ def say(tag, msg=""):
 def download(url, dest, attempts=4, allow_unpinned=False, chunk=1 << 20):
     """Fetch one asset through the shared policy, verifying its pinned digest.
 
+    Returns the digest on success, False on failure -- the caller records which bytes landed,
+    and handing back the value already computed beats hashing a 1 GB archive twice.
+
     Policy refusals stop the retry loop at once -- a missing pin or a checksum mismatch
     is not something another four attempts at the same URL can resolve.
     """
@@ -132,7 +136,7 @@ def download(url, dest, attempts=4, allow_unpinned=False, chunk=1 << 20):
             say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
                 name, size / 1e6, digest[:16],
                 "" if pin else " UNPINNED (--allow-unpinned)"))
-            return True
+            return digest
         except net_guard.UnpinnedAsset as exc:
             say("fetch", "REFUSED: {}".format(exc))
             return False
@@ -202,6 +206,9 @@ def fetch(key, dest_root, force, allow_unpinned=False):
                 say("verify", "FAIL {} cached archive is sha256 {}, pin says {}".format(
                     key, got[:16], pin[0][:16]))
                 return False
+            # A cache hit whose bytes were just re-hashed is a fact worth recording: this is
+            # the case where a directory has been sitting on disk since before GA-13 existed.
+            _record_origin(target, url, name, got)
         elif pin:
             extra = "; digest was enforced at download time only (archive no longer present)"
         else:
@@ -211,7 +218,8 @@ def fetch(key, dest_root, force, allow_unpinned=False):
 
     if force or not (archive.is_file() and archive.stat().st_size > 100_000):
         say("fetch", "{} <- {}".format(key, url))
-        if not download(url, archive, allow_unpinned=allow_unpinned):
+        digest = download(url, archive, allow_unpinned=allow_unpinned)
+        if not digest:
             return False
     elif pin:
         # A file of the right size is not the right file: check it before trusting it.
@@ -219,12 +227,15 @@ def fetch(key, dest_root, force, allow_unpinned=False):
         if got != pin[0]:
             say("fetch", "{} on disk is sha256 {}, pin says {} -- re-fetching".format(
                 name, got[:16], pin[0][:16]))
-            if not download(url, archive, allow_unpinned=allow_unpinned):
+            digest = download(url, archive, allow_unpinned=allow_unpinned)
+            if not digest:
                 return False
         else:
+            digest = got
             say("fetch", "{} cached and digest-verified ({:.1f} MB)".format(
                 name, archive.stat().st_size / 1e6))
     else:
+        digest = None
         say("fetch", "{} cached ({:.1f} MB) but UNPINNED: no digest to check it against".format(
             name, archive.stat().st_size / 1e6))
 
@@ -241,8 +252,22 @@ def fetch(key, dest_root, force, allow_unpinned=False):
     if problem:
         say("verify", "FAIL {}: {}".format(key, problem))
         return False
+    if digest:
+        _record_origin(target, url, name, digest)
     say("verify", "OK   {} -> {}".format(key, target))
     return True
+
+
+def _record_origin(target, url, name, digest):
+    """Record what landed, in the component directory it belongs to.
+
+    These assets have no version scheme of their own -- the release tag is a long-lived bucket
+    (`asr-models`, `tts-models`) and the version is spelled inside the file name -- so both are
+    kept: the name as the version, the tag as `kind`, plus the bytes actually received.
+    """
+    tag = url.split("/releases/download/", 1)[1].split("/", 1)[0] if "/releases/download/" in url else None
+    model_origin.record(target, asset=name, version=name, sha256=digest, url=url,
+                        fetcher="fetch_voice_models.py", kind=tag)
 
 
 def main(argv=None):

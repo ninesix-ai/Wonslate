@@ -197,6 +197,7 @@ def run_ffi_smoke() -> int:
                  "test_run_identity.py",
                  "test_sidecar_identity.py",
                  "test_unreachable_guards.py",
+                 "test_model_updates.py",
                  "test_xaml_lint.py",
                  "test_pre_commit_hook.py",
                  "test_glossary_hygiene.py",
