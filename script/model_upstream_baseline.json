@@ -5,13 +5,13 @@
       "asset": "en_zh",
       "version": "1.9",
       "first_seen_at": "2026-10-17T04:12:13.704134+00:00",
-      "observed_at": "2026-10-17T04:18:22.459832+00:00"
+      "observed_at": "2026-10-17T05:07:21.670701+00:00"
     },
     "argos:zh_en": {
       "asset": "zh_en",
       "version": "1.9",
       "first_seen_at": "2026-10-17T04:12:13.704134+00:00",
-      "observed_at": "2026-10-17T04:18:22.459832+00:00"
+      "observed_at": "2026-10-17T05:07:21.670701+00:00"
     },
     "madlad:model.bin": {
       "asset": "model.bin",
@@ -19,7 +19,7 @@
       "version": "main",
       "sha256": "77b9fd9ab97c1259d07089b5f854393dad81bc5fb5647d3f9a5d101c94f40daa",
       "first_seen_at": "2026-10-17T04:12:13.704134+00:00",
-      "observed_at": "2026-10-17T04:18:22.459832+00:00"
+      "observed_at": "2026-10-17T05:07:21.670701+00:00"
     },
     "voice:asr": {
       "asset": "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2",
@@ -32,7 +32,7 @@
       "sha256": "a1e94694776049035c4f2c6529f003aaece993c76aae9a78995831c3c4dcafc6",
       "seeded_from": "fetch_voice_models.py EXPECTED_SHA256 (D69), read from api.github.com release asset digest 2026-10-17",
       "first_seen_at": "2026-10-17T04:18:22.459832+00:00",
-      "observed_at": "2026-10-17T04:18:22.459832+00:00"
+      "observed_at": "2026-10-17T05:07:21.670701+00:00"
     },
     "voice:vad": {
       "asset": "silero_vad.onnx",
@@ -40,7 +40,7 @@
       "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
       "seeded_from": "fetch_voice_models.py EXPECTED_SHA256 (D69), read from api.github.com release asset digest 2026-10-17",
       "first_seen_at": "2026-10-17T04:18:22.459832+00:00",
-      "observed_at": "2026-10-17T04:18:22.459832+00:00"
+      "observed_at": "2026-10-17T05:07:21.670701+00:00"
     }
   }
 }

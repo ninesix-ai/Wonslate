@@ -9,9 +9,10 @@ upgrade happened, and `check_model_updates.py` has nothing to compare upstream a
 Two rules keep this from becoming a second source of truth:
 
   * The digest written here is the one `net_guard` just computed from the bytes on disk, not a
-    copy of the pin. `tests/test_model_origin.py` then asserts the recorded value agrees with
-    the declared pin (or that the asset is on the unpinned list) -- a comparison that is only
-    possible because the two are separate records.
+    copy of the pin. `tests/test_model_updates.py` (`ShippedBaselineTests`) then asserts the
+    baseline's recorded digest agrees with the declared pin, or that the asset is on the
+    unpinned list -- a comparison that is only possible because the two are separate records, and
+    one that fails on purpose when somebody accepts a new version without re-verifying its pin.
   * Only facts go in: the asset name, the version string upstream used to describe it, the
     digest, the URL it came from, the UTC instant of the fetch. No machine path -- the same
     reason D70 hashes artefacts instead of writing filenames into evidence.
@@ -52,7 +53,7 @@ def record(dest_dir, *, asset, version, sha256, url, fetcher, kind=None):
     dest.mkdir(parents=True, exist_ok=True)
     (dest / ORIGIN_FILE).write_text(
         json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8")
+        encoding="utf-8", newline="\n")      # LF on every platform, as for the committed baseline
     return payload
 
 

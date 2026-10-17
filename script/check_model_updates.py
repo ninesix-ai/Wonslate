@@ -494,7 +494,11 @@ def write_baseline(entries, updates_by_key, path=None):
                         "would stop firing after its first hit."),
                "assets": dict(sorted(merged.items()))}
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=False) + "\n",
-                    encoding="utf-8")
+                    encoding="utf-8", newline="\n")
+    # `newline="\n"` is not decoration: without it Python translates every line ending to CRLF on
+    # Windows, and this file is committed -- so each `--record-baseline` on a developer machine
+    # would leave a whole-file diff for `.gitattributes` to normalise back (the line-ending trap
+    # this repository has hit repeatedly, this time inside the code rather than in an editor).
     return changed
 
 
@@ -583,7 +587,7 @@ def main(argv=None):
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps({"verdict": {"code": code, "message": message},
                                    "rows": results}, indent=2, ensure_ascii=False) + "\n",
-                       encoding="utf-8")
+                       encoding="utf-8", newline="\n")
 
     if args.record_baseline:
         changed = write_baseline(entries, {row["checked"]: row for row in results},

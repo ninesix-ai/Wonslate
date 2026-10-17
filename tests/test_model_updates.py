@@ -33,7 +33,9 @@ sys.path.insert(0, str(ROOT / "script"))
 
 import model_origin                                        # noqa: E402
 import check_model_updates as updates                     # noqa: E402
-import fetch_argos_models                                 # noqa: E402
+import fetch_argos_models                                  # noqa: E402
+import fetch_madlad_model                                  # noqa: E402
+import fetch_voice_models                                  # noqa: E402
 
 
 def canned(payload):
@@ -88,6 +90,10 @@ class OriginRecordTests(unittest.TestCase):
             self.assertEqual("1.9", payload["version"])
             # UTC with an offset, for the same reason D71 required it of evidence.
             self.assertIn("+00:00", payload["fetched_at"])
+            # LF on every platform: these records get pasted into reports and, for the baseline,
+            # committed -- CRLF from write_text would be a whole-file diff each time.
+            self.assertNotIn(b"\r\n",
+                            (pathlib.Path(tmp) / model_origin.ORIGIN_FILE).read_bytes())
 
     def test_a_missing_file_is_not_an_incomplete_one(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -428,6 +434,9 @@ class BaselineTests(unittest.TestCase):
                              "a stray row must not invent a baseline line")
             self.assertIn("--record-baseline", saved["note"],
                           "the file says who may advance it; that text is load-bearing")
+            self.assertNotIn(b"\r\n", path.read_bytes(),
+                             "this file is committed -- CRLF would turn every recording into a "
+                             "whole-file diff (the line-ending trap, this time from write_text)")
 
     def test_a_name_finding_never_lands_in_the_digest_field(self):
         # The two voice findings carry different evidence, and writing a file name into `sha256`
@@ -480,6 +489,42 @@ class ShippedBaselineTests(unittest.TestCase):
                     self.assertTrue(entry.get(field),
                                     "%s is missing %s and would read as incomparable" % (key,
                                                                                           field))
+
+    def test_a_recorded_digest_agrees_with_the_declared_pin(self):
+        """The two records exist so they can be compared (D69) -- and here they are.
+
+        Both values live in git, so this needs no network. It is the coupling the alert text
+        promises: running `--record-baseline` after an upstream moved must fail until the fetch
+        script's pin is re-verified too, rather than letting the repository say "we ship X" while
+        it checks for Y.
+        """
+        modules = {"argos": fetch_argos_models, "voice": fetch_voice_models,
+                   "madlad": fetch_madlad_model}
+        state, entries = updates.read_baseline()
+        self.assertEqual("ok", state)
+        compared = 0
+        for key, entry in sorted(entries.items()):
+            digest = entry.get("sha256")
+            if not digest:
+                continue
+            family, _, label = key.partition(":")
+            module = modules[family]
+            asset = entry.get("asset") or label
+            with self.subTest(key=key):
+                if asset in module.UNPINNED_EXCEPTIONS:
+                    self.fail("%s is declared unpinned yet carries a digest -- which one is the "
+                              "record telling the truth about?" % key)
+                pins = dict(module.EXPECTED_SHA256)
+                self.assertIn(asset, pins, "%s records a digest for an asset %s does not pin"
+                                     % (key, module.__name__))
+                self.assertEqual(pins[asset][0], digest,
+                                 "%s and %s's pin disagree: upstream moved, or somebody advanced "
+                                 "the baseline without re-verifying the pin (D69)"
+                                 % (key, asset))
+                compared += 1
+        # D74's rule applied to this very file: a comparison that ran zero times must not pass.
+        self.assertGreater(compared, 0, "no baseline entry carried a digest, so nothing was "
+                                       "compared")
 
     def test_an_unconfirmed_entry_says_where_its_value_came_from(self):
         # Without this rule the file would read as "upstream said this" for values that were only
