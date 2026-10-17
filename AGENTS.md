@@ -37,6 +37,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Quote test counts from a gate log. It refuses to report while any layer is unattributed, and `run` pins the CLI's output language so the log stays readable (a localised or UTF-16 log makes every pattern miss, which reads like a layer that never ran) | `python script/gate_counts.py parse <log>` / `... run [--log NAME]` |
 | Keep every name-based decision honest about the value behind the name (D68 privacy whitelist vs `*_URL`; D69 `REGISTERED_DEPS` vs the bytes a downloader actually fetched). `--self-test` plants one violation per rule class and requires all of them to fire, so a rule that stopped matching cannot report a clean run | `python script/check_name_guards.py` [--self-test] |
 | Prove a guard can actually be reached (D73: `run_av_baseline` had its `proc.poll()` check sitting behind an always-true success return, so it never executed, and code like that reads as "already defended" in review). L1 is dead code after a terminator -- the Python counterpart of `unreachable_code` / CS0162, which is why the other two languages need no gate here; L2 is a guard ordered behind a success branch that leaves. `--self-test` transcribes the real pre-fix case as a seed (CI's checkout is shallow, so the seed lives in the file rather than in `git show`) and requires both directions: the D73 shape must fire, the fixed order must stay quiet | `python script/check_unreachable_guards.py` [--self-test] |
+| Ask whether an upstream published a newer model than this repository's baseline (GA-13). **Never add it to the gate sequence** -- it needs the network, and a check that only goes green online turns red on sandboxed runners and then gets switched off (D28/D65). The daily `.github/workflows/model-updates.yml` runs it and opens one issue per distinct finding; the baseline is advanced only by an explicit `--record-baseline`, never by the timer, or the alert fires once and stops. Exit 0 requires that at least one comparison happened (D74) | `python script/check_model_updates.py --baseline [--record-baseline]` |
 
 ## 3. Traps that have already cost someone a session
 
@@ -461,6 +462,25 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     `_spread()` in `script/run_av_baseline.py` takes a floor from one build only, and
     `_status()` names the three different reasons a floor is missing rather than printing one
     sentence for all of them, which is D57/D58's rule applied to this column.
+
+21. **A check's "nothing is wrong" answer must be earned by looking at something.** Defects
+    D74/D75/D76 all came from `script/check_model_updates.py` while wiring the scheduled run, and
+    each is a version of the same mistake: `unrecorded` and `incomparable` rows used to fall into
+    exit code 0 with the message "no newer upstream version found", so a machine with nothing
+    installed (which is every CI runner) reported an all-clear it had not measured -- a timer built
+    on that says "fine" every day forever. So `verdict()` returns 0 only when at least one
+    comparison actually happened, names what was *not* compared on the same line when some assets
+    were skipped, and treats "upstream publishes no digest for this asset" as its own answer rather
+    than as agreement. Two further rules from the same run: **an unexercised URL or field name is
+    an unverified one** -- Hugging Face spells its sha256 `lfs.oid` (reading `sha256` made every
+    healthy install look unverifiable) and sherpa-onnx's model archives live under release *tags*
+    (`tts-models`, `asr-models`), not under `/releases/latest`, which contains no archives at all;
+    both were caught only by calling for real, after tests had passed for a day on fixtures that
+    matched the code's assumptions instead of the upstream's responses. And a credential read from
+    the environment must be **said out loud** and sent to exactly one host (`GITHUB_TOKEN` goes to
+    `api.github.com` only -- `tests/test_model_updates.py` asserts the other probes never receive
+    it), because a host-exported variable that silently changes a result is unreproducible in the
+    way D45 describes.
 
 ## 4. Conventions and invariants
 

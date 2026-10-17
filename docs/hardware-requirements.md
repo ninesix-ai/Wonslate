@@ -131,22 +131,46 @@ Argos 还有一层：包的真实下载地址来自那份 index 的 `links` 数�
 | 资产 | 版本从哪来 | 记法 |
 |---|---|---|
 | Argos | 官方 index 的 `package_version`（这个字段一直都有，只是过去没人记） | 按语向分别记录，`en_zh` 与 `zh_en` 可以不同版本 |
-| 语音（sherpa-onnx） | 写在 asset 文件名里（`…-v1_1`、`…-2024-07-17`），release tag 只是长期存在的桶 | `version` 记文件名、`kind` 记 tag |
+| 语音（sherpa-onnx） | 比对按 release asset 的 `digest`（GitHub 为它们发布 `sha256:…`）；文件名只在“上游改名/换版”时作为次要信号 | `asset` 记文件名、`kind` 记它所在的长期 release tag（查询必须带 tag，见下） |
 | MADLAD | 上游不发版本号；它从 `main` 取，而 `main` 的内容会动 | 记 `revision` + 实际哈希，比对按字节而不是按标签 |
+
+> **2026-10-17 的一次订正（缺陷 D76）**：语音原先写成“按文件名里的版本比”。真打上游才发现两处都错：其一，模型归档在 `tts-models` / `asr-models` 这两个长期 tag 下（各六百余个 asset），而 `/releases/latest` 是**软件版本发布**，里面一个模型文件都没有——所以那个探针从未问对过对象；其二，`silero_vad.onnx` 这类文件名里根本没有版本，按名字比永远看不见上游重新打包。现在按 `digest` 比，与 D69 钉的是同一类证据。`sense-voice` 上游的 `digest` 为 `null`（它本就在 `UNPINNED_EXCEPTIONS` 上），只能比名字，于是如实报 `incomparable` 而不是“已最新”。
 
 MADLAD 现在有版本旋钮：`--rev <分支|tag|commit sha>`，默认 `main`。**要可复现的装机就传 commit sha**，选了什么会写进 origin 记录。
 
 查上游是否已发新版：
 
 ```bash
-python script/check_model_updates.py                    # 全部三类
-python script/check_model_updates.py --only argos        # 只看 Argos
+python script/check_model_updates.py                     # 看本机装了什么
+python script/check_model_updates.py --baseline          # 对照仓里记录的基线（CI 用的就是这条）
+python script/check_model_updates.py --only argos         # 只看 Argos
 python script/check_model_updates.py --dest <目录> --only argos
+python script/check_model_updates.py --baseline --record-baseline   # 人工接受新版时才推进基线
 ```
 
-退出码是**三态**，因为“没查到”与“没有新版”是两件事：`0` 已比对且无更新、`2` 上游有更新、`1` 至少一处没能查到（离线、无权限、origin 记录不可用）。目录还没有记录时报 `unrecorded` 并保持 `0`——新机器就是新机器，不是错误。
+`--baseline` 是后加的，因为**定时任务那台机器上什么模型都没装**：它拿 `script/model_upstream_baseline.json`（本仓库“最后一次看到的上游状态”）作参照，所以任何机器、任何 runner 都能回答“上游动过没有”。基线里的 `sha256`/`version` 是**上游的回答**，不是我们的准入钉值（钉值在各 fetch 脚本的 `EXPECTED_SHA256` 里，D69），两份记录故意分开；没被 live 确认过的条目必须带 `seeded_from` 说明自己从哪抄来。
 
-它需要访问上游，所以**不进门禁序列**；它的判读逻辑由 `tests/test_model_updates.py` 用注入的假上游响应离线覆盖（包括“探针失败时必须报 1 而不是 0”那一条）。
+退出码是**三态**，因为“没查到”与“没有新版”是两件事：`0` **至少做成了一次比对**且无更新、`2` 上游有更新、`1` 至少一处没能查到，**或一处都没比对成功**。
+
+> **最后半句是 2026-10-17 补的（缺陷 D74）**：本节的上一版写着“目录还没有记录时报 `unrecorded` 并保持 `0`——新机器就是新机器，不是错误”。那句话现在是错的，而且错得很值钱：一台什么都没装的机器（以及 GitHub Actions）跑出来全是 `unrecorded`，工具却报 `0` 并打印“没发现更新版本”。把它挂成定时器，得到的就是**每天准时报一切正常**。现在 `0` 要求至少真比过一次，否则 `1`；部分资产没比成时**数字照给、限定同行**（例：`no newer upstream version found (not compared: voice:asr)`）。同一次真跑还抖出 D75：Hugging Face 的 sha256 字段名是 `lfs.oid`（我写的是 `lfs.sha256`，于是健康的装机一律被报成“上游没发布可比摘要”），而 GitHub API 匿名请求会 403 限流——错误文本现在会点名这一点。
+
+它需要访问上游，所以**不进门禁序列**；它的判读逻辑由 `tests/test_model_updates.py` 用注入的上游响应离线覆盖（载荷形状取自 2026-10-17 的真实响应，不是按代码的假设编的）。
+
+### 5.3 上游发了新版怎么自动知道（2026-10-17 起）
+
+上面那条命令仍是“你问它才答”。自动那半边是 `.github/workflows/model-updates.yml`：每天 03:17 UTC 跑一次 `--baseline`，发现上游比基线新就**开一条 issue**（同一个发现只开一次，发现变了就在原 issue 上追加评论——否则每天一条，第三天就有人把它关了）。
+
+几条得说清的边界：
+
+| 事项 | 实际行为 |
+|---|---|
+| 谁推进基线 | **只有人**。`--record-baseline` 需要显式跑；定时器不推进，否则提醒响一次就再也不响了 |
+| 无凭据时的 GitHub | 匿名请求常被 403 限流。workflow 用 runner 自带的 `GITHUB_TOKEN`，且它**只发往 `api.github.com`**（argos/madlad 的探针拿不到它，由测试钉住） |
+| 查不到时 | 不开 issue，作业**判失败**（把“没查到”发成告警是错的，把它保持静默更错） |
+| 定时任务会自己停 | GitHub 会禁用默认分支 60 天未动的仓库的 schedule。手动拉一次：`gh workflow run model-updates.yml`（默认 `dry_run=true`，只决定不改动） |
+| 进门禁吗 | 不进。它要联网；联网才能绿的检查会在沙箱 runner 上变红，然后被关掉（D28/D65 的老路） |
+
+判据在 python 里（`script/report_model_updates.py` 的 `plan()`），不在 YAML 的 shell 里，所以它能被 `tests/test_report_model_updates.py` 离线测：幂等、marker 往返、“`gh` 失败不等于没发布过”、以及**YAML 里写的每个 flag 必须还在 argparse 里**（改名会让定时任务绿着什么都不查）。
 
 ## 6. 开发参考机（本文档实测数据来源）
 

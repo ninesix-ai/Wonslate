@@ -1,0 +1,88 @@
+# GA-13's "how would we know an upstream moved" half, made automatic.
+#
+# Why a timer and not a gate: `check_model_updates.py` needs the network, and a check that needs
+# the network to pass goes red on every sandboxed runner and then gets switched off (D28/D65's
+# lesson). It therefore deliberately does NOT sit in the gate sequence -- it runs here, alone.
+#
+# Two caveats that are worth knowing before you trust an absence of alerts:
+#
+#   1. GitHub disables scheduled workflows on repositories whose default branch has not changed
+#      for 60 days. The `workflow_dispatch` input below is what you use after a long quiet spell,
+#      and `gh workflow run model-updates.yml` is the one-line way to pull it by hand.
+#   2. The baseline (`script/model_upstream_baseline.json`) is not advanced by this workflow, on
+#      purpose. Advancing it means "we accept that version", which needs the fetch scripts' pins
+#      re-verified first (D69); if a timer did it, the alert would fire once and never again.
+#
+# What it needs: `issues: write`, so it can open one issue per distinct finding. Reading is
+# anonymous except for the GitHub API, which answers 403 to unauthenticated callers on a shared
+# IP; the runner's own token is passed for that call only (the probes refuse to send it anywhere
+# else -- `tests/test_model_updates.py` holds that line).
+name: Model upstream check
+
+on:
+  schedule:
+    - cron: "17 3 * * *"          # 03:17 UTC, off the hour: hourly runs crowd the schedulers
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Decide and print, but change nothing on GitHub"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: model-updates
+  cancel-in-progress: false        # two timers writing the same issue is a race, not a speedup
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Exit 2 here means "an upstream is ahead of us", which is a finding rather than a fault, so
+      # the step must not abort the job. What counts as a failure is decided from the JSON verdict
+      # in the next step, in python, where it can be tested -- not by shell arithmetic.
+      - name: Ask each upstream what it publishes
+        id: probe
+        continue-on-error: true
+        run: python script/check_model_updates.py --baseline --json model-updates.json
+
+      - name: Announce the finding once per distinct finding
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          args=(--json model-updates.json)
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          python script/report_model_updates.py "${args[@]}"
+
+      # Rendered from the JSON the probe already wrote. It must not re-ask upstream: a second
+      # round of calls would spend the rate limit again and could print a different answer than
+      # the one the job acted on.
+      - name: Put the same table in the run summary
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+import json, pathlib
+try:
+    payload = json.loads(pathlib.Path("model-updates.json").read_text(encoding="utf-8"))
+except OSError:
+    print("## Model upstream check\n\nNo result file: the probe step did not finish.\n")
+else:
+    print("## Model upstream check\n")
+    print("| asset | state | we ship | upstream now says |")
+    print("|---|---|---|---|")
+    for row in payload["rows"]:
+        print("| %s | %s | %s | %s |" % (row["checked"], row["state"],
+                                         row["local"] or "-", row["upstream"] or "-"))
+    print("\nverdict: %s\n" % payload["verdict"]["message"])
+PY
