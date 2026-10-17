@@ -294,6 +294,31 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("contents: write", self.text,
                          "a timer that can rewrite the repository is a different risk")
 
+    @staticmethod
+    def children(text, key):
+        """The direct child keys of a top-level mapping entry, read by indentation.
+
+        Deliberately dependency-free. The first version of this test imported PyYAML and the
+        component-license gate went red on it -- `yaml` is not a registered dependency of this
+        project, and a gate assertion is no place to introduce one. What the check needs is only
+        "is this document structured the way a parser would read it", which the column rule below
+        plus this small walker covers.
+        """
+        lines = text.split("\n")
+        for number, line in enumerate(lines):
+            if line.startswith(key + ":") or line.startswith('"%s":' % key):
+                indent = len(line) - len(line.rstrip())
+                out = []
+                for child in lines[number + 1:]:
+                    if not child.strip():
+                        continue
+                    if len(child) - len(child.lstrip()) <= indent:
+                        break
+                    if child.strip().endswith(":"):
+                        out.append(child.strip().rstrip(":"))
+                return out
+        return []
+
     def test_the_workflow_is_parseable_not_just_searchable(self):
         """The other tests here grep the text; none of that checks whether it is YAML.
 
@@ -301,10 +326,6 @@ class WorkflowTests(unittest.TestCase):
         `run: |` block scalar and makes the whole document invalid. GitHub then shows a failed run
         with no log and the file path as the workflow name, so the timer looks like it exists while
         it can never fire. Every flag-exists assertion passed on that broken file.
-
-        The block check needs no third-party library, so it runs on both sides of the gate. The
-        full parse runs when PyYAML is importable, and its absence is reported as a count rather
-        than a silent skip -- a skipped check and a passing one print the same thing.
         """
         offenders = []
         # A column-0 line in a workflow is only legal as a comment or a top-level `key:`. Anything
@@ -325,27 +346,17 @@ class WorkflowTests(unittest.TestCase):
                     offenders.append("%s:%d %s" % (path.name, number, line[:48]))
         self.assertEqual([], offenders,
                          "a workflow file is not structurally parseable: %s" % offenders)
-        try:
-            import yaml                                # noqa: F401 - optional on purpose
-        except ImportError:
-            print("PyYAML not installed here: structural check only (skipped parse: 1)")
-            return
-        parsed = yaml.safe_load(self.text)
-        self.assertIn("jobs", parsed)
-        # YAML 1.1 reads the bare key `on` as the boolean True, which is how GitHub's own parser
-        # sees it too; asserting the triggers here is what would have shown the broken file as
-        # "no schedule at all" instead of looking fine.
-        triggers = parsed.get(True, parsed.get("on"))
-        self.assertIsInstance(triggers, dict, "the workflow has no readable trigger block")
-        self.assertIn("schedule", triggers)
+        # The trigger block has to be readable as a mapping, not just present as a word: a file
+        # whose `on:` never opened would pass every grep above.
+        triggers = self.children(self.text, "on")
+        self.assertIn("schedule", triggers, self.text[:200])
         self.assertIn("workflow_dispatch", triggers)
         self.assertNotIn("push", triggers,
                          "a daily check must not also run on every push and burn the rate limit")
-        steps = parsed["jobs"]["check"]["steps"]
-        names = [step.get("name") or step.get("uses") for step in steps]
-        self.assertEqual(5, len(names), names)
-        probe = [s for s in steps if "Ask each upstream" in (s.get("name") or "")][0]
-        self.assertIn("GITHUB_TOKEN", probe.get("env", {}),
+        self.assertEqual(5, len(re.findall(r"^      - (?:name|uses):", self.text, re.M)),
+                         "the job's step count changed; the assertions below name steps")
+        probe = self.text[self.text.index("Ask each upstream"):self.text.index("Announce the")]
+        self.assertIn("GITHUB_TOKEN", probe,
                       "without a token the runner gets 403 from GitHub and the voice rows cannot "
                       "be checked at all")
 
