@@ -146,17 +146,28 @@ def open_issues(runner=subprocess.run):
 
 
 def publish(action, detail, rows, verdict_message, runner=subprocess.run, dry_run=False):
-    """Carry out the plan. Returns a sentence about what happened."""
-    key = detail if action == "create" else detail[0]
+    """Carry out the plan. Returns a sentence about what happened.
+
+    `detail` is not one type across the three actions -- `plan` hands back a key for "create", a
+    (key, issue) pair for "comment" and a human-readable reason for "none". Reading `detail[0]`
+    unconditionally printed the reason's first character on the quiet path (the CI run showed
+    `would none (n)`) and said nothing about the real reason, which is the part a reader needs.
+    """
+    if action == "comment":
+        key, number = detail
+    else:
+        key, number = detail, None
     text = body(rows, key, verdict_message)
+    if action == "none":
+        return "nothing to announce: %s" % key
     if dry_run:
         return "dry-run: would %s (%s)" % (action, key)
     if action == "create":
         _gh(["issue", "create", "--title", "%s: %s" % (TITLE_PREFIX, _short(rows)),
              "--body", text], runner)
         return "opened an issue for %s" % key
-    _gh(["issue", "comment", str(detail[1]), "--body", text], runner)
-    return "commented on issue #%s about %s" % (detail[1], key)
+    _gh(["issue", "comment", str(number), "--body", text], runner)
+    return "commented on issue #%s about %s" % (number, key)
 
 
 def _short(rows):

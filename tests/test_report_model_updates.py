@@ -122,6 +122,25 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(["argos:en_zh"], [r["checked"] for r in report.newer_rows(payload)])
 
 
+    def test_the_quiet_path_says_the_reason_rather_than_one_character(self):
+        # The sibling of D77 found in the CI log: `plan` returns a key for "create", a (key, issue)
+        # pair for "comment" and a *reason* for "none", and `publish` indexed all three the same
+        # way -- so the line printed when nothing was wrong read `would none (n)`. That is the one
+        # sentence a reader checks to confirm the timer looked, and it was saying nothing.
+        action, detail = report.plan([], [])
+        line = report.publish(action, detail, [], "ignored")
+        self.assertIn("no upstream is ahead", line)
+        self.assertNotIn("(n)", line)
+        # And the announcement paths still name the key and the issue -- the number on the real
+        # path only, since a dry run writes nothing and therefore has no issue to name.
+        rows = [row("argos:en_zh", "1.10")]
+        create = report.publish("create", report.finding_key(rows), rows, "", dry_run=True)
+        self.assertIn("argos:en_zh=1.10", create)
+        gh = FakeGh()
+        report.publish("comment", ("argos:en_zh=1.11", 41), rows, "", runner=gh)
+        self.assertEqual(["gh", "issue", "comment", "41"], gh.calls[0][:4])
+
+
 class GhTests(unittest.TestCase):
     def test_a_failed_listing_is_cannot_tell_not_an_empty_list(self):
         # Empty means "nothing has been announced" and would open a duplicate; here it must not be
