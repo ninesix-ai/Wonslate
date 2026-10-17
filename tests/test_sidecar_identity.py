@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 """D73: a port answering `/health` is not proof that *our* sidecar is answering.
 
 The rule lives in `script/sidecar_identity.py` as a pure function so it can be exercised

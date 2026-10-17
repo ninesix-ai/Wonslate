@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 """Gate: a guard that cannot be reached is not a guard (defect D73, tech/07 section 14.11 item 5).
 
 Two findings, deliberately kept apart because they carry different evidence:

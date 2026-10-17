@@ -1,4 +1,6 @@
 @echo off
+rem SPDX-License-Identifier: Apache-2.0
+rem Copyright (c) 2026 ninesix-ai studio
 rem run_av_baseline.bat -- Windows entry point for the AV-domain baseline runner.
 rem All real logic lives in script/run_av_baseline.py; this file just makes the
 rem "double-click to run" story work on Windows without a shell.

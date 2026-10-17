@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 """Proving that the sidecar answering on a port is the one this process started (D73).
 
 The shape that keeps recurring: reserve a port (or simply use the shipped default 11435 /

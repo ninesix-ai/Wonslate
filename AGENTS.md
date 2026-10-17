@@ -38,6 +38,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Keep every name-based decision honest about the value behind the name (D68 privacy whitelist vs `*_URL`; D69 `REGISTERED_DEPS` vs the bytes a downloader actually fetched). `--self-test` plants one violation per rule class and requires all of them to fire, so a rule that stopped matching cannot report a clean run | `python script/check_name_guards.py` [--self-test] |
 | Prove a guard can actually be reached (D73: `run_av_baseline` had its `proc.poll()` check sitting behind an always-true success return, so it never executed, and code like that reads as "already defended" in review). L1 is dead code after a terminator -- the Python counterpart of `unreachable_code` / CS0162, which is why the other two languages need no gate here; L2 is a guard ordered behind a success branch that leaves. `--self-test` transcribes the real pre-fix case as a seed (CI's checkout is shallow, so the seed lives in the file rather than in `git show`) and requires both directions: the D73 shape must fire, the fixed order must stay quiet | `python script/check_unreachable_guards.py` [--self-test] |
 | Ask whether an upstream published a newer model than this repository's baseline (GA-13). **Never add it to the gate sequence** -- it needs the network, and a check that only goes green online turns red on sandboxed runners and then gets switched off (D28/D65). The daily `.github/workflows/model-updates.yml` runs it and opens one issue per distinct finding; the baseline is advanced only by an explicit `--record-baseline`, never by the timer, or the alert fires once and stops. Exit 0 requires that at least one comparison happened (D74) | `python script/check_model_updates.py --baseline [--record-baseline]` |
+| Parse every tracked YAML/JSON artefact rather than grepping it (D77: a workflow whose heredoc body was written at column 0 was invalid YAML and could never fire, yet every assertion about that file passed, because they read its text and nothing read its structure). Rules are keyed per language on purpose -- a tab is illegal YAML indentation and perfectly legal in TOML. TOML is out of scope and the run says so: importing `tomllib` would make the verdict depend on the host's Python version, and cargo parses it anyway. `--self-test` seeds both directions of every rule; `--files` points it at something not yet staged | `python script/check_artifact_syntax.py` [--self-test] |
 
 ## 3. Traps that have already cost someone a session
 
@@ -481,6 +482,19 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     `api.github.com` only -- `tests/test_model_updates.py` asserts the other probes never receive
     it), because a host-exported variable that silently changes a result is unreproducible in the
     way D45 describes.
+
+22. **A convention that only lives in prose stops being followed -- and a rule that matches
+    prose *about* the rule is not a rule.** Both halves came from the same round (2026-10-17). The
+    SPDX/Copyright header is carried by 121 of 133 source files here: every `.rs`, `.cs`, `.toml`
+    and `.xaml` file has it. The 12 that did not were all created by recent work, nine of them
+    across four consecutive rounds by the same hand, and nothing noticed, because no check
+    existed. The header is now check 3 of `tests/test_source_lint.py` and the debt is paid off.
+    The way that check first failed is the more general lesson: it exempted a file whenever the
+    text `lint-allow: no-header` appeared anywhere in it, so the first file it examined -- the
+    linter documenting that marker -- was granted the exemption it describes (defect **D78**).
+    An exemption must be declared, on its own comment line at the top of the file, and a file the
+    checker cannot open must be a counted outcome rather than a pass: the first draft printed
+    "1 file(s) carry the header" about a file that was not on disk at all.
 
 ## 4. Conventions and invariants
 

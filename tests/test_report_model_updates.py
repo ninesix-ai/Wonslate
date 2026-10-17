@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 """Tests for report_model_updates.py and the workflow that calls it.
 
 The announcement is the part a human sees, so its failure modes are social as well as technical:

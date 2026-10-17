@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 """Tests for the model version/upgrade half of GA-13 (origin records, baseline, update probes).
 
 Three rules these tests exist to hold:

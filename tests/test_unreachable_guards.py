@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 """Run script/check_unreachable_guards.py, and check that it checked something.
 
 D65 was a validator that existed and was never executed; registering the gate in CI's list is

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 # GA-13's "how would we know an upstream moved" half, made automatic.
 #
 # Why a timer and not a gate: `check_model_updates.py` needs the network, and a check that needs

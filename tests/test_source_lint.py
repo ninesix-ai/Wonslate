@@ -7,7 +7,7 @@ project convention is English comments everywhere in source. CJK test DATA
 (string literals like "你好") is legitimate product behavior and is NOT flagged
 -- only comment prose is checked.
 
-Two checks run over the tree:
+Three checks run over the tree:
 
   1. CJK comment prose (English-only rule), scanned for:
      .rs .cs .py .toml .yml .bat .xaml
@@ -29,6 +29,19 @@ Two checks run over the tree:
      those disks). Everything inside scope that genuinely needs a drive letter
      (the Windows SDK roots probed in script/misc/sign_wonslate.py) carries an
      explicit `lint-allow: drive-path` marker on the line.
+
+  3. SPDX / copyright header on every shipped source file, within the first eight
+     lines: `SPDX-License-Identifier: Apache-2.0` and `Copyright (c) 2026
+     ninesix-ai studio`, in that language's own comment marker.
+     Why this became a check: the convention is not a preference here -- 121 of
+     133 source files already carry it, including every .rs, .cs, .toml and .xaml
+     file. The 12 exceptions were all files added during recent work, and nothing
+     caught nine consecutive omissions because no rule existed. A convention that
+     only lives in prose decays exactly this way (this repository's own version of
+     "a guard nobody runs is not a guard", D65/D77).
+     Scope note: .sh joins the header check but not checks 1 and 2 -- widening
+     EXTS would also drag shell scripts under the English-prose and drive-path
+     rules, which has never been measured for them and is a separate decision.
 
 Usage:
     python tests/test_source_lint.py            # scan the whole tree
@@ -55,6 +68,43 @@ CJK_PROSE = re.compile(
 SKIP_DIRS = {"bin", "obj", "target", "__pycache__", "TestResults", ".git",
              "docs", "node_modules"}
 EXTS = (".rs", ".cs", ".py", ".toml", ".yml", ".bat", ".xaml")
+
+# ---- Check 3: the header every shipped file already carries -------------------
+
+SPDX_MARK = "SPDX-License-Identifier:"
+COPYRIGHT_MARK = "Copyright (c)"
+HEADER_ALLOW = "lint-allow: no-header"
+#: How far down a file we look, generous enough for a shebang, a coding declaration and a
+#: blank line before the header; tight enough that a header buried after the code still reads
+#: as missing -- the point is the top of the file, not the presence of a string somewhere.
+HEADER_WINDOW = 8
+#: Comment openers stripped before testing whether a line *declares* the exemption.
+COMMENT_MARKS = ("#", "//", "rem", "<!--")
+#: Check 1 and 2 stay on EXTS; only the header rule also covers shell entry points.
+HEADER_EXTS = EXTS + (".sh", ".yaml")
+
+
+def header_exempt(text):
+    """Does a comment line at the top of this file declare `lint-allow: no-header`?
+
+    Declared as a comment on its own line, not as a substring anywhere in the file. The first
+    draft asked `HEADER_ALLOW in text`, and the very first file it ran over was this linter: the
+    rule text appears in its help output and in the code that prints the exemption count, so the
+    file that *documents* the exemption was granted it -- D78, and the same mistake this
+    repository has already written down twice from the other direction (a predicate that fires
+    on prose about the rule, `check_name_guards` and the quote verdict). Anyone allowed to
+    mention a word is allowed to skip the check that names it.
+    """
+    for line in text.splitlines()[:HEADER_WINDOW]:
+        body = line.strip()
+        for mark in COMMENT_MARKS:
+            if body.startswith(mark):
+                body = body[len(mark):].strip()
+                break
+        if body.startswith(HEADER_ALLOW):
+            return True
+    return False
+
 
 QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"'
                     r"|'(?:[^'\\]|\\.)*'"
@@ -178,19 +228,55 @@ def scan_file(path):
     return violations
 
 
-def iter_source_files(base=None, file_list=None):
+def iter_source_files(base=None, file_list=None, exts=EXTS):
+    """One walker, parameterised by extension set.
+
+    A second copy of this loop for the header rule would be the D64 shape: two readers of the
+    same tree drifting into two ideas of what is in scope.
+    """
     if file_list:
         return [p for p in file_list
-                if os.path.splitext(p)[1].lower() in EXTS
+                if os.path.splitext(p)[1].lower() in exts
                 and os.path.basename(p) != "README.zh-CN.md"]
     root = base or ROOT
     found = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for f in filenames:
-            if os.path.splitext(f)[1].lower() in EXTS:
+            if os.path.splitext(f)[1].lower() in exts:
                 found.append(os.path.join(dirpath, f))
     return found
+
+
+def scan_header(path):
+    """(kind, detail) for one file: kind is 'ok', 'exempt', 'unreadable' or 'missing'.
+
+    Four outcomes, not two. Returning "fine" for a file that could not be opened was the first
+    draft's quiet lie: pointing this linter at a path that does not exist printed "1 file(s) carry
+    the header" about a file with no header at all, because OSError was folded into the passing
+    branch. A count that includes what it never read is the failure this repository has already
+    written down twice (a skipped check printing the same as a passing one, and "0 hits" that
+    really means "0 files scanned").
+
+    Returns a flag rather than printing, so `main` can keep the exemption count visible.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in HEADER_EXTS:
+        return "not-in-scope", None
+    if not os.path.isfile(path):
+        return "missing", "named but not on disk"
+    try:
+        with io.open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except UnicodeDecodeError:
+        return "unreadable", "not valid UTF-8"
+    if header_exempt(text):
+        return "exempt", None
+    head = "\n".join(text.splitlines()[:HEADER_WINDOW])
+    missing = [mark for mark in (SPDX_MARK, COPYRIGHT_MARK) if mark not in head]
+    if missing:
+        return "missing", "no %s in the first %d lines" % ("/".join(missing), HEADER_WINDOW)
+    return "ok", None
 
 
 # ---- Check 2: no developer-machine paths in shipped source or docs ----------
@@ -267,11 +353,28 @@ def main(argv):
             print(f"[FAIL] drive-absolute path (use the data-dir rule, or mark "
                   f"{DRIVE_ALLOW}): {rel}:{n}: {snippet}")
             total += 1
+    headed = exempt = unreadable = 0
+    for path in iter_source_files(file_list=files, exts=HEADER_EXTS):
+        rel = os.path.relpath(path, ROOT)
+        kind, detail = scan_header(path)
+        if kind == "exempt":
+            exempt += 1
+        elif kind in ("missing", "unreadable"):
+            unreadable += 1
+            print(f"[FAIL] license header could not be confirmed ({detail}): {rel}")
+            total += 1
+        elif kind == "ok":
+            headed += 1
+    # Printed even when zero. A count that only appears when something was exempted is how an
+    # exemption quietly becomes the normal path.
+    print(f"note: {headed} file(s) carry the header, {exempt} exempted via {HEADER_ALLOW}, "
+          f"{unreadable} could not be confirmed")
     if total:
         print(f"source lint: {total} violation(s) -- comments must be English, "
-              "shipped files must not name one machine's disk")
+              "shipped files must not name one machine's disk, and every source file "
+              "must open with its license header")
         return 1
-    print("source lint: PASS (comments are English-only, no machine paths)")
+    print("source lint: PASS (comments are English-only, no machine paths, headers present)")
     return 0
 
 

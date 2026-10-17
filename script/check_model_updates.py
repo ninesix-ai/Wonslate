@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 """check_model_updates.py -- ask each upstream which version it publishes (GA-13's other half).
 
 `net_guard` answers "are these the bytes we declared" (D69). This answers the version question:

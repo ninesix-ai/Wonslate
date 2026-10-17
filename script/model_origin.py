@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 """Record which version of which model actually landed on disk (defect GA-13's missing half).
 
 The repo already knows how to check *bytes*: `net_guard` refuses a download whose sha256 does

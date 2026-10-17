@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 # run_av_baseline.sh -- Linux / macOS entry point for the AV-domain baseline
 # runner. All real logic lives in script/run_av_baseline.py; this shim just
 # makes `./run_av_baseline.sh` work.

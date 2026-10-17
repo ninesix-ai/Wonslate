@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 ninesix-ai studio
 """report_model_updates.py -- turn a version check into one announcement, never one per day.
 
 `check_model_updates.py --baseline` answers "has an upstream moved". This decides what to do
