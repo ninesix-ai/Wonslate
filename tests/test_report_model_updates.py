@@ -275,6 +275,61 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("contents: write", self.text,
                          "a timer that can rewrite the repository is a different risk")
 
+    def test_the_workflow_is_parseable_not_just_searchable(self):
+        """The other tests here grep the text; none of that checks whether it is YAML.
+
+        D77: the first version of this file put a heredoc body back to column 0, which ends the
+        `run: |` block scalar and makes the whole document invalid. GitHub then shows a failed run
+        with no log and the file path as the workflow name, so the timer looks like it exists while
+        it can never fire. Every flag-exists assertion passed on that broken file.
+
+        The block check needs no third-party library, so it runs on both sides of the gate. The
+        full parse runs when PyYAML is importable, and its absence is reported as a count rather
+        than a silent skip -- a skipped check and a passing one print the same thing.
+        """
+        offenders = []
+        # A column-0 line in a workflow is only legal as a comment or a top-level `key:`. Anything
+        # else means a block-scalar body escaped its block -- which is exactly what a heredoc typed
+        # at column 0 does, and it invalidates the whole file rather than one step. The blank-line
+        # alternative is `$` in its own branch: writing `^(#||$|...)` puts an *empty* pattern first,
+        # which matches the start of every line and turns this whole guard into a no-op -- that is
+        # exactly what the first draft did, and only a planted broken file showed it.
+        top_level = re.compile('^(?:#|["\']?[A-Za-z_][\\w.-]*:|$)')
+        for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+            for number, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+                if line.startswith("\t") or "\t" in line[:len(line) - len(line.lstrip()) + 1]:
+                    offenders.append("%s:%d tab indentation is not YAML indentation" % (path.name,
+                                                                                        number))
+                if line and not line[0].isspace() and not top_level.match(line):
+                    # Only column-0 lines are constrained: everything indented is ordinary YAML
+                    # structure, and a rule that flags those is a rule that gets switched off.
+                    offenders.append("%s:%d %s" % (path.name, number, line[:48]))
+        self.assertEqual([], offenders,
+                         "a workflow file is not structurally parseable: %s" % offenders)
+        try:
+            import yaml                                # noqa: F401 - optional on purpose
+        except ImportError:
+            print("PyYAML not installed here: structural check only (skipped parse: 1)")
+            return
+        parsed = yaml.safe_load(self.text)
+        self.assertIn("jobs", parsed)
+        # YAML 1.1 reads the bare key `on` as the boolean True, which is how GitHub's own parser
+        # sees it too; asserting the triggers here is what would have shown the broken file as
+        # "no schedule at all" instead of looking fine.
+        triggers = parsed.get(True, parsed.get("on"))
+        self.assertIsInstance(triggers, dict, "the workflow has no readable trigger block")
+        self.assertIn("schedule", triggers)
+        self.assertIn("workflow_dispatch", triggers)
+        self.assertNotIn("push", triggers,
+                         "a daily check must not also run on every push and burn the rate limit")
+        steps = parsed["jobs"]["check"]["steps"]
+        names = [step.get("name") or step.get("uses") for step in steps]
+        self.assertEqual(5, len(names), names)
+        probe = [s for s in steps if "Ask each upstream" in (s.get("name") or "")][0]
+        self.assertIn("GITHUB_TOKEN", probe.get("env", {}),
+                      "without a token the runner gets 403 from GitHub and the voice rows cannot "
+                      "be checked at all")
+
     def test_no_model_is_downloaded_by_the_timer(self):
         # The timer only asks questions; downloading here would need the whole data pipeline and
         # would put GB-scale fetches on a schedule nobody asked for.

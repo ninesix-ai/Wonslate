@@ -53,6 +53,12 @@ jobs:
       - name: Ask each upstream what it publishes
         id: probe
         continue-on-error: true
+        env:
+          # The probe reads GITHUB_TOKEN itself (urllib, not gh). Without it GitHub answers 403
+          # to the runner's shared IP, every voice row fails, and the job goes red for a reason
+          # that has nothing to do with the models -- which is precisely how a timer gets turned
+          # off. Only api.github.com is allowed to receive it (asserted in the tests).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python script/check_model_updates.py --baseline --json model-updates.json
 
       - name: Announce the finding once per distinct finding
@@ -70,19 +76,23 @@ jobs:
       # the one the job acted on.
       - name: Put the same table in the run summary
         if: always()
+        # Every line below stays indented inside the `run: |` block. A heredoc body at column 0
+        # ends the block scalar and the whole file stops being valid YAML -- which GitHub reports
+        # as a failed run with no log at all, so the timer looks like it exists but never runs.
         run: |
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-import json, pathlib
-try:
-    payload = json.loads(pathlib.Path("model-updates.json").read_text(encoding="utf-8"))
-except OSError:
-    print("## Model upstream check\n\nNo result file: the probe step did not finish.\n")
-else:
-    print("## Model upstream check\n")
-    print("| asset | state | we ship | upstream now says |")
-    print("|---|---|---|---|")
-    for row in payload["rows"]:
-        print("| %s | %s | %s | %s |" % (row["checked"], row["state"],
-                                         row["local"] or "-", row["upstream"] or "-"))
-    print("\nverdict: %s\n" % payload["verdict"]["message"])
-PY
+          import json, pathlib
+          try:
+              payload = json.loads(pathlib.Path("model-updates.json").read_text(encoding="utf-8"))
+          except OSError:
+              print("## Model upstream check\n\nNo result file: the probe step did not finish.\n")
+          else:
+              print("## Model upstream check\n")
+              print("| asset | state | we ship | upstream now says |")
+              print("|---|---|---|---|")
+              for row in payload["rows"]:
+                  print("| %s | %s | %s | %s |" % (row["checked"], row["state"],
+                                                   row["local"] or "-",
+                                                   row["upstream"] or "-"))
+              print("\nverdict: %s\n" % payload["verdict"]["message"])
+          PY
