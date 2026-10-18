@@ -514,6 +514,24 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     verified by staging a CRLF file and reading the index blob: zero CRs), which corrects earlier
     rounds that recorded work-tree CRLF as a delivery defect when it never reaches the repository.
 
+24. **A digest proves *which* artifact, never *all of it* -- and an offline stub proves only my
+    assumptions.** Defect D80: `net_guard.fetch` ended its read loop on an empty chunk and renamed
+    the file into place. With a pin the checksum usually caught that by accident; under
+    `--allow-unpinned` (which `sense-voice` uses) a body truncated at 40 % landed as a successful
+    download, and every failure deleted its partial, so a gigabyte asset restarted from zero on
+    each of its four attempts. Two rules follow. (a) Length is its own check: whatever the server
+    promises in `Content-Length` / `Content-Range` must equal the bytes actually read, and a
+    transport failure must be distinguishable from a content refusal -- `TruncatedError` keeps the
+    bytes, `GuardError` throws them away, and the retry loops' refusal keyword lists are pinned by
+    a test so a truncation cannot be mistaken for a refusal. (b) Before trusting a resume rule,
+    **measure the real upstreams**: on 2026-10-18 huggingface.co sent neither `Content-Length` nor
+    `Content-Range` even on a 206, and jsDelivr chunk-encodes the index -- both answer a bare 206.
+    My stub had assumed a well-behaved slice answer, so a rule written against the stub would have
+    spliced two generations on the unpinned path in production. Hence: append to a partial only
+    when the claim file names this URL and this pin, and refuse an unverifiable 206 slice when no
+    digest can prove the result. Concurrency is settled by an atomic rename of `.part` (the claimer
+    resumes, the loser downloads its own copy) rather than by a pid table or an mtime heuristic.
+
 ## 4. Conventions and invariants
 
 **This file is not the source of truth for either.** `CONTRIBUTING.md` is: comment

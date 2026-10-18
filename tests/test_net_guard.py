@@ -15,7 +15,9 @@ The wiring cases read the scripts as text on purpose. An import-based check woul
 soon as the module is imported, whether or not the download path uses it.
 """
 import hashlib
+import json
 import pathlib
+import re
 import socket
 import sys
 import tempfile
@@ -185,6 +187,295 @@ class FetchIntegrityTests(unittest.TestCase):
         with self.assertRaises(net_guard.GuardError) as caught:
             self._fetch(expected_sha256="0" * 64, digest_source="upstream API 2026-10-14")
         self.assertIn("upstream API 2026-10-14", str(caught.exception))
+
+
+class _Headers:
+    """Just enough of `http.client.HTTPResponse.headers` for one lookup."""
+
+    def __init__(self, table):
+        self._table = dict(table)
+
+    def get(self, name, default=None):
+        return self._table.get(name, default)
+
+
+class _ServerResponse:
+    def __init__(self, body, status, headers, die_after=None):
+        self._pos = 0
+        # A dropped connection is not an empty body: the reader gets some bytes and then an
+        # error, which is the shape that used to lose the whole download.
+        self._pending = None
+        if die_after is not None:
+            body = body[:die_after]
+            self._pending = urllib.error.URLError("connection reset")
+        self._body = body
+        self.status = status
+        self.headers = _Headers(headers)
+
+    def read(self, n=-1):
+        if self._pending is not None and self._pos >= len(self._body):
+            raise self._pending
+        if self._pos >= len(self._body):
+            return b""
+        piece = self._body[self._pos:self._pos + (n if n and n > 0 else 4096)]
+        self._pos += len(piece)
+        return piece
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class RangeServer:
+    """A stand-in upstream that answers Range requests, and can be told to misbehave.
+
+    Every knob here is a real server behaviour a resumed download has to survive: `cut_at`
+    promises the full length and then sends less (a connection drop), `die_after` raises
+    mid-stream, `ignore_range` is a server without resume support, `promise_length=False` is
+    a chunked response, and `slice_total_delta` makes the total it states wrong.
+    """
+
+    def __init__(self, body, cut_at=None, die_after=None, ignore_range=False,
+                 promise_length=True, slice_total_delta=0, etag='"gen-1"', omit_slice=False):
+        self.body = body
+        self.cut_at = cut_at
+        self.die_after = die_after
+        self.ignore_range = ignore_range
+        self.promise_length = promise_length
+        self.slice_total_delta = slice_total_delta
+        # `omit_slice` is what huggingface.co and jsDelivr were measured doing on 2026-10-18:
+        # answer a Range request with a bare 206 and never say which slice it is.
+        self.omit_slice = omit_slice
+        self.etag = etag
+        self.ranges = []
+        self.opened = 0
+
+    def open(self, request, timeout=None):
+        self.opened += 1
+        wanted = (request.headers or {}).get("Range")
+        start = 0
+        if wanted and wanted.startswith("bytes=") and not self.ignore_range:
+            start = int(wanted[len("bytes="):].split("-")[0])
+        self.ranges.append(start)
+        if start and start > len(self.body):
+            raise urllib.error.HTTPError(request.full_url, 416, "Range Not Satisfiable",
+                                        _Headers({}), None)
+        # What the server *says* it has, versus what it actually puts on the wire.
+        promised = self.body[start:]
+        wire = promised[:self.cut_at] if self.cut_at is not None else promised
+        status = 206 if (start and not self.ignore_range) else 200
+        headers = {"ETag": self.etag, "Accept-Ranges": "bytes"}
+        if self.omit_slice:
+            return _ServerResponse(wire, status, headers, die_after=self.die_after)
+        if status == 206:
+            headers["Content-Range"] = "bytes %d-%d/%d" % (
+                start, start + len(promised) - 1,
+                len(self.body) + self.slice_total_delta)
+        if self.promise_length:
+            headers["Content-Length"] = str(len(promised))
+        return _ServerResponse(wire, status, headers, die_after=self.die_after)
+
+
+class LengthIntegrityTests(unittest.TestCase):
+    """Defect D80: the digest says *which* artifact, nothing used to say *all of it*."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.root = pathlib.Path(self.dir.name)
+        self.payload = b"wonslate-checkpoint-bytes-0123456789"   # 34 bytes
+        self.good = hashlib.sha256(self.payload).hexdigest()
+        self.url = "https://huggingface.co/x/model.bin"
+
+    def _fetch(self, server, dest=None, **kw):
+        args = dict(expected_sha256=self.good, resolve=fake_resolve(["93.184.216.34"]),
+                    opener=server)
+        args.update(kw)
+        return net_guard.fetch(self.url, dest or self.root / "model.bin", HOSTS, SUFFIXES,
+                               **args)
+
+    def test_short_body_is_a_truncation_not_a_finished_file(self):
+        server = RangeServer(self.payload, cut_at=6)
+        with self.assertRaises(net_guard.TruncatedError) as caught:
+            self._fetch(server)
+        self.assertIn("6 of %d bytes" % len(self.payload), str(caught.exception))
+        self.assertFalse((self.root / "model.bin").exists(),
+                         "a truncated file must never be published under its real name")
+
+    def test_truncated_bytes_are_kept_and_the_next_attempt_resumes(self):
+        # The other half of D80: the old code deleted the partial, so a gigabyte asset cost
+        # one full download per attempt. Resume is only worth anything if attempt two asks
+        # for the tail and lands the exact bytes.
+        first = RangeServer(self.payload, cut_at=6)
+        with self.assertRaises(net_guard.TruncatedError):
+            self._fetch(first)
+        self.assertEqual([0], first.ranges, "a first attempt has nothing to resume from")
+        partial = self.root / "model.bin.part"
+        self.assertTrue(partial.is_file(), "the kept bytes are what a retry resumes from")
+        self.assertEqual(self.payload[:6], partial.read_bytes())
+        server = RangeServer(self.payload)
+        digest, size = self._fetch(server)
+        self.assertEqual([6], server.ranges, "attempt two must ask for the missing tail")
+        self.assertEqual((digest, size), (self.good, len(self.payload)))
+        self.assertEqual(self.payload, (self.root / "model.bin").read_bytes())
+
+    def test_a_resumed_digest_covers_the_bytes_already_on_disk(self):
+        # If the prefix were not folded into the hash, the digest of the tail alone would be
+        # reported and this would fail -- the pin is the only thing standing between a wrong
+        # prefix and a published file, so it has to be exercised from the resumed path.
+        with self.assertRaises(net_guard.TruncatedError):
+            self._fetch(RangeServer(self.payload, cut_at=10))
+        digest, _size = self._fetch(RangeServer(self.payload))
+        self.assertEqual(self.good, digest)
+
+    def test_server_ignoring_the_range_restarts_instead_of_doubling(self):
+        with self.assertRaises(net_guard.TruncatedError):
+            self._fetch(RangeServer(self.payload, cut_at=8))
+        server = RangeServer(self.payload, ignore_range=True)
+        digest, size = self._fetch(server)
+        self.assertEqual((digest, size), (self.good, len(self.payload)))
+        self.assertEqual(self.payload, (self.root / "model.bin").read_bytes(),
+                         "appending a whole-file answer to a partial gives a doubled prefix")
+
+    def test_partial_from_another_asset_or_pin_is_never_appended(self):
+        for meta in ({"url": "https://huggingface.co/x/OTHER.bin", "pin": self.good,
+                      "size": 6},
+                     {"url": self.url, "pin": "0" * 64, "size": 6}):
+            self.root.mkdir(exist_ok=True)
+            (self.root / "model.bin.part").write_bytes(self.payload[:6])
+            (self.root / "model.bin.part.meta").write_text(json.dumps(meta), encoding="utf-8")
+            seen = []
+            digest, size = self._fetch(RangeServer(self.payload),
+                                       report=lambda tag, msg: seen.append(msg))
+            with self.subTest(meta=sorted(meta)):
+                self.assertEqual((digest, size), (self.good, len(self.payload)))
+                self.assertEqual(self.payload, (self.root / "model.bin").read_bytes())
+                self.assertTrue(any("another asset or pin" in m for m in seen),
+                                "refusing to splice generations must be said out loud: %s" % seen)
+
+    def test_one_claim_per_partial_when_two_racers_exist(self):
+        # `os.replace` is the lock: whoever moves the file owns it, and the loser must fall
+        # back to its own bytes rather than append into someone else's transfer.
+        (self.root / "model.bin.part").write_bytes(self.payload[:6])
+        (self.root / "model.bin.part.meta").write_text(
+            json.dumps({"url": self.url, "pin": self.good, "size": 6}), encoding="utf-8")
+        first = net_guard._claim(self.root / "model.bin.part",
+                                 self.root / "model.bin.part.meta",
+                                 str(self.root / "mine1"), self.url, self.good, None)
+        second = net_guard._claim(self.root / "model.bin.part",
+                                  self.root / "model.bin.part.meta",
+                                  str(self.root / "mine2"), self.url, self.good, None)
+        self.assertEqual(6, first)
+        self.assertEqual(0, second, "the partial was already claimed by another racer")
+
+    def test_checksum_mismatch_throws_the_partial_away(self):
+        # Bad bytes are not a resumable state: keeping them would mean the next attempt
+        # appends to a stream we already know is wrong.
+        (self.root / "model.bin.part").write_bytes(b"wrongwrong")
+        (self.root / "model.bin.part.meta").write_text(
+            json.dumps({"url": self.url, "pin": "0" * 64, "size": 10}), encoding="utf-8")
+        with self.assertRaises(net_guard.GuardError):
+            self._fetch(RangeServer(b"x" * 40, promise_length=True), expected_sha256="f" * 64)
+        self.assertEqual([], [p.name for p in self.root.iterdir()],
+                         "a refused download leaves neither bytes nor a claim")
+
+    def test_connection_death_midstream_keeps_the_bytes(self):
+        first = RangeServer(self.payload, die_after=12)
+        with self.assertRaises(urllib.error.URLError):
+            self._fetch(first)
+        self.assertEqual([0], first.ranges)
+        self.assertEqual(self.payload[:12], (self.root / "model.bin.part").read_bytes())
+        server = RangeServer(self.payload)
+        digest, size = self._fetch(server)
+        self.assertEqual((digest, size), (self.good, len(self.payload)))
+        self.assertEqual([12], server.ranges)
+
+    def test_a_slice_promise_that_does_not_add_up_is_a_truncation(self):
+        # Plant a partial, then let the server claim a *larger* total than the asset: the
+        # resume must fail on length rather than publish a short file with a plausible hash.
+        (self.root / "model.bin.part").write_bytes(self.payload[:4])
+        (self.root / "model.bin.part.meta").write_text(
+            json.dumps({"url": self.url, "pin": self.good, "size": 4}), encoding="utf-8")
+        with self.assertRaises(net_guard.TruncatedError):
+            self._fetch(RangeServer(self.payload, slice_total_delta=+7))
+
+    def test_no_length_promised_is_reported_rather_than_assumed(self):
+        # Chunked responses are legal, so this must not fail -- but "the server never said"
+        # has to be visible, because it is the one case where a short body cannot be caught.
+        seen = []
+        digest, _size = self._fetch(RangeServer(self.payload, promise_length=False),
+                                    report=lambda tag, msg: seen.append(msg))
+        self.assertEqual(self.good, digest)
+        self.assertTrue(any("no length promised" in m for m in seen), seen)
+
+    def test_a_claim_without_bytes_is_swept(self):
+        (self.root / "model.bin.part.meta").write_text(
+            json.dumps({"url": self.url, "pin": self.good, "size": 99}), encoding="utf-8")
+        self._fetch(RangeServer(self.payload))
+        self.assertEqual(["model.bin"], [p.name for p in self.root.iterdir()],
+                         "a sidecar with no partial is not a state anyone can resume from")
+
+    def park(self, count, pin):
+        """Leave the server itself out of it: a host that never states a length cannot report a
+        truncation, so the only honest way to reach the resume branch is to plant the claim."""
+        (self.root / "model.bin.part").write_bytes(self.payload[:count])
+        (self.root / "model.bin.part.meta").write_text(
+            json.dumps({"url": self.url, "pin": pin, "size": count}), encoding="utf-8")
+
+    def test_a_bare_206_still_resumes_when_a_pin_can_prove_the_result(self):
+        # Must not be refused: huggingface.co answers exactly this way, and madlad's 2.9 GB
+        # checkpoint is the download where restarting costs the most.
+        self.park(6, self.good)
+        server = RangeServer(self.payload, omit_slice=True)
+        digest, size = self._fetch(server)
+        self.assertEqual([6], server.ranges)
+        self.assertEqual((digest, size), (self.good, len(self.payload)))
+        self.assertEqual(self.payload, (self.root / "model.bin").read_bytes())
+
+    def test_a_bare_206_never_splices_an_unpinned_asset(self):
+        # The refusal has to also throw the bytes away, or every later attempt inherits the
+        # same unverifiable state and the asset can never be fetched again.
+        self.park(6, "")
+        with self.assertRaises(net_guard.GuardError) as caught:
+            self._fetch(RangeServer(self.payload, omit_slice=True), expected_sha256=None,
+                        allow_unpinned=True)
+        self.assertIn("discarded", str(caught.exception))
+        self.assertEqual([], [p.name for p in self.root.iterdir()],
+                         "a refused resume must not leave its bytes behind")
+
+    def test_the_slice_guard_does_not_fire_on_a_normal_200(self):
+        # The contrast case: no resume involved at all, so nothing may be refused. A guard that
+        # fires here would break every first download and get switched off within a day.
+        fetch = self._fetch(RangeServer(self.payload, omit_slice=True))
+        self.assertEqual((fetch[0], fetch[1]), (self.good, len(self.payload)))
+
+    def test_a_truncation_is_retried_and_not_refused(self):
+        """The downloaders keep a list of messages that mean 'stop asking'.
+
+        A truncation must not match that list -- retrying is the right answer -- while a
+        checksum mismatch still must. Read from the scripts rather than copied, because a
+        second copy of the keyword list drifts (the D64 shape).
+        """
+        message = str(net_guard.TruncatedError(
+            "truncated download of model.bin: 6 of 34 bytes arrived (the server promised "
+            "Content-Length); the partial is kept for the next attempt"))
+        checked = 0
+        for name in ("fetch_argos_models.py", "fetch_madlad_model.py", "fetch_voice_models.py"):
+            text = (ROOT / "script" / name).read_text(encoding="utf-8")
+            refusals = re.findall(r'"([a-z ]+mismatch|[a-z ]*allowlisted|disallowed|not https'
+                                  r"|non-public)", text)
+            refusals = sorted(set(refusals))
+            if not refusals:
+                continue
+            checked += 1
+            for word in refusals:
+                self.assertNotIn(word, message,
+                                 "%s would treat a truncation as a permanent refusal" % name)
+            self.assertIn("checksum mismatch", " ".join(refusals),
+                          "%s stopped refusing bad digests" % name)
+        self.assertTrue(checked, "no downloader had a refusal list to check")
 
 
 class DownloaderWiringTests(unittest.TestCase):
