@@ -250,10 +250,12 @@ class RangeServer:
         self.omit_slice = omit_slice
         self.etag = etag
         self.ranges = []
+        self.asked_headers = []
         self.opened = 0
 
     def open(self, request, timeout=None):
         self.opened += 1
+        self.asked_headers.append(dict(request.headers or {}))
         wanted = (request.headers or {}).get("Range")
         start = 0
         if wanted and wanted.startswith("bytes=") and not self.ignore_range:
@@ -476,6 +478,128 @@ class LengthIntegrityTests(unittest.TestCase):
             self.assertIn("checksum mismatch", " ".join(refusals),
                           "%s stopped refusing bad digests" % name)
         self.assertTrue(checked, "no downloader had a refusal list to check")
+
+
+def sent_header(table, name):
+    """Case-insensitive lookup of a request header.
+
+    `urllib.request.Request` stores header names capitalised, so `If-None-Match` arrives here as
+    `If-none-match`. Matching on the exact spelling would make a test fail while the request was
+    correct -- and header names are case-insensitive on the wire, so the assertion should be too.
+    """
+    for key, value in (table or {}).items():
+        if key.lower() == name.lower():
+            return value
+    return None
+
+
+class ConditionalRequestTests(unittest.TestCase):
+    """GA-13's other half: ask "is this current?" instead of downloading to find out.
+
+    A 304 arrives in two different shapes depending on the urllib version -- an `HTTPError`, or a
+    response with an empty body -- and both are handled, because the second one falling through
+    would read as a zero-length download. The must-not-fire case matters as much: a server that
+    answers 304 when we never asked must not be reported as a confirmed match.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.root = pathlib.Path(self.dir.name)
+        self.payload = b"whole-checkpoint"
+        self.good = hashlib.sha256(self.payload).hexdigest()
+        self.url = "https://argos-net.com/p.pkg"
+
+    def _fetch(self, opener, dest=None, **kw):
+        args = dict(expected_sha256=self.good, resolve=fake_resolve(["93.184.216.34"]),
+                    opener=opener)
+        args.update(kw)
+        return net_guard.fetch(self.url, dest or self.root / "p.pkg", HOSTS, SUFFIXES, **args)
+
+    def test_a_304_answered_as_an_error_becomes_not_modified(self):
+        seen = {}
+        with self.assertRaises(net_guard.NotModified) as caught:
+            self._fetch(StubConditional(status="raise", headers={"ETag": '"v2"'}), observed=seen,
+                        if_none_match='"v1"')
+        self.assertEqual('"v2"', caught.exception.validators["etag"])
+        self.assertEqual('"v2"', seen["etag"], "the fresh validator must reach the caller")
+        self.assertEqual([], list(self.root.iterdir()),
+                         "a confirmed 304 leaves no half-written file behind")
+
+    def test_a_304_answered_as_a_response_is_also_not_modified(self):
+        self.assertRaises(net_guard.NotModified,
+                          self._fetch, StubConditional(status="return", headers={"ETag": '"v2"'}),
+                          if_none_match='"v1"')
+
+    def test_a_304_we_never_asked_is_refused_not_trusted(self):
+        # No `observed` question sent, yet the server answers 304: an empty body is not the asset.
+        with self.assertRaises(net_guard.GuardError) as caught:
+            self._fetch(StubConditional(status="return"))
+        self.assertIn("did not ask", str(caught.exception))
+        self.assertFalse((self.root / "p.pkg").exists())
+
+    def test_the_conditional_headers_are_actually_sent(self):
+        server = StubConditional(status="raise", headers={"ETag": '"v2"'})
+        self.assertRaises(net_guard.NotModified,
+                          self._fetch, server, if_none_match='"v1"',
+                          if_modified_since="Wed, 01 Jan 2025 00:00:00 GMT")
+        self.assertEqual('"v1"', sent_header(server.asked, "If-None-Match"))
+        self.assertEqual("Wed, 01 Jan 2025 00:00:00 GMT",
+                         sent_header(server.asked, "If-Modified-Since"))
+
+    def test_a_plain_download_sends_no_conditional_headers(self):
+        # The counterpart: nobody asked, so nothing may be sent. A stray conditional header would
+        # make an unrelated 304 read as a confirmed match.
+        server = StubConditional(status="raise", headers={"ETag": '"v2"'})
+        with self.assertRaises(urllib.error.HTTPError):
+            self._fetch(server)
+        self.assertIsNone(sent_header(server.asked, "If-None-Match"))
+
+    def test_a_normal_download_is_untouched_and_reports_its_validators(self):
+        # The must-not-fire counterpart: without a conditional request the behaviour is exactly the
+        # old one, and the server's validator is still collected for next time.
+        seen = {}
+        digest, size = self._fetch(RangeServer(self.payload), observed=seen)
+        self.assertEqual((digest, size), (self.good, len(self.payload)))
+        self.assertEqual('"gen-1"', seen["etag"])
+
+    def test_no_conditional_header_while_a_partial_is_resuming(self):
+        # Mixing `Range` with `If-None-Match` makes "this slice is current" and "the whole file is
+        # current" indistinguishable, so the resume path never asks the conditional question.
+        (self.root / "p.pkg.part").write_bytes(self.payload[:4])
+        (self.root / "p.pkg.part.meta").write_text(
+            json.dumps({"url": self.url, "pin": self.good, "size": 4}), encoding="utf-8")
+        server = RangeServer(self.payload)
+        digest, size = self._fetch(server, if_none_match='"v1"')
+        self.assertEqual((digest, size), (self.good, len(self.payload)))
+        self.assertEqual([4], server.ranges, "the resume still asks for the tail")
+        self.assertIsNone(sent_header(server.asked_headers[0], "If-None-Match"),
+                          "a conditional header rode along with a Range request")
+        self.assertEqual(self.payload, (self.root / "p.pkg").read_bytes())
+
+
+class _StubCondHeaders:
+    def __init__(self, table):
+        self._table = dict(table)
+
+    def get(self, name, default=None):
+        return self._table.get(name, default)
+
+
+class StubConditional:
+    """Answers a conditional request with 304, either by raising it or by returning it."""
+
+    def __init__(self, status="raise", headers=None):
+        self.status_shape = status
+        self.headers = headers or {}
+        self.asked = {}
+
+    def open(self, request, timeout=None):
+        self.asked = dict(request.headers or {})
+        if self.status_shape == "raise":
+            raise urllib.error.HTTPError(request.full_url, 304, "Not Modified",
+                                        _StubCondHeaders(self.headers), None)
+        return _ServerResponse(b"", 304, dict(self.headers))
 
 
 class DownloaderWiringTests(unittest.TestCase):

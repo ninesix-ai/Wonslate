@@ -532,6 +532,23 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     digest can prove the result. Concurrency is settled by an atomic rename of `.part` (the claimer
     resumes, the loser downloads its own copy) rather than by a pid table or an mtime heuristic.
 
+25. **A record's key must be the same granularity as the thing it describes.** Defect D81:
+    `script/model_origin.py` wrote one `wonslate-origin.json` per directory, and
+    `fetch_madlad_model.py` installs four assets into one directory -- so the fourth write replaced
+    the first three and the surviving record claimed the directory *was* `config.json`, which
+    `read()` confirmed as `ok`. `check_model_updates.py` then compared the 2.9 GB checkpoint's
+    upstream oid against a small JSON file's digest. The record is now keyed per asset inside one
+    file (`{"format": 2, "assets": {...}}`), and the reader must name the asset: several candidates
+    with no name given is answered `ambiguous`, and an un-recorded name is answered `absent` --
+    never a pick, never a neighbour. Legacy single-object files stay readable (they exist on
+    installed machines) and merge into the new format. Two related rules paid for in the same round:
+    **do not send `If-None-Match` together with `Range`** ("this slice is current" and "the whole
+    file is current" would arrive indistinguishable), and **a 304 is not proof about our own copy**
+    -- `--force` re-verifies the local bytes against the recorded digest and falls back to a plain
+    fetch when they differ. Verified against the real server: GitHub answered a genuine 304 and
+    urllib raised it as `HTTPError` here, so the empty-response shape is covered by stubs only --
+    say so rather than implying both were seen live.
+
 ## 4. Conventions and invariants
 
 **This file is not the source of truth for either.** `CONTRIBUTING.md` is: comment

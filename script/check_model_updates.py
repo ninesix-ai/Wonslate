@@ -109,18 +109,31 @@ def _row(asset, state, local, upstream, detail, basis=None):
     return row
 
 
-def _start(dest_dir, record=None):
+def _start(dest_dir, record=None, asset=None):
     """The reference to compare against: given directly (baseline mode) or read from disk.
 
     One comparison path, two sources of reference. A second copy of the per-family comparison
     for baseline mode is how two answers to the same question start disagreeing (D64's shape).
+
+    `asset` names the entry to read inside a directory's record file. Passing nothing used to mean
+    "whatever is in there", which is D81: a MADLAD directory carries four assets and the record
+    held only the last one written, so `model.bin` was compared against `config.json`'s digest and
+    the row said `ok`. An absent or ambiguous answer is therefore reported, never guessed around.
     """
     if record is not None:
         return record, None
-    state, payload = model_origin.read(dest_dir)
+    state, payload = model_origin.read(dest_dir, asset=asset)
     if state == "missing":
         return None, _row(None, UNRECORDED, None, None,
                           "no origin record here; run the fetch script to create one")
+    if state == "ambiguous":
+        return None, _row(None, FAILED, None, None,
+                          "this directory records several assets (%s) and the probe asked for none;"
+                          " name one" % ", ".join(payload.get("assets", [])))
+    if state == "absent":
+        return None, _row(payload.get("asked"), FAILED, None, None,
+                          "the record here covers %s, not the asset asked for"
+                          % ", ".join(payload.get("recorded", [])))
     if state == "incomplete":
         return None, _row(None, FAILED, None, None,
                           "origin record is unusable: %s" % payload)
@@ -300,7 +313,10 @@ def check_madlad(dest_dir, opener=urllib.request.urlopen, timeout=30, record=Non
 
     `token` is accepted for the same reason as argos and unused: this is a public HF endpoint.
     """
-    record, early = _start(dest_dir, record)
+    # `model.bin` is the asset this probe compares (that is the name it queries the tree API for),
+    # so it names it. Before D81 the directory held one record and this question was never asked --
+    # the answer happened to be `config.json`'s digest whenever a full fetch had run.
+    record, early = _start(dest_dir, record, asset="model.bin")
     if early:
         return dict(early, checked="madlad")
     held = record.get("sha256")

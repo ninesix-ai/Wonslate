@@ -114,7 +114,8 @@ def say(tag, msg=""):
     print("[{}] {}".format(tag, msg).rstrip(), flush=True)
 
 
-def download(url, dest, attempts=4, allow_unpinned=False, chunk=1 << 20):
+def download(url, dest, attempts=4, allow_unpinned=False, chunk=1 << 20,
+             record_dir=None, record_asset=None, observed=None):
     """Fetch one asset through the shared policy, verifying its pinned digest.
 
     Returns the digest on success, False on failure -- the caller records which bytes landed,
@@ -122,21 +123,46 @@ def download(url, dest, attempts=4, allow_unpinned=False, chunk=1 << 20):
 
     Policy refusals stop the retry loop at once -- a missing pin or a checksum mismatch
     is not something another four attempts at the same URL can resolve.
+
+    `record_dir` / `record_asset` say where this asset's origin record lives (the component
+    directory, not the cache file being written) so a re-fetch can ask the conditional question
+    and get the ~1 GB archive back as a 304 instead. `observed`, if given, collects what the
+    server said for that record.
     """
     name = pathlib.Path(dest).name
     pin = EXPECTED_SHA256.get(name)
+    ask_unchanged = record_dir is not None and pathlib.Path(dest).is_file()
     for i in range(1, attempts + 1):
+        validators, recorded = ({}, None)
+        if ask_unchanged:
+            validators, recorded = model_origin.conditional(record_dir, record_asset)
+        seen = {}
         try:
             digest, size = net_guard.fetch(
                 url, dest, ALLOWED_HOSTS, ALLOWED_HOST_SUFFIXES,
                 expected_sha256=pin[0] if pin else None,
                 digest_source=pin[1] if pin else None,
                 allow_unpinned=allow_unpinned, user_agent=USER_AGENT,
-                timeout=300, chunk=chunk, report=say, progress_every=50 << 20)
+                timeout=300, chunk=chunk, report=say, progress_every=50 << 20,
+                if_none_match=validators.get("etag"),
+                if_modified_since=validators.get("last_modified"), observed=seen)
             say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
                 name, size / 1e6, digest[:16],
                 "" if pin else " UNPINNED (--allow-unpinned)"))
+            if observed is not None:
+                observed.update(seen)
             return digest
+        except net_guard.NotModified:
+            # A 304 speaks about the server's copy; the archive on disk is only current if it still
+            # hashes to what the record says. Otherwise keep the file and fetch for real next time.
+            if recorded and model_origin.matches_record(dest, recorded):
+                say("fetch", "{} unchanged upstream (304); kept the cached archive".format(name))
+                if observed is not None:
+                    observed.update(seen)
+                return recorded
+            say("fetch", "{}: 304 from upstream but the cached file is not what the record "
+                         "describes -- fetching it".format(name))
+            ask_unchanged = False      # stop sending conditional headers for the rest of the loop
         except net_guard.UnpinnedAsset as exc:
             say("fetch", "REFUSED: {}".format(exc))
             return False
@@ -216,9 +242,14 @@ def fetch(key, dest_root, force, allow_unpinned=False):
         say("cached", "{} -> {} (layout verified{})".format(key, target, extra))
         return True
 
+    # None = no transfer this run; {} = transferred and the server published no validator. Keeping
+    # them apart is what stops a cache-hit run from clearing a stored etag (see fetch_argos_models).
+    seen = None
     if force or not (archive.is_file() and archive.stat().st_size > 100_000):
         say("fetch", "{} <- {}".format(key, url))
-        digest = download(url, archive, allow_unpinned=allow_unpinned)
+        seen = {}
+        digest = download(url, archive, allow_unpinned=allow_unpinned,
+                          record_dir=target, record_asset=name, observed=seen)
         if not digest:
             return False
     elif pin:
@@ -227,7 +258,9 @@ def fetch(key, dest_root, force, allow_unpinned=False):
         if got != pin[0]:
             say("fetch", "{} on disk is sha256 {}, pin says {} -- re-fetching".format(
                 name, got[:16], pin[0][:16]))
-            digest = download(url, archive, allow_unpinned=allow_unpinned)
+            seen = {}
+            digest = download(url, archive, allow_unpinned=allow_unpinned,
+                              record_dir=target, record_asset=name, observed=seen)
             if not digest:
                 return False
         else:
@@ -253,21 +286,25 @@ def fetch(key, dest_root, force, allow_unpinned=False):
         say("verify", "FAIL {}: {}".format(key, problem))
         return False
     if digest:
-        _record_origin(target, url, name, digest)
+        _record_origin(target, url, name, digest, validators=seen)
     say("verify", "OK   {} -> {}".format(key, target))
     return True
 
 
-def _record_origin(target, url, name, digest):
+def _record_origin(target, url, name, digest, validators=None):
     """Record what landed, in the component directory it belongs to.
 
     These assets have no version scheme of their own -- the release tag is a long-lived bucket
     (`asr-models`, `tts-models`) and the version is spelled inside the file name -- so both are
     kept: the name as the version, the tag as `kind`, plus the bytes actually received.
+
+    `validators` carries the server's own statement (GitHub publishes an `etag` and a
+    `Last-Modified` for release assets), which is what turns a later `--force` from a 1 GB
+    re-download into a conditional question. Left out, the previous entry keeps what it had.
     """
     tag = url.split("/releases/download/", 1)[1].split("/", 1)[0] if "/releases/download/" in url else None
     model_origin.record(target, asset=name, version=name, sha256=digest, url=url,
-                        fetcher="fetch_voice_models.py", kind=tag)
+                        fetcher="fetch_voice_models.py", kind=tag, validators=validators)
 
 
 def main(argv=None):

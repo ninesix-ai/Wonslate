@@ -20,6 +20,7 @@ Everything here is offline: probes take an `opener`, and the fetch scripts are e
 monkeypatched `download`. Nothing in this file touches the network, so it can sit in the gate --
 which `check_model_updates.py` itself cannot, because that one needs upstream by design.
 """
+import hashlib
 import io
 import json
 import pathlib
@@ -38,6 +39,7 @@ import check_model_updates as updates                     # noqa: E402
 import fetch_argos_models                                  # noqa: E402
 import fetch_madlad_model                                  # noqa: E402
 import fetch_voice_models                                  # noqa: E402
+import net_guard                                           # noqa: E402
 
 
 def canned(payload):
@@ -627,6 +629,250 @@ class ArgosRecordsThroughRealPathTests(unittest.TestCase):
             self.assertFalse(ok)
             self.assertEqual("missing",
                              model_origin.read(root / self.PACKAGE.replace(".argosmodel", ""))[0])
+
+
+class PerAssetRecordTests(unittest.TestCase):
+    """Defect D81: one record file per directory, but four assets in it.
+
+    `fetch_madlad_model.py` writes the record once per leaf, so the last write used to destroy the
+    first three and `read()` reported `ok` about the survivor -- a 2.9 GB checkpoint described by
+    `config.json`'s digest. Every rejection here is paired with the case that must stay allowed,
+    because a record format that nags on normal writes gets worked around.
+    """
+
+    LEAVES = ("model.bin", "spiece.model", "shared_vocabulary.json", "config.json")
+
+    def write_four(self, root):
+        for leaf in self.LEAVES:
+            model_origin.record(root, asset=leaf, version="main",
+                                sha256=leaf.encode().hex()[:64].ljust(64, "0"),
+                                url="https://huggingface.co/x/resolve/main/" + leaf,
+                                fetcher="fetch_madlad_model.py", kind="main")
+        return root
+
+    def test_writing_four_assets_keeps_four_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.write_four(pathlib.Path(tmp))
+            self.assertEqual(sorted(self.LEAVES), sorted(model_origin.assets(root)))
+            self.assertEqual(["wonslate-origin.json"],
+                             [p.name for p in root.iterdir()],
+                             "one file per directory, keyed inside it -- not one file per asset")
+
+    def test_naming_no_asset_refuses_to_choose(self):
+        # The opposite of a guess: several candidates is its own answer, and it is not `ok`.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.write_four(pathlib.Path(tmp))
+            state, payload = model_origin.read(root)
+            self.assertEqual("ambiguous", state)
+            self.assertEqual(sorted(self.LEAVES), sorted(payload["assets"]))
+
+    def test_a_single_asset_directory_still_reads_without_naming(self):
+        # Must not start nagging where the layout genuinely has one asset: Argos keeps one
+        # unpacked package per directory, and voice one archive per component.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            model_origin.record(root, asset="en_zh", version="1.9", sha256="a" * 64,
+                                url="u", fetcher="f")
+            state, entry = model_origin.read(root)
+            self.assertEqual("ok", state)
+            self.assertEqual("en_zh", entry["asset"])
+
+    def test_asking_for_an_absent_asset_says_so_rather_than_returning_a_neighbour(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.write_four(pathlib.Path(tmp))
+            state, payload = model_origin.read(root, asset="nope.bin")
+            self.assertEqual("absent", state)
+            self.assertEqual("nope.bin", payload["asked"])
+            self.assertEqual(sorted(self.LEAVES), sorted(payload["recorded"]))
+
+    def test_a_legacy_single_object_record_is_still_readable_and_merges(self):
+        # Records written by the previous release exist on installed machines. Refusing them would
+        # report "no record" for a directory that has one, and overwriting without merging would
+        # lose the very entry the reader was complaining about.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "wonslate-origin.json").write_text(json.dumps({
+                "asset": "en_zh", "version": "1.9", "sha256": "a" * 64, "url": "u",
+                "fetched_at": "2026-10-17T00:00:00+00:00", "fetcher": "f"}), encoding="utf-8")
+            self.assertEqual("ok", model_origin.read(root, asset="en_zh")[0])
+            model_origin.record(root, asset="zh_en", version="1.9", sha256="b" * 64,
+                                url="u2", fetcher="f")
+            self.assertEqual(["en_zh", "zh_en"], sorted(model_origin.assets(root)))
+            self.assertEqual(2, json.loads((root / "wonslate-origin.json")
+                                           .read_text(encoding="utf-8"))["format"],
+                             "merging a legacy file upgrades it to the keyed format")
+
+    def test_an_unreadable_record_is_refused_rather_than_replaced_by_one_asset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "wonslate-origin.json").write_text("{ not json", encoding="utf-8")
+            with self.assertRaises(model_origin.OriginError) as caught:
+                model_origin.record(root, asset="model.bin", version="main", sha256="c" * 64,
+                                    url="u", fetcher="f")
+            self.assertIn("refusing to overwrite", str(caught.exception))
+            self.assertEqual("{ not json",
+                             (root / "wonslate-origin.json").read_text(encoding="utf-8"),
+                             "the refusal must leave the unreadable file exactly as it was")
+
+    def test_records_stay_lf_on_every_platform(self):
+        # Committed evidence-style files that get rewritten; CRLF here is a whole-file diff.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write_four(pathlib.Path(tmp))
+            self.assertNotIn(b"\r\n",
+                             (pathlib.Path(tmp) / "wonslate-origin.json").read_bytes())
+
+
+class ValidatorCarryOverTests(unittest.TestCase):
+    """The state a later step reads must survive a write that knows nothing about it.
+
+    D80's cleanup trap in a new costume: `validators=None` ("not passed") and `validators={}`
+    ("the server published nothing") are different facts, and collapsing them would let an
+    ordinary cache-hit run erase the etag that makes the next `--force` cheap.
+    """
+
+    def seed(self, root):
+        model_origin.record(root, asset="model.bin", version="main", sha256="a" * 64, url="u",
+                            fetcher="f", validators={"etag": '"v1"',
+                                                     "last_modified": "Mon, 01 Jan 2024 GMT"})
+
+    def test_a_write_without_validators_keeps_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self.seed(root)
+            model_origin.record(root, asset="model.bin", version="main", sha256="a" * 64, url="u",
+                                fetcher="f")
+            self.assertEqual('"v1"', model_origin.assets(root)["model.bin"]["etag"])
+
+    def test_an_explicit_empty_set_clears_them(self):
+        # A real fetch whose server said nothing must not inherit a stale validator: asking
+        # `If-None-Match` with an old tag could otherwise be answered 304 for bytes we never had.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self.seed(root)
+            model_origin.record(root, asset="model.bin", version="main", sha256="a" * 64, url="u",
+                                fetcher="f", validators={})
+            self.assertNotIn("etag", model_origin.assets(root)["model.bin"])
+
+    def test_conditional_reports_cannot_ask_as_a_separate_answer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self.assertEqual(({}, None), model_origin.conditional(root, "model.bin"))
+            self.seed(root)
+            got, recorded = model_origin.conditional(root, "model.bin")
+            self.assertEqual('"v1"', got["etag"])
+            self.assertEqual("a" * 64, recorded)
+            # Ambiguous directory and an un-named asset both answer "we cannot ask", not "ask".
+            model_origin.record(root, asset="spiece.model", version="main", sha256="b" * 64,
+                                url="u", fetcher="f")
+            self.assertEqual(({}, None), model_origin.conditional(root, "other.bin"))
+
+    def test_write_validators_refreshes_only_what_it_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self.seed(root)
+            self.assertFalse(model_origin.write_validators(root, "nope", {"etag": "x"}),
+                             "a 304 must not conjure a record for an asset we never fetched")
+            self.assertTrue(model_origin.write_validators(root, "model.bin", {"etag": '"v2"'}))
+            entry = model_origin.assets(root)["model.bin"]
+            self.assertEqual('"v2"', entry["etag"])
+            self.assertEqual("a" * 64, entry["sha256"], "the digest a 304 confirms must stay")
+            self.assertEqual("Mon, 01 Jan 2024 GMT", entry["last_modified"])
+
+    def test_matches_record_is_the_guard_against_a_lie_or_a_missing_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "model.bin"
+            path.write_bytes(b"bytes")
+            good = hashlib.sha256(b"bytes").hexdigest()
+            self.assertTrue(model_origin.matches_record(path, good))
+            self.assertFalse(model_origin.matches_record(path, "0" * 64))
+            self.assertFalse(model_origin.matches_record(path, None),
+                             "no recorded digest is not the same as a matching one")
+            self.assertFalse(model_origin.matches_record(pathlib.Path(tmp) / "gone", good))
+
+
+class ConditionalWiringTests(unittest.TestCase):
+    """The three downloaders must actually use the conditional path, not just offer it.
+
+    Read from source text: importing a module proves nothing about which branch a `--force` run
+    takes, and `check_name_guards` already insists each script calls `net_guard.fetch(` itself
+    (the D69 lesson), so the wiring is asserted where it is written rather than refactored away.
+    """
+
+    SCRIPTS = ("fetch_argos_models.py", "fetch_madlad_model.py", "fetch_voice_models.py")
+
+    def test_every_downloader_asks_and_handles_a_304(self):
+        for name in self.SCRIPTS:
+            with self.subTest(name):
+                text = (ROOT / "script" / name).read_text(encoding="utf-8")
+                self.assertIn("model_origin.conditional(", text,
+                              "%s never asks whether the file is current" % name)
+                self.assertIn("net_guard.NotModified", text,
+                              "%s would report a 304 as a failure" % name)
+                self.assertIn("if_none_match=", text,
+                              "%s does not send the conditional header" % name)
+
+    def test_a_304_is_only_kept_when_the_local_bytes_match_the_record(self):
+        for name in self.SCRIPTS:
+            with self.subTest(name):
+                text = (ROOT / "script" / name).read_text(encoding="utf-8")
+                self.assertIn("matches_record(", text,
+                              "%s trusts a 304 as proof about its own copy" % name)
+
+    def test_not_modified_is_not_a_guard_error(self):
+        # Callers catch GuardError to mean "refused"; a 304 is a confirmation. If it were a
+        # GuardError subclass, every downloader's refusal branch would report it as a failure.
+        self.assertFalse(issubclass(net_guard.NotModified, net_guard.GuardError))
+        self.assertTrue(issubclass(net_guard.NotModified, RuntimeError))
+
+
+class ProbeReadsTheAssetItAsksFor(unittest.TestCase):
+    """D81's read side: a four-asset directory must be judged on `model.bin`'s bytes.
+
+    Before the fix this probe read whatever single record the directory held, which after a full
+    fetch was `config.json` -- so it compared the 2.9 GB checkpoint's upstream oid against a small
+    JSON file's digest and could only ever answer NEWER (or CURRENT by luck). The opener below
+    raises if called for the wrong reasons, so a green case also proves which entry was used.
+    """
+
+    MODEL_SHA = hashlib.sha256(b"checkpoint").hexdigest()
+    CONFIG_SHA = hashlib.sha256(b"{}").hexdigest()
+
+    def record_all(self, root):
+        for leaf, sha in (("model.bin", self.MODEL_SHA), ("config.json", self.CONFIG_SHA)):
+            model_origin.record(root, asset=leaf, version="main", sha256=sha,
+                                url="https://huggingface.co/x/resolve/main/" + leaf,
+                                fetcher="fetch_madlad_model.py", kind="main")
+
+    def test_the_checkpoint_digest_is_the_one_compared(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self.record_all(root)
+            tree = [{"path": "model.bin", "lfs": {"oid": self.MODEL_SHA}}]
+            row = updates.check_madlad(root, opener=canned(tree))
+            self.assertEqual("current", row["state"], row["detail"])
+            self.assertEqual(self.MODEL_SHA, row["upstream"])
+            self.assertEqual("model.bin", row["asset"])
+
+    def test_different_bytes_upstream_are_reported_as_newer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self.record_all(root)
+            moved = [{"path": "model.bin", "lfs": {"oid": "e" * 64}}]
+            row = updates.check_madlad(root, opener=canned(moved))
+            self.assertEqual("newer", row["state"])
+            # Full digests, not the 12-character display form: `--record-baseline` stores this
+            # value and compares it again tomorrow.
+            self.assertEqual("e" * 64, row["upstream"])
+
+    def test_a_directory_recording_only_another_asset_is_not_guessed_at(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            model_origin.record(root, asset="config.json", version="main",
+                                sha256=self.CONFIG_SHA, url="u", fetcher="f", kind="main")
+            row = updates.check_madlad(root, opener=canned([]))
+            self.assertEqual("failed", row["state"],
+                             "reading config.json as if it were model.bin is the D81 failure")
+            self.assertIn("not the asset asked for", row["detail"])
 
 
 if __name__ == "__main__":

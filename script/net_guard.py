@@ -98,6 +98,22 @@ class TruncatedError(GuardError):
     """
 
 
+class NotModified(RuntimeError):
+    """The server answered our conditional request with 304: the file we have is still current.
+
+    Deliberately *not* a GuardError. Every downloader already catches GuardError to mean "this
+    attempt failed"; a 304 is the opposite -- the bytes on disk were confirmed current without
+    transferring them. Making it a distinct type means a caller that forgot to handle it crashes
+    loudly instead of reporting a failure, which is the direction this repo keeps choosing.
+    """
+
+    def __init__(self, url, validators=None):
+        RuntimeError.__init__(self, "%s is unchanged (the server returned 304)" % url)
+        self.url = url
+        #: A 304 may carry a fresh validator; keep it so the next question is asked correctly.
+        self.validators = dict(validators or {})
+
+
 def hostname_matches(hostname, allowed_hosts=(), allowed_suffixes=()):
     """True if `hostname` is exactly listed, or a sub-domain of a listed suffix.
 
@@ -183,6 +199,25 @@ def sha256_of(path, chunk=1 << 22):
         for block in iter(lambda: handle.read(chunk), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _validators_of(source):
+    """The two server statements that make a conditional request possible, as a dict.
+
+    `source` is either a response or an `HTTPError`; both expose headers, and a 304 arrives as
+    one or the other depending on the urllib version, so both are read the same way.
+    """
+    out = {}
+    headers = getattr(source, "headers", None)
+    if headers is None:
+        headers = getattr(source, "msg", None)
+    for key, name in (("etag", "ETag"), ("last_modified", "Last-Modified")):
+        value = _header(source, name)
+        if value is None and hasattr(headers, "get"):
+            value = headers.get(name)
+        if value:
+            out[key] = value.strip()
+    return out
 
 
 def _header(resp, name):
@@ -330,7 +365,8 @@ def _hash_prefix(path, digest, chunk):
 def fetch(url, dest, allowed_hosts, allowed_suffixes=(), expected_sha256=None,
           digest_source=None, allow_unpinned=False, opener=None, timeout=180,
           resolve=socket.getaddrinfo, chunk=1 << 22, report=None,
-          progress_every=None, user_agent=DEFAULT_USER_AGENT):
+          progress_every=None, user_agent=DEFAULT_USER_AGENT,
+          if_none_match=None, if_modified_since=None, observed=None):
     """Download one artifact through the policy, verifying it before it lands.
 
     The file is written beside its final name and only renamed once both the *length* and
@@ -345,6 +381,16 @@ def fetch(url, dest, allowed_hosts, allowed_suffixes=(), expected_sha256=None,
     and the pin, and the next attempt -- same process or not -- resumes from there with a
     `Range` request. `TruncatedError` and transport errors keep those bytes; a policy
     refusal or a checksum mismatch throws them away.
+
+    `if_none_match` / `if_modified_since` ask the conditional question (GA-13's other half):
+    pass what the last fetch recorded and a `NotModified` comes back instead of the bytes, so
+    `--force` on an unchanged 2.9 GB checkpoint costs two headers. Two rules on it. It is sent
+    only when nothing is being resumed -- mixing `Range` with `If-None-Match` makes "the slice is
+    current" and "the whole file is current" indistinguishable -- and a server that ignores the
+    condition simply answers 200 with the file, which is a normal download, not a failure.
+
+    `observed`, if given, is filled with the validators this response returned so the caller can
+    store them; without that the information arrives and is thrown away.
     """
     host, reason = check_url(url, allowed_hosts, allowed_suffixes)
     if reason:
@@ -377,13 +423,42 @@ def fetch(url, dest, allowed_hosts, allowed_suffixes=(), expected_sha256=None,
     headers = {USER_AGENT_HEADER: user_agent}
     if start:
         headers["Range"] = "bytes=%d-" % start
+    conditional = bool(if_none_match or if_modified_since) and not start
+    if conditional:
+        if if_none_match:
+            headers["If-None-Match"] = if_none_match
+        if if_modified_since:
+            headers["If-Modified-Since"] = if_modified_since
     request = urllib.request.Request(url, headers=headers)
 
     landed = False
     resumable = False
     try:
-        with used.open(request, timeout=timeout) as resp:
+        try:
+            resp_ctx = used.open(request, timeout=timeout)
+        except urllib.error.HTTPError as early:
+            # urllib raises for any non-2xx, so a 304 usually arrives here. Only answer "nothing
+            # changed" when we actually asked that question: a stray 304 from a server we did not
+            # ask would otherwise be reported as a confirmed match (D74's shape, one layer down).
+            if early.code == 304 and conditional:
+                got = _validators_of(early)
+                if observed is not None:
+                    observed.update(got)
+                raise NotModified(url, got)
+            raise
+        with resp_ctx as resp:
             status = getattr(resp, "status", None) or 200
+            if observed is not None:
+                observed.update(_validators_of(resp))
+            if status == 304:
+                # The other shape: some versions hand the 304 back as a response. Treated the same,
+                # and it must not fall through -- the body is empty, which would otherwise read as
+                # a zero-length success when no digest was pinned.
+                if not conditional:
+                    raise GuardError("%s answered 304 to a request that did not ask a conditional "
+                                     "question; refusing to treat an empty body as the artifact"
+                                     % dest.name)
+                raise NotModified(url, _validators_of(resp))
             span = _header(resp, "Content-Range")
             total = _expected_total(resp, status, start)
             if start and status == 206 and not span and expected_sha256 is None:
@@ -728,6 +803,57 @@ def self_test():
         expect("and nothing was left behind to poison the next attempt",
                [p.name for p in loose.parent.iterdir()], [])
 
+    with tempfile.TemporaryDirectory() as tmp:
+        # The conditional question (GA-13's other half). Both shapes a 304 arrives in are seeded,
+        # because only one of them is what this interpreter does -- the other is what a different
+        # urllib version does, and covering only the local one would let the fall-through read as a
+        # zero-length download on another machine.
+        for shape in ("raise", "return"):
+            here = pathlib.Path(tmp) / ("cond-%s.bin" % shape)
+            server = _FakeOpener(body, respond_304=shape, headers={"ETag": '"v2"'})
+            seen = {}
+            try:
+                fetch("https://huggingface.co/x", here, hosts, suffixes,
+                      expected_sha256=whole, resolve=fake_resolve(["93.184.216.34"]),
+                      opener=server, if_none_match='"v1"', observed=seen)
+                failures.append("a 304 delivered as %s was not reported as NotModified" % shape)
+            except NotModified:
+                pass
+            expect("the 304's own validator reaches the caller (%s)" % shape,
+                   seen.get("etag"), '"v2"')
+            expect("a confirmed 304 publishes no file (%s)" % shape, here.exists(), False)
+            expect("the conditional header was actually sent (%s)" % shape,
+                   any("if-none-match" in {k.lower() for k in asked} for asked in server.asked),
+                   True)
+
+        # The opposite case, which must not be believed: a 304 from a server nobody asked.
+        unasked = pathlib.Path(tmp) / "unasked.bin"
+        try:
+            fetch("https://huggingface.co/x", unasked, hosts, suffixes, expected_sha256=whole,
+                  resolve=fake_resolve(["93.184.216.34"]),
+                  opener=_FakeOpener(body, respond_304="return"))
+            failures.append("an unsolicited 304 was accepted as a match")
+        except GuardError as exc:
+            expect("the unsolicited 304 says why", "did not ask" in str(exc), True)
+
+        # And the two questions stay separate: while a partial is being resumed the conditional
+        # header must not go out, because "this slice is current" and "the whole file is current"
+        # would arrive indistinguishable and the answer would be acted on as the wrong one.
+        mixed = pathlib.Path(tmp) / "mixed.bin"
+        (mixed.parent / "mixed.bin.part").write_bytes(body[:5])
+        (mixed.parent / "mixed.bin.part.meta").write_text(
+            json.dumps({"url": "https://huggingface.co/x", "pin": whole, "size": 5}),
+            encoding="utf-8")
+        resume_server = _FakeOpener(body)
+        fetch("https://huggingface.co/x", mixed, hosts, suffixes, expected_sha256=whole,
+              resolve=fake_resolve(["93.184.216.34"]), opener=resume_server,
+              if_none_match='"v1"')
+        expect("a resume asked for the tail", resume_server.ranges_seen, [5])
+        expect("a resume sent no conditional header",
+               any("if-none-match" in {k.lower() for k in asked} for asked in resume_server.asked),
+               False)
+        expect("and the resumed file is complete", mixed.read_bytes(), body)
+
     for line in failures:
         print("!! %s" % line)
     print("net_guard self-test: %d assertions, %s"
@@ -747,20 +873,31 @@ class _FakeOpener:
     """
 
     def __init__(self, payload, headers=None, cut_at=None, ignore_range=False,
-                 total_delta=0, omit_slice=False):
+                 total_delta=0, omit_slice=False, respond_304=None):
         self._payload = payload
         self._headers = headers or {}
         self._cut_at = cut_at
         self._ignore_range = ignore_range
         self._total_delta = total_delta
-        # `omit_slice` is the huggingface.co / jsDelivr shape measured on 2026-10-18: a 206
-        # that never states which slice it is. Everything about resume has to degrade to the
-        # digest when that happens, so the seed has to be able to say it.
+        # `omit_slice` is the huggingface.co / jsDelivr shape measured on 2026-10-18: a 206 that
+        # never states which slice it is. Everything about resume has to degrade to the digest when
+        # that happens, so the seed has to be able to say it.
         self._omit_slice = omit_slice
+        # A 304 reaches us either as an HTTPError or as an empty response, depending on the urllib
+        # path, so `respond_304` lets a seed produce either shape explicitly.
+        self._respond_304 = respond_304
         self.ranges_seen = []
+        self.asked = []
 
     def open(self, request, timeout=None):
-        wanted = (getattr(request, "headers", None) or {}).get("Range")
+        sent = dict(getattr(request, "headers", None) or {})
+        self.asked.append(sent)
+        if self._respond_304:
+            if self._respond_304 == "raise":
+                raise urllib.error.HTTPError("https://huggingface.co/x", 304, "Not Modified",
+                                            _Headers(dict(self._headers)), None)
+            return _FakeResponse(b"", 304, dict(self._headers))
+        wanted = sent.get("Range")
         start = 0
         if wanted and wanted.startswith("bytes=") and not self._ignore_range:
             start = int(wanted[len("bytes="):].split("-")[0])
@@ -772,31 +909,32 @@ class _FakeOpener:
         # The promise is about the whole asset; the wire carries less. That gap is the defect.
         if not self._omit_slice:
             headers.setdefault("Content-Length", str(len(promised)))
-        if status == 206:
-            if self._omit_slice:
-                headers.pop("Content-Range", None)
-            else:
-                headers.setdefault("Content-Range",
-                                   "bytes %d-%d/%d" % (start, start + len(promised) - 1,
-                                                       len(self._payload) + self._total_delta))
+        if status == 206 and not self._omit_slice:
+            headers.setdefault("Content-Range",
+                               "bytes %d-%d/%d" % (start, start + len(promised) - 1,
+                                                   len(self._payload) + self._total_delta))
+        return _FakeResponse(wire, status, headers)
 
-        class _Body:
-            def __init__(self_inner):
-                self_inner.status = status
-                self_inner.headers = _Headers(headers)
-                self_inner._pos = 0
 
-            def read(self_inner, n=-1):
-                chunk = wire[self_inner._pos:self_inner._pos + n]
-                self_inner._pos += len(chunk)
-                return chunk
+class _FakeResponse:
+    """The answer `_FakeOpener` hands back: a status, headers, and a readable body."""
 
-            def __enter__(self):
-                return self
+    def __init__(self, body, status, headers):
+        self._body = body
+        self._pos = 0
+        self.status = status
+        self.headers = _Headers(headers)
 
-            def __exit__(self, *exc):
-                return False
-        return _Body()
+    def read(self, n=-1):
+        chunk = self._body[self._pos:self._pos + n]
+        self._pos += len(chunk)
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 class _Headers:

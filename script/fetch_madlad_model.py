@@ -109,14 +109,17 @@ def say(tag, msg=""):
     print("[{}] {}".format(tag, msg).rstrip(), flush=True)
 
 
-def _record_origin(dest_dir, leaf, digest, revision):
+def _record_origin(dest_dir, leaf, digest, revision, validators=None):
     """Write what landed, beside it. `version` is the revision we were told to fetch, which for
     `main` is deliberately weak -- so the digest is stored next to it and `check_model_updates.py`
     compares bytes rather than trusting the label.
+
+    `validators` is what the server said this time. Recording it is what lets a later `--force`
+    ask "is this still current" instead of pulling 2.9 GB again to find out that it is.
     """
     model_origin.record(dest_dir, asset=leaf, version=revision, sha256=digest,
                         url="{}/{}/resolve/{}".format(FALLBACK_ENDPOINTS[0], REPO, revision),
-                        fetcher="fetch_madlad_model.py", kind=revision)
+                        fetcher="fetch_madlad_model.py", kind=revision, validators=validators)
 
 
 def endpoints():
@@ -190,18 +193,39 @@ def download(leaf, dest_dir, force, attempts=4, allow_unpinned=False, revision="
     for i in range(1, attempts + 1):
         for base in endpoints():
             url = "{}/{}/resolve/{}/{}".format(base, REPO, revision, leaf)
+            # Asked once per attempt, and dropped the moment a 304 proves unusable below: the
+            # record's validators describe a past response, so after a mismatch we must fall back
+            # to a plain fetch rather than keep asking a question the server already answered.
+            validators, recorded = ({}, None)
+            if force and os.path.isfile(target):
+                validators, recorded = model_origin.conditional(dest_dir, leaf)
+            seen = {}
             try:
                 digest, size = net_guard.fetch(
                     url, target, ALLOWED_HOSTS, ALLOWED_HOST_SUFFIXES,
                     expected_sha256=pin[0] if pin else None,
                     digest_source=pin[1] if pin else None,
                     allow_unpinned=allow_unpinned, user_agent=USER_AGENT,
-                    timeout=60, chunk=1 << 20)
+                    timeout=60, chunk=1 << 20,
+                    if_none_match=validators.get("etag"),
+                    if_modified_since=validators.get("last_modified"), observed=seen)
                 say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
                     leaf, size / 1e6, digest[:16],
                     "" if pin else " UNPINNED (--allow-unpinned)"))
-                _record_origin(dest_dir, leaf, digest, revision)
+                _record_origin(dest_dir, leaf, digest, revision, validators=seen)
                 return True
+            except net_guard.NotModified:
+                # The server says its copy is the one we already recorded. That is not yet a claim
+                # about *our* copy -- so hash it, and only then keep it.
+                if recorded and model_origin.matches_record(target, recorded):
+                    say("fetch", "{} unchanged upstream (304); kept the local {:.1f} MB".format(
+                        leaf, os.path.getsize(target) / 1e6))
+                    model_origin.write_validators(dest_dir, leaf, seen)
+                    return True
+                say("fetch", "{}: server answered 304 but the local bytes do not match the "
+                             "record -- fetching them for real".format(leaf))
+                force = False          # next attempt goes out without the conditional headers
+                continue
             except net_guard.UnpinnedAsset as exc:
                 say("fetch", "REFUSED: {}".format(exc))
                 return False

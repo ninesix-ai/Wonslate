@@ -184,7 +184,8 @@ def pick_link(urls, pair):
     return None
 
 
-def download(url, dest, attempts=4, allow_unpinned=False):
+def download(url, dest, attempts=4, allow_unpinned=False, record_dir=None,
+             record_asset=None, observed=None):
     """Fetch one package through the policy and verify it against its pinned digest.
 
     Returns the digest on success and False on failure: the caller needs the value to record
@@ -193,20 +194,43 @@ def download(url, dest, attempts=4, allow_unpinned=False):
     Which failures are retried matters: a missing pin, a refused host or a checksum
     mismatch will not fix themselves by downloading the same URL four more times, so those
     end the attempt loop immediately. Only transport errors retry.
+
+    `record_dir` / `record_asset` point at the package's own origin record so a re-fetch can ask
+    whether the file changed instead of pulling 85 MB to find out that it did not.
     """
     name = pathlib.Path(dest).name
     pin = EXPECTED_SHA256.get(name)
+    ask_unchanged = record_dir is not None and pathlib.Path(dest).is_file()
     for i in range(1, attempts + 1):
+        validators, recorded = ({}, None)
+        if ask_unchanged:
+            validators, recorded = model_origin.conditional(record_dir, record_asset)
+        seen = {}
         try:
             digest, size = net_guard.fetch(
                 url, dest, PACKAGE_ALLOWED_HOSTS,
                 expected_sha256=pin[0] if pin else None,
                 digest_source=pin[1] if pin else None,
-                allow_unpinned=allow_unpinned, user_agent=USER_AGENT)
+                allow_unpinned=allow_unpinned, user_agent=USER_AGENT,
+                if_none_match=validators.get("etag"),
+                if_modified_since=validators.get("last_modified"), observed=seen)
             say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
                 name, size / 1e6, digest[:16],
                 "" if pin else " UNPINNED (--allow-unpinned)"))
+            if observed is not None:
+                observed.update(seen)
             return digest
+        except net_guard.NotModified:
+            # The 304 is about upstream's copy; ours is only current if it still hashes to the
+            # recorded digest, and a mismatch falls back to a plain fetch (no conditional headers).
+            if recorded and model_origin.matches_record(dest, recorded):
+                say("fetch", "{} unchanged upstream (304); kept the cached package".format(name))
+                if observed is not None:
+                    observed.update(seen)
+                return recorded
+            say("fetch", "{}: 304 from upstream but the cached package is not what the record "
+                         "describes -- fetching it".format(name))
+            ask_unchanged = False
         except net_guard.UnpinnedAsset as exc:
             say("fetch", "REFUSED: {}".format(exc))
             return False
@@ -271,9 +295,15 @@ def fetch_pair(pair, link, dest_root, force, allow_unpinned=False, version=None)
     elif archive.is_file():
         say("fetch", "{} exists but carries no pin to check it against".format(archive.name))
 
+    # None means "no transfer happened", {} means "transferred, server published no validator".
+    # Collapsing the two would let a cache-hit run clear the stored etag and silently cost the
+    # next --force its conditional question (the D80 cleanup trap again).
+    seen = None
     if force or not cached_ok:
         say("fetch", "{} <- {}".format(pair, link))
-        digest = download(link, archive, allow_unpinned=allow_unpinned)
+        seen = {}
+        digest = download(link, archive, allow_unpinned=allow_unpinned,
+                          record_dir=target, record_asset=pair, observed=seen)
         if not digest:
             return False
     else:
@@ -295,8 +325,10 @@ def fetch_pair(pair, link, dest_root, force, allow_unpinned=False, version=None)
     if digest:
         # Recorded beside the unpacked package: which pair version, which bytes, when. Without
         # this the answer to "is there a newer Argos package" is "we do not know what we have".
+        # `seen` carries the CDN's own validator so a later `--force` can ask instead of fetching.
         model_origin.record(target, asset=pair, version=version, sha256=digest, url=link,
-                            fetcher="fetch_argos_models.py", kind=archive.name)
+                            fetcher="fetch_argos_models.py", kind=archive.name,
+                            validators=seen)
     say("verify", "OK   {} -> {}".format(pair, target))
     return True
 
