@@ -23,6 +23,14 @@ Prereqs: Rust 1.98+, .NET SDK 10.0+. The native engine (`translator_engine.dll`/
 - **Code comments in English.** CJK test *data* (e.g. `"你好"`) is fine; comment *prose* is not. Enforced by `python tests/test_source_lint.py` (pre-commit + CI).
 - **Every source file opens with its license header** -- `SPDX-License-Identifier: Apache-2.0` and `Copyright (c) 2026 ninesix-ai studio`, in that language's own comment marker, within the first eight lines. Enforced by `python tests/test_source_lint.py` (check 3, pre-commit + CI); a file that deliberately has none must declare `lint-allow: no-header` on its own comment line, which is counted in the report rather than passed over silently. This was a convention in practice only -- 121 of 133 files carried it and the gap kept widening while nobody noticed -- which is why it is a check now.
 - **Structured artefacts must parse, not just match a pattern.** `.github/workflows/*.yml` and every tracked `.json` is read as *structure* by `python script/check_artifact_syntax.py` (self-test included, which plants both a broken and a valid sample per rule). A YAML body that escapes its block scalar makes the whole document invalid and GitHub shows the failure as a run with no log, so grepping such a file for the strings you expect finds nothing wrong; TOML is out of scope by design (cargo parses it, and a stdlib parser would make the verdict depend on the host's Python version). Defect D77.
+- **Every convention names its enforcer** -- each item in this section and in *Invariants to
+  preserve* has a row in `script/check_convention_coverage.py` saying which command checks it and at
+  which evidence grade: `planted` (a violation was fed to that checker and it went red), `pointer`
+  (the checker exists and runs, nobody has tested it against this rule), `asserted` (an admitted gap,
+  printed as a count), or `human` (undecidable by machine, reason required). Adding a convention
+  without a row fails `python script/check_convention_coverage.py`, and so does pointing at a
+  checker that does not exist. Why: a convention enforced only by habit decays without any signal --
+  defect D79.
 - **Conventional Commits** for messages (`feat:` / `fix:` / `chore:` / `docs:` / `refactor:` …).
 - **Line endings**: LF is stored in the repo (`.gitattributes`); `.bat`/`.cmd` stay CRLF. Editor defaults are in `.editorconfig`.
 - **UTF-8 across the FFI boundary**: Rust returns UTF-8 `char*`; .NET must marshal with `LibraryImport`/`StringMarshalling.Utf8` and `PtrToStringUTF8`.

@@ -39,6 +39,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Prove a guard can actually be reached (D73: `run_av_baseline` had its `proc.poll()` check sitting behind an always-true success return, so it never executed, and code like that reads as "already defended" in review). L1 is dead code after a terminator -- the Python counterpart of `unreachable_code` / CS0162, which is why the other two languages need no gate here; L2 is a guard ordered behind a success branch that leaves. `--self-test` transcribes the real pre-fix case as a seed (CI's checkout is shallow, so the seed lives in the file rather than in `git show`) and requires both directions: the D73 shape must fire, the fixed order must stay quiet | `python script/check_unreachable_guards.py` [--self-test] |
 | Ask whether an upstream published a newer model than this repository's baseline (GA-13). **Never add it to the gate sequence** -- it needs the network, and a check that only goes green online turns red on sandboxed runners and then gets switched off (D28/D65). The daily `.github/workflows/model-updates.yml` runs it and opens one issue per distinct finding; the baseline is advanced only by an explicit `--record-baseline`, never by the timer, or the alert fires once and stops. Exit 0 requires that at least one comparison happened (D74) | `python script/check_model_updates.py --baseline [--record-baseline]` |
 | Parse every tracked YAML/JSON artefact rather than grepping it (D77: a workflow whose heredoc body was written at column 0 was invalid YAML and could never fire, yet every assertion about that file passed, because they read its text and nothing read its structure). Rules are keyed per language on purpose -- a tab is illegal YAML indentation and perfectly legal in TOML. TOML is out of scope and the run says so: importing `tomllib` would make the verdict depend on the host's Python version, and cargo parses it anyway. `--self-test` seeds both directions of every rule; `--files` points it at something not yet staged | `python script/check_artifact_syntax.py` [--self-test] |
+| Make every convention name the thing that enforces it (D79: the license-header rule was carried by 121 of 133 source files while the 12 missing ones were all recent additions, because the convention lived only in prose and `CONTRIBUTING.md` never recorded it). Each row carries an evidence grade -- `planted` (a violation was fed to the named checker and it went red; the note must say what was planted), `pointer` (the checker exists and runs, but nobody has tested it against this rule), `asserted` (an acknowledged gap, printed as a count), `human` (undecidable by machine, reason required). Adding a bold item under Conventions/Invariants without a row here fails the gate, and so does a row pointing at a checker that does not exist | `python script/check_convention_coverage.py` [--self-test] |
 
 ## 3. Traps that have already cost someone a session
 
@@ -495,6 +496,23 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     An exemption must be declared, on its own comment line at the top of the file, and a file the
     checker cannot open must be a counted outcome rather than a pass: the first draft printed
     "1 file(s) carry the header" about a file that was not on disk at all.
+
+23. **Every convention must name its enforcer, in one of three honest grades.** Defect D79 is
+    D78's quieter sibling: the repository requires a license header on every source file, 121 of 133
+    files had one, and the twelve that did not were all created by recent work -- nine of them across
+    four consecutive rounds. Nothing noticed, because the rule lived in prose and `CONTRIBUTING.md`
+    never recorded it either. `script/check_convention_coverage.py` now holds the contract: each
+    convention lists `enforced_by` and an evidence grade -- `planted` (a violation was fed to that
+    checker and it went red), `pointer` (the checker exists and runs, untested against this rule),
+    `asserted` (nobody checks it -- an admitted gap, printed as a count), plus `human` for rules no
+    machine can decide. Do not upgrade a grade to look tidy: `planted` requires naming what was
+    planted, and an `asserted` row may not name an enforcer. Two findings came out of writing it and
+    both are worth keeping: a convention the gate flagged as ownerless turned out to be enforced by
+    three Rust unit tests that give both spellings of one knob *different* values
+    (`lt_data_dir_wins_over_wonslate_for_compat`) -- so a GAP report means **go look**, not
+    "declare it unenforced"; and `Line endings` is enforced by git itself (`* text=auto eol=lf`,
+    verified by staging a CRLF file and reading the index blob: zero CRs), which corrects earlier
+    rounds that recorded work-tree CRLF as a delivery defect when it never reaches the repository.
 
 ## 4. Conventions and invariants
 
