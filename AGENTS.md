@@ -40,6 +40,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Ask whether an upstream published a newer model than this repository's baseline (GA-13). **Never add it to the gate sequence** -- it needs the network, and a check that only goes green online turns red on sandboxed runners and then gets switched off (D28/D65). The daily `.github/workflows/model-updates.yml` runs it and opens one issue per distinct finding; the baseline is advanced only by an explicit `--record-baseline`, never by the timer, or the alert fires once and stops. Exit 0 requires that at least one comparison happened (D74) | `python script/check_model_updates.py --baseline [--record-baseline]` |
 | Parse every tracked YAML/JSON artefact rather than grepping it (D77: a workflow whose heredoc body was written at column 0 was invalid YAML and could never fire, yet every assertion about that file passed, because they read its text and nothing read its structure). Rules are keyed per language on purpose -- a tab is illegal YAML indentation and perfectly legal in TOML. TOML is out of scope and the run says so: importing `tomllib` would make the verdict depend on the host's Python version, and cargo parses it anyway. `--self-test` seeds both directions of every rule; `--files` points it at something not yet staged | `python script/check_artifact_syntax.py` [--self-test] |
 | Make every convention name the thing that enforces it (D79: the license-header rule was carried by 121 of 133 source files while the 12 missing ones were all recent additions, because the convention lived only in prose and `CONTRIBUTING.md` never recorded it). Each row carries an evidence grade -- `planted` (a violation was fed to the named checker and it went red; the note must say what was planted), `pointer` (the checker exists and runs, but nobody has tested it against this rule), `asserted` (an acknowledged gap, printed as a count), `human` (undecidable by machine, reason required). Adding a bold item under Conventions/Invariants without a row here fails the gate, and so does a row pointing at a checker that does not exist | `python script/check_convention_coverage.py` [--self-test] |
+| Move model assets to a machine that never dials out (GA-13's offline-bundle half, §3.26). `pack` keys off the same `wonslate-origin.json` records §5.2 introduced -- a directory without one is skipped and *said*, never guessed at; `verify` re-reads the archive against its own manifest instead of trusting it, and refuses a bundle whose embedded record will not parse; `install` checks everything before writing anything, so a refusal never leaves a half-installed tree. Needs no network at any point, which is why it -- unlike `check_model_updates.py` -- can sit in the gate | `python script/offline_bundle.py pack --src DIR --out B.zip` / `... verify B.zip` / `... install B.zip --dest DIR [--force]` |
 
 ## 3. Traps that have already cost someone a session
 
@@ -548,6 +549,24 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     fetch when they differ. Verified against the real server: GitHub answered a genuine 304 and
     urllib raised it as `HTTPError` here, so the empty-response shape is covered by stubs only --
     say so rather than implying both were seen live.
+
+26. **Offline distribution is held to the same rule as a download, one layer down.** GA-13's last
+    criterion (enterprise distribution) has two halves, and only the offline-bundle half is done:
+    `script/offline_bundle.py` packs what §5.2's records already describe and installs them on a
+    machine that never opens a socket. Three judgements it must keep, each because the networked
+    half of this repo already learned it the hard way: a manifest's own claim about its bytes is
+    not evidence (re-hash and re-measure length, D69/D80), `CorruptError` and `ConflictError` are
+    opposite answers to opposite questions and only one of them is what `--force` exists for (D80's
+    two-type discipline, relocated off the network), and an archive member's *name* is attacker-
+    controlled even when its *content* hashes fine -- so containment is checked by shape, before
+    anything is written, and the shape check must not lean on `os.path.isabs`, which reads
+    `C:\...` as absolute on one host and as a plain filename on another. `pack` refuses a source
+    tree with zero records rather than emitting an empty bundle that would `verify` clean (D74).
+    The mutation harness for this file initially caught only 7 of 10 planted faults; two survivors
+    were not weak guards, they were weak *tests* -- a "same length, different digest" case that
+    wasn't actually the same length, and a traversal case that a later fallback check already
+    handled, so removing the dedicated branch changed nothing. Fixed by making both assertions
+    depend only on the branch under test, which is the lesson, not the 10/10 line.
 
 ## 4. Conventions and invariants
 
