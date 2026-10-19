@@ -28,6 +28,31 @@ python script/build.py --run
 
 硬件门槛与更多配置入口见 [hardware-requirements.md](hardware-requirements.md)。
 
+### 1.1 离线整合包（内网／涉密机器，装它不需要联网）
+
+上面四条准备命令都假设“装它的那台机器能出网”。对禁止联网下载的客群，改走**离线整合包**：一台能出网（或已装好模型）的机器把应用与模型一起打成一个交付包，目标机器只拷贝这个包即可，全程不拨出公网。
+
+**在一台 Windows 开发／打包机上产出**（可选先把应用发成单文件）：
+
+```bash
+# 1) 可选：把 WPF 应用发成 self-contained 单文件（需 .NET SDK，产物只在本机，不入库）
+python script/pack_installer.py publish --app Wonslate.UI/bin/Release/net10.0-windows --pub <发布目录>
+# 2) 把已装好的模型资产打成一个离线包
+python script/offline_bundle.py pack --src <数据目录>/models --out models.zip
+# 3) 把应用与模型一起装进一个交付包
+python script/pack_installer.py assemble --app <要发的应用目录> --models models.zip --out wonslate-delivery.zip
+```
+
+**把 `wonslate-delivery.zip` 拷到离线机器后**：
+
+```bash
+python script/pack_installer.py verify wonslate-delivery.zip    # 先验完整性与可用性
+# 验过再解压使用：app/ 里是应用；models/ 里是上面那个离线包，用
+python script/offline_bundle.py install models/models.zip --dest <数据目录>/models
+```
+
+`verify` 不只是核对“字节和当初一致”——它还会把内嵌的模型包用 `offline_bundle` 那套真判据再过一遍，所以一个“哈希对得上、但内嵌包自己已经答不上是哪一版”的交付包会被当场拒绝。交付包**没有**随附可被公开信任的签名（GA-4 签名那一半需要外部证书），`verify` 靠的是内容自校验与逐文件哈希，请在受控的内部渠道转交。整合包的实现与判据详 [hardware-requirements.md](hardware-requirements.md) §7。
+
 ## 2. 界面总览
 
 ```

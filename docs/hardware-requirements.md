@@ -269,3 +269,25 @@ python script/offline_bundle.py install 交付包.zip --dest <数据目录>/mode
 | Ollama | 0.34.0 |
 
 翻译质量与速度的三引擎对比实测见 [translation-benchmark.md](translation-benchmark.md)。
+
+## 7. 离线整合包：应用与模型一起随包（2026-10-19 起，GA-4 的单文件与 REQ-C1 的模型随包）
+
+§5.6 解决的是“把模型搬到不联网的机器”；本节解决另一半：“把应用也一起交出去”。`script/pack_installer.py` 把已构建的应用（可选先经 `publish` 发成单文件）与一个 §5.6 的离线模型包合并成一个交付 zip，目标机器拿一个包即可装。
+
+| 事项 | 实际行为 |
+|---|---|
+| **清单对自己字节的声明不是证据** | `verify` 拿交付包里的字节**重算**每个成员的 sha256 与长度再与 `wonslate-assembly.json` 对账，与 §5.1／§5.6 同一味药（D69／D80） |
+| **“包完整”不等于“包能用”** | 内嵌的模型包要再过一遍 §5.6 那个 `offline_bundle.verify`：哈希对得上但内嵌包自己答不上“是哪一版”的交付物，整包拒绝（D82） |
+| **普通 `dotnet build` 不受影响** | 单文件那些开关（`PublishSingleFile` / `SelfContained` / `RuntimeIdentifier`）**只在 `dotnet publish` 且显式传 PublishSingleFile=true 时生效**；门禁与 CI 每 OS 跑的普通 build 不进入该条件，也不会去拉 win-x64 runtime pack |
+| **发布不成不会假称发了** | `publish` 接缝在**非 Windows / 无 dotnet / dotnet 退出码非 0** 时退回普通 build 产物，并在清单里写明哪种前提没满足；一个把 `single_file` 当成 true 却并没真发出来的交付物，就是本仓一直在拆的“默认值拍胸脯”那一族（D57／D58／D74） |
+| **路径与盘符同样设防** | 成员名含绝对路径／`..`／`.`／空段整包拒，在任何字节落盘**之前**判；沿用 `offline_bundle.safe_member_path` 同一个函数而不是再写一份（D64） |
+
+它不新增一个第二类型的错：`offline_bundle` 分 `CorruptError`／`ConflictError` 两类是因为 `--force` 只答后者；交付物是一次写成、不是“装到已有目录上”，没有“保留更新那份”这个取舍，所以只有一个 `AssemblyError`（D82 第三条：“不要拷一个没后果的第二类型”）。
+
+实测（本日两次真跑，产物只在本机临时目录、**不入库**）：
+
+- **真发单文件**：`publish` 在 Windows 主机上跑 `dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true` → **真实产出单文件 `Wonslate.exe` 70.1 MB**（含 native 自解压）。这一步也抖出一个只由真跑才发现的缺陷：初版 csproj 注释里写了 XML 禁的 `--`，导致 `.csproj` 加载失败（`dotnet publish` 报 MSB4025）——单测从不加载 csproj，抓不到它。修后重跑才拿到上面的数。
+- **真交付物往返**：拿本机已构建的 Release 产物（428 个 app 文件）+ 两个已装 argos 包打出的离线模型包 → `assemble` 成一个 306 MB 交付包 → `verify` 全清（含内嵌模型包跑 `offline_bundle.verify`）→ 改个名字模拟转手再验仍清 → 把包截断一半 → `verify` 拒。测试侧另有 23 例覆盖上述判据，每条都配了一个“删掉它就转红”的变异样本（10/10 全抓，无幸存者）。
+
+签名那一半（公开信任链）仍为零，所以 GA-4 维持 🟡；模型随包这一半已可交。
+

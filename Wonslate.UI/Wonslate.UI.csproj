@@ -25,6 +25,22 @@
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
+  <!-- Single-file distribution knobs (GA-4). Scoped to an actual single-file publish so a plain
+       `dotnet build -c Release` (which the authoritative gate runs, and which CI builds on every
+       OS) is untouched: at build time PublishSingleFile is empty, so none of this applies and no
+       win-x64 runtime pack is restored. `script/pack_installer.py publish` passes
+       PublishSingleFile=true and -r win-x64; these defaults make a bare `dotnet publish` on a
+       Windows host produce the same artifact without repeating every flag. Self-contained is
+       deliberate: the air-gapped / restricted-egress host has no network to install a runtime. -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- 将 Rust cdylib 复制到输出目录 -->
     <None Include="..\translator-engine\target\release\translator_engine.dll"

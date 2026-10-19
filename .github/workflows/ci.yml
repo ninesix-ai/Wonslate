@@ -100,6 +100,7 @@ jobs:
           python tests/test_model_updates.py
           python tests/test_report_model_updates.py
           python tests/test_offline_bundle.py
+          python tests/test_pack_installer.py
           python tests/test_xaml_lint.py
           python tests/test_pre_commit_hook.py
           python tests/test_glossary_hygiene.py

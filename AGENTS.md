@@ -41,6 +41,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Parse every tracked YAML/JSON artefact rather than grepping it (D77: a workflow whose heredoc body was written at column 0 was invalid YAML and could never fire, yet every assertion about that file passed, because they read its text and nothing read its structure). Rules are keyed per language on purpose -- a tab is illegal YAML indentation and perfectly legal in TOML. TOML is out of scope and the run says so: importing `tomllib` would make the verdict depend on the host's Python version, and cargo parses it anyway. `--self-test` seeds both directions of every rule; `--files` points it at something not yet staged | `python script/check_artifact_syntax.py` [--self-test] |
 | Make every convention name the thing that enforces it (D79: the license-header rule was carried by 121 of 133 source files while the 12 missing ones were all recent additions, because the convention lived only in prose and `CONTRIBUTING.md` never recorded it). Each row carries an evidence grade -- `planted` (a violation was fed to the named checker and it went red; the note must say what was planted), `pointer` (the checker exists and runs, but nobody has tested it against this rule), `asserted` (an acknowledged gap, printed as a count), `human` (undecidable by machine, reason required). Adding a bold item under Conventions/Invariants without a row here fails the gate, and so does a row pointing at a checker that does not exist | `python script/check_convention_coverage.py` [--self-test] |
 | Move model assets to a machine that never dials out (GA-13's offline-bundle half, §3.26). `pack` keys off the same `wonslate-origin.json` records §5.2 introduced -- a directory without one is skipped and *said*, never guessed at; `verify` re-reads the archive against its own manifest instead of trusting it, and refuses a bundle whose embedded record will not parse; `install` checks everything before writing anything, so a refusal never leaves a half-installed tree. Needs no network at any point, which is why it -- unlike `check_model_updates.py` -- can sit in the gate | `python script/offline_bundle.py pack --src DIR --out B.zip` / `... verify B.zip` / `... install B.zip --dest DIR [--force]` |
+| Assemble one offline deliverable that carries the app AND the models (GA-4 single-file + REQ-C1 模型随包, §3.27). `assemble` re-hashes every member against `wonslate-assembly.json` and re-runs `offline_bundle.verify` on the embedded bundle -- "complete" and "usable" are two checks; the `publish` seam runs a real `dotnet publish` single-file but must degrade to the plain build output and *say which precondition failed* (no flattering `single_file: true`). `safe_member_path` is imported from `offline_bundle`, not re-derived. No network, so it sits in the gate | `python script/pack_installer.py publish --app DIR --pub DIR` / `... assemble --app DIR [--models B.zip] --out D.zip` / `... verify D.zip` |
 
 ## 3. Traps that have already cost someone a session
 
@@ -567,6 +568,22 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     wasn't actually the same length, and a traversal case that a later fallback check already
     handled, so removing the dedicated branch changed nothing. Fixed by making both assertions
     depend only on the branch under test, which is the lesson, not the 10/10 line.
+
+27. **A build-a-tool step is a test seam you can only trust by running the real toolchain once.**
+    GA-4's single-file publish lives in `script/pack_installer.py`: the `dotnet publish` call is
+    injected (`run=`) so its degrade paths -- not Windows, no dotnet, non-zero exit -- are testable
+    offline, and every degrade writes the *why* into `wonslate-assembly.json` rather than a
+    flattering `single_file: true` (D57/D58/D74). But two real-host facts no unit test could see only
+    surfaced by running the actual toolchain: the first csproj comment I added contained `--`, which
+    is illegal in an XML comment, so `.csproj` failed to load (`dotnet publish` MSB4025) -- and no
+    Python test loads a csproj; and `main`'s publish branch read the host via `subprocess.which`,
+    which does not exist (it is `shutil.which`), a crash on a path no test reached because every
+    other test injects `dotnet=` and never calls the CLI. The fix is a rule, not just a patch: when
+    a CLI subcommand reads the host, factor the read into one function (`_host_facts`) and add a test
+    that calls it directly and a test that drives the subcommand with it faked, so the untested-host
+    path goes red in the suite, not red in the gate. The real publish then produced a genuine 70.1 MB
+    self-contained single file, and the real deliverable (app + two Argos packages, 306 MB) verified
+    clean and refused a half-truncated copy.
 
 ## 4. Conventions and invariants
 
