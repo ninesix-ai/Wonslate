@@ -42,6 +42,7 @@ Exit code: 0 = every requested pair is present and verified, 1 = something faile
 """
 import argparse
 import json
+import os
 import pathlib
 import shutil
 import sys
@@ -185,7 +186,7 @@ def pick_link(urls, pair):
 
 
 def download(url, dest, attempts=4, allow_unpinned=False, record_dir=None,
-             record_asset=None, observed=None):
+             record_asset=None, observed=None, mirror_hosts=(), mirror_suffixes=()):
     """Fetch one package through the policy and verify it against its pinned digest.
 
     Returns the digest on success and False on failure: the caller needs the value to record
@@ -213,7 +214,8 @@ def download(url, dest, attempts=4, allow_unpinned=False, record_dir=None,
                 digest_source=pin[1] if pin else None,
                 allow_unpinned=allow_unpinned, user_agent=USER_AGENT,
                 if_none_match=validators.get("etag"),
-                if_modified_since=validators.get("last_modified"), observed=seen)
+                if_modified_since=validators.get("last_modified"), observed=seen,
+                mirror_hosts=mirror_hosts, mirror_suffixes=mirror_suffixes)
             say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
                 name, size / 1e6, digest[:16],
                 "" if pin else " UNPINNED (--allow-unpinned)"))
@@ -299,11 +301,19 @@ def fetch_pair(pair, link, dest_root, force, allow_unpinned=False, version=None)
     # Collapsing the two would let a cache-hit run clear the stored etag and silently cost the
     # next --force its conditional question (the D80 cleanup trap again).
     seen = None
+    mirror = net_guard.mirror_base_from(os.environ)
+    mirror_hosts, mirror_suffixes = net_guard.mirror_hosts(mirror)
+    # The index still says *which* package (and its version); the mirror only changes *where the
+    # bytes come from*, and the recorded url is the mirror url actually dialed -- not the public
+    # link the index happened to name (D69/D70: a record must reflect this run's real value).
+    eff_link = net_guard.apply_mirror(link, mirror)
     if force or not cached_ok:
-        say("fetch", "{} <- {}".format(pair, link))
+        say("fetch", "{} <- {}{}".format(pair, eff_link,
+                                          "" if not mirror else "  (mirror)"))
         seen = {}
-        digest = download(link, archive, allow_unpinned=allow_unpinned,
-                          record_dir=target, record_asset=pair, observed=seen)
+        digest = download(eff_link, archive, allow_unpinned=allow_unpinned,
+                          record_dir=target, record_asset=pair, observed=seen,
+                          mirror_hosts=mirror_hosts, mirror_suffixes=mirror_suffixes)
         if not digest:
             return False
     else:
@@ -326,7 +336,7 @@ def fetch_pair(pair, link, dest_root, force, allow_unpinned=False, version=None)
         # Recorded beside the unpacked package: which pair version, which bytes, when. Without
         # this the answer to "is there a newer Argos package" is "we do not know what we have".
         # `seen` carries the CDN's own validator so a later `--force` can ask instead of fetching.
-        model_origin.record(target, asset=pair, version=version, sha256=digest, url=link,
+        model_origin.record(target, asset=pair, version=version, sha256=digest, url=eff_link,
                             fetcher="fetch_argos_models.py", kind=archive.name,
                             validators=seen)
     say("verify", "OK   {} -> {}".format(pair, target))

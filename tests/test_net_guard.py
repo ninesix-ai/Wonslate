@@ -23,6 +23,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "script"))
@@ -685,6 +686,153 @@ class NameGuardGateTests(unittest.TestCase):
         result = self._run()
         self.assertIn("downloaders audited", result.stdout, result.stdout + result.stderr)
         self.assertIn("0 violation(s)", result.stdout)
+
+
+class MirrorPolicyTests(unittest.TestCase):
+    """The enterprise-mirror axis (GA-13's private-mirror half).
+
+    An operator-declared mirror is a *local* decision about where to fetch, not a host read out of
+    untrusted download content. The whole point is that a mirror lives on a private address, so
+    that address is exempted -- but ONLY for the exact hosts the operator named, scheme is still
+    https, and a primary-listed host must never borrow the exemption. These cases pin each half.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.payload = b"mirrored-checkpoint-bytes"
+        self.good = hashlib.sha256(self.payload).hexdigest()
+
+    def _fetch(self, url, **kw):
+        args = dict(expected_sha256=self.good, opener=_StubOpener(self.payload))
+        args.update(kw)
+        dest = pathlib.Path(self.dir.name) / "asset.bin"
+        return net_guard.fetch(url, dest, HOSTS, SUFFIXES, **args)
+
+    # ---- the exemption itself: a declared mirror may be private ----
+    def test_a_declared_mirror_may_resolve_to_a_private_address(self):
+        digest, size = self._fetch("https://mirror.corp/models/asset.bin",
+                                   resolve=fake_resolve(["10.0.0.7"]),
+                                   mirror_hosts=("mirror.corp",))
+        self.assertEqual((digest, size), (self.good, len(self.payload)))
+
+    def test_the_same_host_without_the_mirror_axis_is_still_ssrf_refused(self):
+        # The counterpart: nothing about `mirror.corp` is trusted unless it was declared. A private
+        # address for a *primary*-listed host stays refused, so the exemption cannot leak.
+        with self.assertRaises(net_guard.GuardError) as caught:
+            self._fetch("https://huggingface.co/x.bin", resolve=fake_resolve(["10.0.0.7"]),
+                        mirror_hosts=("mirror.corp",))
+        self.assertIn("non-public", str(caught.exception))
+
+    def test_a_host_named_both_primary_and_mirror_keeps_the_public_rule(self):
+        # A mistake in the tables must fail closed to the stricter rule: if a public host is also
+        # listed as a mirror, its address is still required to be public (mirror never overrides
+        # primary), so an attacker who poisoned one table cannot reach a private IP through it.
+        with self.assertRaises(net_guard.GuardError) as caught:
+            self._fetch("https://huggingface.co/x.bin", resolve=fake_resolve(["127.0.0.1"]),
+                        mirror_hosts=("huggingface.co",))
+        self.assertIn("non-public", str(caught.exception))
+
+    def test_an_undeclared_host_resolving_private_is_not_allowlisted_at_all(self):
+        # The exemption is name-scoped, not "any host that happens to be internal".
+        with self.assertRaises(net_guard.GuardError) as caught:
+            self._fetch("https://evil.internal/x.bin", resolve=fake_resolve(["10.0.0.7"]),
+                        mirror_hosts=("mirror.corp",))
+        self.assertIn("not allowlisted", str(caught.exception))
+
+    def test_a_mirror_over_http_is_refused_like_any_download(self):
+        # "private mirror" is not a licence to drop to cleartext; https holds on both axes.
+        with self.assertRaises(net_guard.GuardError) as caught:
+            self._fetch("http://mirror.corp/x.bin", resolve=fake_resolve(["10.0.0.7"]),
+                        mirror_hosts=("mirror.corp",))
+        self.assertIn("https", str(caught.exception))
+
+    # ---- classify / check_url on the mirror axis ----
+    def test_classify_separates_primary_and_mirror(self):
+        self.assertEqual("primary", net_guard.classify_host(
+            "huggingface.co", HOSTS, SUFFIXES, mirror_hosts=("mirror.corp",)))
+        self.assertEqual("mirror", net_guard.classify_host(
+            "mirror.corp", HOSTS, SUFFIXES, mirror_hosts=("mirror.corp",)))
+        self.assertIsNone(net_guard.classify_host(
+            "elsewhere.test", HOSTS, SUFFIXES, mirror_hosts=("mirror.corp",)))
+
+    def test_mirror_axis_is_an_exact_host_not_a_domain_you_own_subdomains_of(self):
+        # Least privilege by design: mirror_hosts grants the one named server, so a subdomain or a
+        # look-alike of it is refused even though it shares the string.
+        hosts, suffixes = net_guard.mirror_hosts("https://mirror.corp.example/cache")
+        self.assertEqual("", net_guard.check_url("https://mirror.corp.example/a", hosts, suffixes)[1])
+        for look in ("deep.mirror.corp.example", "evil-mirror.corp.example", "mirror.corp.example.evil.test"):
+            self.assertNotEqual("", net_guard.check_url("https://%s/a" % look, hosts, suffixes)[1],
+                                look)
+
+    # ---- apply_mirror: base swap that keeps the path ----
+    def test_apply_mirror_preserves_the_original_path(self):
+        self.assertEqual("https://mirror.corp/cache/a/b/model.bin",
+                         net_guard.apply_mirror("https://huggingface.co/a/b/model.bin",
+                                                "https://mirror.corp/cache"))
+
+    def test_apply_mirror_with_no_base_is_a_no_op(self):
+        self.assertEqual("https://huggingface.co/a.bin",
+                         net_guard.apply_mirror("https://huggingface.co/a.bin", ""))
+
+    def test_apply_mirror_refuses_a_non_https_base(self):
+        # A misconfigured mirror must be a loud refusal, never a silent fall back to the public URL.
+        with self.assertRaises(net_guard.GuardError):
+            net_guard.apply_mirror("https://huggingface.co/a.bin", "http://mirror.corp")
+        with self.assertRaises(net_guard.GuardError):
+            net_guard.apply_mirror("https://huggingface.co/a.bin", "mirror.corp")
+
+    # ---- env read: names in one place, prefix order honoured ----
+    def test_mirror_base_honours_the_prefix_chain(self):
+        self.assertEqual("https://lt.example/m",
+                         net_guard.mirror_base_from({"LT_MODEL_MIRROR": "https://lt.example/m/",
+                                                     "WONSLATE_MODEL_MIRROR": "https://w.example"}))
+        self.assertEqual("https://w.example", net_guard.mirror_base_from(
+            {"WONSLATE_MODEL_MIRROR": "https://w.example"}))
+        self.assertEqual("", net_guard.mirror_base_from({}))
+
+    # ---- redirects: a mirror may hop to another mirror or primary, never off-list ----
+    def _redirect(self, newurl, mirror_hosts=()):
+        handler = net_guard._GuardedRedirect(HOSTS, SUFFIXES, mirror_hosts, ())
+        req = urllib.request.Request("https://huggingface.co/x")
+        try:
+            handler.redirect_request(req, None, 302, "Found", {}, newurl)
+        except urllib.error.URLError:
+            return "refused"
+        return "allowed"
+
+    def test_redirect_to_a_declared_mirror_target_is_allowed(self):
+        self.assertEqual("allowed", self._redirect("https://mirror.corp/x.bin",
+                                                    mirror_hosts=("mirror.corp",)))
+
+    def test_redirect_off_both_lists_is_refused(self):
+        self.assertEqual("refused", self._redirect("https://evil.example/x.bin",
+                                                    mirror_hosts=("mirror.corp",)))
+
+
+class MirrorWiringTests(unittest.TestCase):
+    """Every downloader must honour the mirror, not just one -- D69's asymmetry was 'one was
+    hardened, two were bare'. Read as text so an import that happens to work cannot hide a fetch
+    path that silently ignores the operator's declared mirror."""
+
+    def test_every_fetcher_wires_the_mirror_axis(self):
+        # Each downloader must read the declared mirror and hand the mirror axis to fetch. It may
+        # build the mirror URL by `apply_mirror` (argos/voice, which start from a full URL) or by
+        # using the mirror as the base directly (madlad, which composes one) -- so the two tokens
+        # that MUST appear everywhere are the read and the hand-off, not the swap mechanism.
+        for name in ("fetch_argos_models.py", "fetch_madlad_model.py", "fetch_voice_models.py"):
+            text = (ROOT / "script" / name).read_text(encoding="utf-8", errors="replace")
+            for token in ("mirror_base_from", "mirror_hosts="):
+                self.assertIn(token, text, "%s does not wire the mirror (%s missing)" % (name, token))
+
+    def test_no_fetcher_lets_a_mirror_skip_the_digest(self):
+        # The mirror changes where bytes come from, never whether they are verified: each downloader
+        # still passes its pinned expected_sha256 to fetch, which is what stops a mirror serving a
+        # different artifact than the public upstream recorded.
+        for name in ("fetch_argos_models.py", "fetch_madlad_model.py", "fetch_voice_models.py"):
+            text = (ROOT / "script" / name).read_text(encoding="utf-8", errors="replace")
+            self.assertIn("expected_sha256=", text,
+                          "%s lost the digest pin alongside the mirror work" % name)
 
 
 if __name__ == "__main__":

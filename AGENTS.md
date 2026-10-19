@@ -585,6 +585,22 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     self-contained single file, and the real deliverable (app + two Argos packages, 306 MB) verified
     clean and refused a half-truncated copy.
 
+28. **An enterprise mirror is a locally-declared name, never a host read out of fetched content.**
+    GA-13's private-mirror half lives in `net_guard`: a mirror may resolve to a private address (an
+    internal server is its whole purpose), but that exemption is scoped to the exact hosts the
+    operator put in `WONSLATE_MODEL_MIRROR` / `LT_MODEL_MIRROR` -- it must never widen what an
+    untrusted index.json or endpoint response can point a download at (D69's asymmetry, one layer
+    down). Three rules carry it, all seeded in both `--self-test` and the suite: a host present in
+    both the primary and mirror tables keeps the *primary* public-address screen (`classify_host`
+    checks primary first -- a poisoned mirror entry cannot launder a public host into reaching an
+    internal IP); https is required on the mirror axis too; and `apply_mirror` swaps only the base,
+    leaving the path and therefore the pinned digest to still decide "is this the artifact", so a
+    mirror serving different bytes is caught exactly like a tampered download. The recorded
+    `wonslate-origin.json` `url` must be the mirror URL actually dialed, not the public upstream
+    (D69/D70: a record states this run's real value). A test that seeds "primary host, private
+    resolve, refused" with a DISJOINT mirror table does not exercise the both-listed order -- the
+    self-test only caught the classify reordering once a host named in both tables was seeded.
+
 ## 4. Conventions and invariants
 
 **This file is not the source of truth for either.** `CONTRIBUTING.md` is: comment

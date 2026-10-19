@@ -109,16 +109,21 @@ def say(tag, msg=""):
     print("[{}] {}".format(tag, msg).rstrip(), flush=True)
 
 
-def _record_origin(dest_dir, leaf, digest, revision, validators=None):
+def _record_origin(dest_dir, leaf, digest, revision, url=None, validators=None):
     """Write what landed, beside it. `version` is the revision we were told to fetch, which for
     `main` is deliberately weak -- so the digest is stored next to it and `check_model_updates.py`
     compares bytes rather than trusting the label.
+
+    `url` is the address actually dialed -- a mirror when one was declared. Left None (the cache-hit
+    path, which dialed nothing) it falls back to the canonical base. Recording the mirror url is the
+    difference between "these bytes came from the enterprise mirror" and a record that quietly says
+    they came from HuggingFace (D69/D70: the record states this run's real value).
 
     `validators` is what the server said this time. Recording it is what lets a later `--force`
     ask "is this still current" instead of pulling 2.9 GB again to find out that it is.
     """
     model_origin.record(dest_dir, asset=leaf, version=revision, sha256=digest,
-                        url="{}/{}/resolve/{}".format(FALLBACK_ENDPOINTS[0], REPO, revision),
+                        url=url or "{}/{}/resolve/{}".format(FALLBACK_ENDPOINTS[0], REPO, revision),
                         fetcher="fetch_madlad_model.py", kind=revision, validators=validators)
 
 
@@ -191,7 +196,10 @@ def download(leaf, dest_dir, force, attempts=4, allow_unpinned=False, revision="
         return True
 
     for i in range(1, attempts + 1):
-        for base in endpoints():
+        mirror = net_guard.mirror_base_from(os.environ)
+        mirror_hosts, mirror_suffixes = net_guard.mirror_hosts(mirror)
+        bases = (mirror,) if mirror else endpoints()
+        for base in bases:
             url = "{}/{}/resolve/{}/{}".format(base, REPO, revision, leaf)
             # Asked once per attempt, and dropped the moment a 304 proves unusable below: the
             # record's validators describe a past response, so after a mismatch we must fall back
@@ -208,11 +216,12 @@ def download(leaf, dest_dir, force, attempts=4, allow_unpinned=False, revision="
                     allow_unpinned=allow_unpinned, user_agent=USER_AGENT,
                     timeout=60, chunk=1 << 20,
                     if_none_match=validators.get("etag"),
-                    if_modified_since=validators.get("last_modified"), observed=seen)
+                    if_modified_since=validators.get("last_modified"), observed=seen,
+                    mirror_hosts=mirror_hosts, mirror_suffixes=mirror_suffixes)
                 say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
                     leaf, size / 1e6, digest[:16],
                     "" if pin else " UNPINNED (--allow-unpinned)"))
-                _record_origin(dest_dir, leaf, digest, revision, validators=seen)
+                _record_origin(dest_dir, leaf, digest, revision, url, validators=seen)
                 return True
             except net_guard.NotModified:
                 # The server says its copy is the one we already recorded. That is not yet a claim

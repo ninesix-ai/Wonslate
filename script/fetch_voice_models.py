@@ -32,6 +32,7 @@ Usage:
 Exit code: 0 = every requested component is present and verified, 1 = something failed.
 """
 import argparse
+import os
 import pathlib
 import sys
 import tarfile
@@ -115,7 +116,8 @@ def say(tag, msg=""):
 
 
 def download(url, dest, attempts=4, allow_unpinned=False, chunk=1 << 20,
-             record_dir=None, record_asset=None, observed=None):
+             record_dir=None, record_asset=None, observed=None, mirror_hosts=(),
+             mirror_suffixes=()):
     """Fetch one asset through the shared policy, verifying its pinned digest.
 
     Returns the digest on success, False on failure -- the caller records which bytes landed,
@@ -145,7 +147,8 @@ def download(url, dest, attempts=4, allow_unpinned=False, chunk=1 << 20,
                 allow_unpinned=allow_unpinned, user_agent=USER_AGENT,
                 timeout=300, chunk=chunk, report=say, progress_every=50 << 20,
                 if_none_match=validators.get("etag"),
-                if_modified_since=validators.get("last_modified"), observed=seen)
+                if_modified_since=validators.get("last_modified"), observed=seen,
+                mirror_hosts=mirror_hosts, mirror_suffixes=mirror_suffixes)
             say("fetch", "{} ({:.1f} MB, sha256 {}{})".format(
                 name, size / 1e6, digest[:16],
                 "" if pin else " UNPINNED (--allow-unpinned)"))
@@ -244,12 +247,19 @@ def fetch(key, dest_root, force, allow_unpinned=False):
 
     # None = no transfer this run; {} = transferred and the server published no validator. Keeping
     # them apart is what stops a cache-hit run from clearing a stored etag (see fetch_argos_models).
+    # The mirror, if declared, is a base swap only: the release tag and asset path are kept (and so
+    # the pinned digest still decides what is correct), and `url` -- which _record_origin stores --
+    # becomes the address actually dialed.
+    mirror = net_guard.mirror_base_from(os.environ)
+    mirror_hosts, mirror_suffixes = net_guard.mirror_hosts(mirror)
+    url = net_guard.apply_mirror(url, mirror)
     seen = None
     if force or not (archive.is_file() and archive.stat().st_size > 100_000):
-        say("fetch", "{} <- {}".format(key, url))
+        say("fetch", "{} <- {}{}".format(key, url, "" if not mirror else "  (mirror)"))
         seen = {}
         digest = download(url, archive, allow_unpinned=allow_unpinned,
-                          record_dir=target, record_asset=name, observed=seen)
+                          record_dir=target, record_asset=name, observed=seen,
+                          mirror_hosts=mirror_hosts, mirror_suffixes=mirror_suffixes)
         if not digest:
             return False
     elif pin:
@@ -260,7 +270,8 @@ def fetch(key, dest_root, force, allow_unpinned=False):
                 name, got[:16], pin[0][:16]))
             seen = {}
             digest = download(url, archive, allow_unpinned=allow_unpinned,
-                              record_dir=target, record_asset=name, observed=seen)
+                              record_dir=target, record_asset=name, observed=seen,
+                              mirror_hosts=mirror_hosts, mirror_suffixes=mirror_suffixes)
             if not digest:
                 return False
         else:

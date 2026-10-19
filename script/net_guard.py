@@ -28,6 +28,13 @@ What this module enforces, and the asymmetry behind each choice:
     "we downloaded something" is not the same claim as "we downloaded the artifact whose
     licence we registered". `--allow-unpinned` exists for bootstrapping and says so in
     its name and in the printed line.
+  * an enterprise mirror (GA-13's private-mirror half) is a *name*, declared locally by the
+    operator, never a host lifted out of downloaded content: it is allowed to resolve to a private
+    address (that is its whole point) but only for the exact hosts named, it must still be https, and
+    a host that appears in both the primary and the mirror table keeps the *primary* public-address
+    rule (see `classify_host`). `apply_mirror` swaps only the base, so the path -- and therefore the
+    pinned digest that decides "is this the artifact" -- is unchanged: a mirror that serves different
+    bytes than the public upstream is caught exactly as a tampered download would be.
 
 The resolver is injectable (`resolve=`) so the address check can be exercised without a
 network: a guard whose only test needs the internet is a guard that does not get tested.
@@ -137,16 +144,85 @@ def hostname_matches(hostname, allowed_hosts=(), allowed_suffixes=()):
     return False
 
 
-def check_url(url, allowed_hosts=(), allowed_suffixes=()):
-    """Return (hostname, reason). reason is "" when the URL is acceptable."""
+def check_url(url, allowed_hosts=(), allowed_suffixes=(), mirror_hosts=(), mirror_suffixes=()):
+    """Return (hostname, reason). reason is "" when the URL is acceptable.
+
+    Two name axes, one scheme rule. A *primary* host is a public upstream on the fixed allowlist;
+    a *mirror* host is an operator-declared enterprise mirror (GA-13's private-mirror half). Both
+    must be https -- "internal" never buys a downgrade to cleartext -- and both are matched on
+    label boundaries. What differs is the address check (see `fetch`): a primary host is still
+    required to resolve public, a declared mirror is allowed to resolve private.
+    """
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != "https":
         return parts.hostname or "", "scheme %r is not https" % (parts.scheme,)
     if not parts.hostname:
         return "", "no host in %r" % (url,)
-    if not hostname_matches(parts.hostname, allowed_hosts, allowed_suffixes):
-        return parts.hostname, "host %s is not allowlisted" % (parts.hostname,)
-    return parts.hostname, ""
+    if hostname_matches(parts.hostname, allowed_hosts, allowed_suffixes):
+        return parts.hostname, ""
+    if hostname_matches(parts.hostname, mirror_hosts, mirror_suffixes):
+        return parts.hostname, ""
+    return parts.hostname, "host %s is not allowlisted" % (parts.hostname,)
+
+
+def classify_host(hostname, allowed_hosts=(), allowed_suffixes=(), mirror_hosts=(),
+                  mirror_suffixes=()):
+    """'primary' | 'mirror' | None -- which axis accepted this host, and so what address rule applies.
+
+    Primary is checked first on purpose: a host that appears in both tables keeps the *stricter*
+    public-address rule (a mistyped or poisoned mirror entry can never quietly exempt a public
+    host from SSRF screening). This is the asymmetry the whole mirror feature rests on.
+    """
+    if hostname_matches(hostname, allowed_hosts, allowed_suffixes):
+        return "primary"
+    if hostname_matches(hostname, mirror_hosts, mirror_suffixes):
+        return "mirror"
+    return None
+
+
+def mirror_base_from(environ, names=("LT_MODEL_MIRROR", "WONSLATE_MODEL_MIRROR")):
+    """The operator-declared mirror base, or "". Reads a passed-in mapping, never os.environ.
+
+    The names live here so the three downloaders cannot drift to two spellings of the knob -- the
+    D36/D45 lesson (a knob read under more than one name, resolved inconsistently per host). The
+    prefix order is the repo's standing `LT_` > `WONSLATE_` chain.
+    """
+    for name in names:
+        value = (environ.get(name) or "").strip().rstrip("/")
+        if value:
+            return value
+    return ""
+
+
+def mirror_hosts(mirror_base):
+    """(host_set, suffixes) describing the mirror axis for one base URL.
+
+    An exact host, no suffix: an enterprise mirror is a named server, not a domain you own every
+    subdomain of, so the smallest authority that makes it work is the one granted.
+    """
+    host = urllib.parse.urlsplit(mirror_base).hostname
+    return (frozenset({host.lower()}), ()) if host else (frozenset(), ())
+
+
+def apply_mirror(url, mirror_base):
+    """Rewrite `url` to fetch from `mirror_base`, keeping the original path.
+
+    The mirror is a base-swap, not a host-relaxation: the operator decides *where*, the path -- and
+    therefore the pinned digest -- still decides *what*. A path-preserving swap is the convention
+    mirrors follow, so an artifact at `/<repo>/resolve/<rev>/<file>` upstream sits at the same path
+    under the mirror. Raises when the base is not a usable https URL, rather than silently falling
+    back to the public origin: a misconfigured mirror must be loud.
+    """
+    if not mirror_base:
+        return url
+    base = urllib.parse.urlsplit(mirror_base)
+    if base.scheme != "https" or not base.hostname:
+        raise GuardError("mirror base %r is not an https URL with a host" % mirror_base)
+    original = urllib.parse.urlsplit(url)
+    prefix = base.path.rstrip("/")
+    tail = original.path.lstrip("/")
+    path = "%s/%s" % (prefix, tail) if tail else prefix
+    return urllib.parse.urlunsplit(("https", base.netloc, path, original.query, original.fragment))
 
 
 def require_public_address(hostname, resolve=socket.getaddrinfo):
@@ -172,13 +248,16 @@ def require_public_address(hostname, resolve=socket.getaddrinfo):
 class _GuardedRedirect(urllib.request.HTTPRedirectHandler):
     """Re-apply the policy to every redirect target instead of following it blindly."""
 
-    def __init__(self, allowed_hosts, allowed_suffixes):
+    def __init__(self, allowed_hosts, allowed_suffixes, mirror_hosts=(), mirror_suffixes=()):
         super().__init__()
         self._allowed_hosts = allowed_hosts
         self._allowed_suffixes = allowed_suffixes
+        self._mirror_hosts = mirror_hosts
+        self._mirror_suffixes = mirror_suffixes
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        _host, reason = check_url(newurl, self._allowed_hosts, self._allowed_suffixes)
+        _host, reason = check_url(newurl, self._allowed_hosts, self._allowed_suffixes,
+                                  self._mirror_hosts, self._mirror_suffixes)
         if reason:
             raise urllib.error.URLError("redirect to a disallowed target: %s" % reason)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
@@ -187,8 +266,9 @@ class _GuardedRedirect(urllib.request.HTTPRedirectHandler):
     http_error_308 = urllib.request.HTTPRedirectHandler.http_error_307
 
 
-def build_opener(allowed_hosts=(), allowed_suffixes=(), handlers=None):
-    chain = [_GuardedRedirect(allowed_hosts, allowed_suffixes)]
+def build_opener(allowed_hosts=(), allowed_suffixes=(), mirror_hosts=(), mirror_suffixes=(),
+                 handlers=None):
+    chain = [_GuardedRedirect(allowed_hosts, allowed_suffixes, mirror_hosts, mirror_suffixes)]
     chain.extend(handlers or [])
     return urllib.request.build_opener(*chain)
 
@@ -366,7 +446,8 @@ def fetch(url, dest, allowed_hosts, allowed_suffixes=(), expected_sha256=None,
           digest_source=None, allow_unpinned=False, opener=None, timeout=180,
           resolve=socket.getaddrinfo, chunk=1 << 22, report=None,
           progress_every=None, user_agent=DEFAULT_USER_AGENT,
-          if_none_match=None, if_modified_since=None, observed=None):
+          if_none_match=None, if_modified_since=None, observed=None,
+          mirror_hosts=(), mirror_suffixes=()):
     """Download one artifact through the policy, verifying it before it lands.
 
     The file is written beside its final name and only renamed once both the *length* and
@@ -392,10 +473,16 @@ def fetch(url, dest, allowed_hosts, allowed_suffixes=(), expected_sha256=None,
     `observed`, if given, is filled with the validators this response returned so the caller can
     store them; without that the information arrives and is thrown away.
     """
-    host, reason = check_url(url, allowed_hosts, allowed_suffixes)
+    host, reason = check_url(url, allowed_hosts, allowed_suffixes, mirror_hosts, mirror_suffixes)
     if reason:
         raise GuardError("%s: %s" % (url, reason))
-    require_public_address(host, resolve=resolve)
+    # The SSRF screen belongs to the primary axis only. A mirror is exempt from "must resolve
+    # public" because an enterprise mirror is *expected* to be internal -- but only for the exact
+    # hosts the operator named, and a host that is both primary and mirror keeps the public rule
+    # (classify_host checks primary first). This is why `mirror_hosts` cannot be "any host": the
+    # exemption is per-name, so it never widens what an untrusted index/endpoint can point us at.
+    if classify_host(host, allowed_hosts, allowed_suffixes, mirror_hosts, mirror_suffixes) == "primary":
+        require_public_address(host, resolve=resolve)
 
     if expected_sha256 is None and not allow_unpinned:
         raise UnpinnedAsset(
@@ -407,7 +494,7 @@ def fetch(url, dest, allowed_hosts, allowed_suffixes=(), expected_sha256=None,
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.parent / (dest.name + PART_SUFFIX)
     meta_path = pathlib.Path(str(partial) + ".meta")
-    used = opener or build_opener(allowed_hosts, allowed_suffixes)
+    used = opener or build_opener(allowed_hosts, allowed_suffixes, mirror_hosts, mirror_suffixes)
     # The unique name is ours before anything is written, and the claimed bytes are moved
     # onto it; `os.replace` may land on it because it exists and is empty.
     fd, private = tempfile.mkstemp(dir=str(dest.parent), prefix=dest.name + PART_SUFFIX + ".")
@@ -853,6 +940,43 @@ def self_test():
                any("if-none-match" in {k.lower() for k in asked} for asked in resume_server.asked),
                False)
         expect("and the resumed file is complete", mixed.read_bytes(), body)
+
+    # ---- mirror axis (GA-13's private-mirror half) ---------------------------------------
+    # Seeded here too, not only in the unittest suite: CI and the pre-commit hook run --self-test,
+    # and D81's lesson is that a new judgement with no seed here reads as "covered" while the exact
+    # consumer that gates it never saw it.
+    with tempfile.TemporaryDirectory() as tmp:
+        body = b"mirrored"
+        digest = hashlib.sha256(body).hexdigest()
+        mgot, _ = fetch("https://mirror.corp/x.bin", pathlib.Path(tmp) / "m.bin", hosts, suffixes,
+                        expected_sha256=digest, resolve=fake_resolve(["10.0.0.7"]),
+                        opener=_FakeOpener(body), mirror_hosts=frozenset({"mirror.corp"}))
+        expect("a declared private mirror is accepted", mgot, digest)
+        try:
+            fetch("https://huggingface.co/x.bin", pathlib.Path(tmp) / "p.bin", hosts, suffixes,
+                  expected_sha256=digest, resolve=fake_resolve(["10.0.0.7"]),
+                  opener=_FakeOpener(body), mirror_hosts=frozenset({"mirror.corp"}))
+            failures.append("a primary host resolving private was accepted with mirror tables present")
+        except GuardError:
+            expect("primary keeps the public screen beside a mirror", True, True)
+        # A host that lands in BOTH tables must keep the stricter (public) rule -- this is the seed
+        # that catches `classify_host` reordering to check mirror first, which the disjoint case
+        # above cannot see.
+        try:
+            fetch("https://huggingface.co/x.bin", pathlib.Path(tmp) / "pm.bin", hosts, suffixes,
+                  expected_sha256=digest, resolve=fake_resolve(["10.0.0.7"]),
+                  opener=_FakeOpener(body), mirror_hosts=frozenset({"huggingface.co"}))
+            failures.append("a both-listed host escaped the public screen via the mirror table")
+        except GuardError:
+            expect("a host in both tables keeps the public screen", True, True)
+        expect("apply_mirror swaps the base and keeps the path",
+               apply_mirror("https://huggingface.co/a/m.bin", "https://mirror.corp/c"),
+               "https://mirror.corp/c/a/m.bin")
+        try:
+            apply_mirror("https://huggingface.co/a.bin", "http://mirror.corp")
+            failures.append("apply_mirror accepted a cleartext mirror base")
+        except GuardError:
+            expect("apply_mirror refuses a non-https base", True, True)
 
     for line in failures:
         print("!! %s" % line)
