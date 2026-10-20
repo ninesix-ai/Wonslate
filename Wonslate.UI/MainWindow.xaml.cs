@@ -92,6 +92,15 @@ public partial class MainWindow : Window
     /// <summary>Playback uses System.Media.SoundPlayer, so no audio package is needed for output.</summary>
     private void VoicePlayButton_Click(object sender, RoutedEventArgs e) => _vm.Voice.PlayLast();
 
+    /// <summary>M4: start microphone capture; the stop button runs the same pipeline as a WAV.</summary>
+    private void VoiceRecordButton_Click(object sender, RoutedEventArgs e)
+        => _vm.Voice.StartRecording();
+
+    private async void VoiceStopRecordButton_Click(object sender, RoutedEventArgs e)
+        => await _vm.Voice.StopRecordingAndRunAsync(new Audio.VoiceOptions(
+            _vm.SourceLang == MainViewModel.AutoDetectCode ? "zh" : _vm.SourceLang,
+            _vm.TargetLang, _vm.Mode, _vm.PrivacySensitive));
+
     /// <summary>
     /// Load the list of the tab that just became visible. Guards:
     ///  - !_ready: the selected tab is settled during InitializeComponent, before

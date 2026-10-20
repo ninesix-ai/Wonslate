@@ -166,6 +166,15 @@
                         <Button Content="播放译文" Width="90" Margin="10,0,0,0"
                                 Click="VoicePlayButton_Click" IsEnabled="{Binding CanPlay, Mode=OneWay}" />
                     </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="开始录音" Width="90" Click="VoiceRecordButton_Click"
+                                IsEnabled="{Binding CanRecord, Mode=OneWay}" />
+                        <Button Content="停止并翻译" Width="100" Margin="10,0,0,0"
+                                Click="VoiceStopRecordButton_Click"
+                                IsEnabled="{Binding CanStopRecording, Mode=OneWay}" />
+                        <TextBlock Text="（麦克风采集，16 kHz 对齐后走同一条 VAD→ASR→翻译→TTS 链路）"
+                                   VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#777" />
+                    </StackPanel>
                     <ProgressBar Height="4" IsIndeterminate="True" Margin="0,0,0,6"
                                  Visibility="{Binding IsBusy, Mode=OneWay,
                                               Converter={StaticResource BoolToVisibility}}" />

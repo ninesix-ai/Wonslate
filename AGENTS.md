@@ -601,6 +601,22 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     resolve, refused" with a DISJOINT mirror table does not exercise the both-listed order -- the
     self-test only caught the classify reordering once a host named in both tables was seeded.
 
+29. **A stage that hard-refuses a format must have that format proven upstream, and the test must
+    assert the converted length -- not just the rate argument.** M4's microphone path feeds
+    `SherpaVoiceStages.Segment`, which throws on anything but 16 kHz, while a capture device may
+    deliver 44.1/48 kHz. `PcmResampler.To16k` therefore converts explicitly (identity for 16k, empty
+    stays empty, a non-positive rate is a loud refusal rather than "0 means skip"), and
+    `VoiceViewModel.StopRecordingAndRunAsync` aligns before calling the shared pipeline path. The
+    mutation harness caught a real test weakness here: mutating the resample call away SURVIVED,
+    because the test only asserted the rate passed to the segmenter -- and that rate is a constant
+    (`TargetRate`) regardless of whether `aligned` was actually converted. Adding "48000 captured
+    samples arrive as 16000" (the sample count) is what made the mutation bite. Two more rules from
+    the same round: a recording needs a positive ceiling (an unbounded one is D46's shape in memory),
+    and hitting it must be reported (`DroppedSamples`/note) rather than looking like a complete take.
+    Hardware-owning classes (`MicrophoneCapture`'s device callback) have no headless seam; that gap is
+    covered by a one-off live probe (2 devices, 6338 bytes captured, peak 3703) and stated as such --
+    the real "speak into the mic and get a translation" acceptance is the owner's, not a unit test's.
+
 ## 4. Conventions and invariants
 
 **This file is not the source of truth for either.** `CONTRIBUTING.md` is: comment

@@ -29,8 +29,11 @@ public sealed class VoiceViewModel : INotifyPropertyChanged
     private readonly Func<string?> _pickFile;
     private readonly Action<string> _playWav;
     private readonly Func<float[], int, string, bool>? _saveWav;
+    private readonly Func<IAudioCapture> _captureFactory;
 
     private VoicePipeline? _pipeline;
+    private IAudioCapture? _capture;
+    private bool _isRecording;
     private string _filePath = "";
     private string _status = "";
     private string _recognizedText = "";
@@ -46,13 +49,15 @@ public sealed class VoiceViewModel : INotifyPropertyChanged
         Func<VoicePipeline>? pipelineFactory = null,
         Func<string?>? pickFile = null,
         Action<string>? playWav = null,
-        Func<float[], int, string, bool>? saveWav = null)
+        Func<float[], int, string, bool>? saveWav = null,
+        Func<IAudioCapture>? captureFactory = null)
     {
         _locateModels = locateModels ?? VoiceModelLocator.Resolve;
         _pipelineFactory = pipelineFactory;
         _pickFile = pickFile ?? (() => null);
         _playWav = playWav ?? (_ => { });
         _saveWav = saveWav;
+        _captureFactory = captureFactory ?? (() => new MicrophoneCapture());
 
         var models = _locateModels();
         ModelsReady = models.IsComplete;
@@ -123,9 +128,27 @@ public sealed class VoiceViewModel : INotifyPropertyChanged
 
     public bool IsNotBusy => !_isBusy;
 
-    public bool CanRun => ModelsReady && !_isBusy && FilePath.Length > 0;
+    public bool CanRun => ModelsReady && !_isBusy && !_isRecording && FilePath.Length > 0;
 
     public bool CanPlay => !_isBusy && _lastSamples.Length > 0;
+
+    /// <summary>True while the microphone is capturing; the UI shows "停止并翻译" in this state.</summary>
+    public bool IsRecording
+    {
+        get => _isRecording;
+        private set
+        {
+            _isRecording = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanRun));
+            OnPropertyChanged(nameof(CanRecord));
+            OnPropertyChanged(nameof(CanStopRecording));
+        }
+    }
+
+    public bool CanRecord => ModelsReady && !_isBusy && !_isRecording;
+
+    public bool CanStopRecording => _isRecording;
 
     /// <summary>Ask the host for a WAV; the dialog itself is injected so tests stay headless.</summary>
     public void SelectFile()
@@ -158,24 +181,127 @@ public sealed class VoiceViewModel : INotifyPropertyChanged
         try
         {
             var (samples, rate) = WavIo.Read(FilePath);
-            Status = $"输入 {samples.Length / (double)rate:0.0}s / {rate} Hz，正在识别与翻译…";
+            await RunSamplesAsync(samples, rate, options, ct,
+                                  $"输入 {samples.Length / (double)rate:0.0}s / {rate} Hz");
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "已取消";
+        }
+        catch (Exception ex)
+        {
+            Status = "运行失败：" + ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
-            var pipeline = _pipeline ??= (_pipelineFactory ?? BuildSherpaPipeline)();
-            var result = await Task.Run(() => pipeline.Run(samples, rate, options), ct);
+    /// <summary>
+    /// The one place a buffer becomes a result. File input and microphone input both go through
+    /// here so the panel has a single pipeline path (D64: not two implementations that agree until
+    /// they do not). Inputs are assumed to already be at <see cref="PcmResampler.TargetRate"/>; the
+    /// caller aligns them.
+    /// </summary>
+    private async Task RunSamplesAsync(float[] samples, int rate, VoiceOptions options,
+                                       CancellationToken ct, string sourceLabel)
+    {
+        Status = $"{sourceLabel}，正在识别与翻译…";
 
-            RecognizedText = result.RecognizedText;
-            TranslatedText = result.TranslatedText;
-            Notes = string.Join(Environment.NewLine, result.Notes);
-            TimingText = $"VAD {result.Timings.SegmentMs:0}ms · ASR {result.Timings.AsrMs:0}ms · "
-                       + $"翻译 {result.Timings.TranslateMs:0}ms · TTS {result.Timings.TtsMs:0}ms · "
-                       + $"首段可播 {result.Timings.FirstAudioMs:0}ms · 合计 {result.Timings.TotalMs:0}ms";
-            _lastSamples = result.Samples;
-            _lastRate = result.SampleRate;
-            OnPropertyChanged(nameof(CanPlay));
+        var pipeline = _pipeline ??= (_pipelineFactory ?? BuildSherpaPipeline)();
+        var result = await Task.Run(() => pipeline.Run(samples, rate, options), ct);
 
-            Status = result.HasAudio
-                ? $"完成：{result.Samples.Length / (double)result.SampleRate:0.0}s 目标语言语音"
-                : "完成，但没有产出语音（见下方说明）";
+        RecognizedText = result.RecognizedText;
+        TranslatedText = result.TranslatedText;
+        Notes = string.Join(Environment.NewLine, result.Notes);
+        TimingText = $"VAD {result.Timings.SegmentMs:0}ms · ASR {result.Timings.AsrMs:0}ms · "
+                   + $"翻译 {result.Timings.TranslateMs:0}ms · TTS {result.Timings.TtsMs:0}ms · "
+                   + $"首段可播 {result.Timings.FirstAudioMs:0}ms · 合计 {result.Timings.TotalMs:0}ms";
+        _lastSamples = result.Samples;
+        _lastRate = result.SampleRate;
+        OnPropertyChanged(nameof(CanPlay));
+
+        Status = result.HasAudio
+            ? $"完成：{result.Samples.Length / (double)result.SampleRate:0.0}s 目标语言语音"
+            : "完成，但没有产出语音（见下方说明）";
+    }
+
+    /// <summary>Begin capturing from the microphone; no-op with a reason when that is not possible.</summary>
+    public void StartRecording()
+    {
+        if (!ModelsReady) { Status = "缺少语音模型，无法录音"; return; }
+        if (IsBusy) { Status = "正在处理上一次结果，请稍后"; return; }
+        if (IsRecording) { Status = "已经在录音了"; return; }
+        try
+        {
+            _capture ??= _captureFactory();
+            _capture.Start();
+            IsRecording = true;
+            Status = "正在录音…说完点“停止并翻译”";
+        }
+        catch (Exception ex)
+        {
+            Status = "无法开始录音：" + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// End the recording, align it to 16 kHz and run the shared pipeline path. A device rate other
+    /// than 16 kHz is resampled rather than handed to the VAD (which refuses anything else).
+    /// </summary>
+    public async Task StopRecordingAndRunAsync(VoiceOptions options, CancellationToken ct = default)
+    {
+        if (!IsRecording) { Status = "当前没有在录音"; return; }
+        CaptureResult captured;
+        try
+        {
+            _capture ??= _captureFactory();
+            captured = _capture.Stop();
+        }
+        catch (Exception ex)
+        {
+            Status = "停止录音失败：" + ex.Message;
+            return;
+        }
+        finally
+        {
+            IsRecording = false;
+        }
+
+        if (!captured.HasAudio)
+        {
+            Status = captured.Note ?? "没有录到声音";
+            return;
+        }
+
+        float[] aligned;
+        try
+        {
+            aligned = PcmResampler.To16k(captured.Samples, captured.SampleRate);
+        }
+        catch (Exception ex)
+        {
+            Status = "录音格式无法对齐到 16 kHz：" + ex.Message;
+            return;
+        }
+
+        IsBusy = true;
+        Notes = "";
+        try
+        {
+            var label = $"录音 {captured.DurationSeconds:0.0}s"
+                        + (captured.SampleRate == PcmResampler.TargetRate
+                            ? ""
+                            : $" / {captured.SampleRate} Hz → 16 kHz");
+            if (!string.IsNullOrEmpty(captured.Note)) label += $"（{captured.Note}）";
+            await RunSamplesAsync(aligned, PcmResampler.TargetRate, options, ct, label);
+            if (!string.IsNullOrEmpty(captured.Note))
+            {
+                // A truncated recording must stay visible next to the result (D80: a short body
+                // that reads as complete is the defect this repo keeps paying to remove).
+                Notes = Notes.Length > 0 ? Notes + Environment.NewLine + captured.Note : captured.Note!;
+            }
         }
         catch (OperationCanceledException)
         {

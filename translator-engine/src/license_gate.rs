@@ -71,6 +71,9 @@ pub const REGISTERED_DEPS: &[Dep] = &[
     Dep { name: "org.k2fsa.sherpa.onnx",         license: "Apache-2.0", kind: Kind::Component },
     // official k2-fsa runtime binding, same upstream/repository
     Dep { name: "org.k2fsa.sherpa.onnx.runtime.win-x64", license: "Apache-2.0", kind: Kind::Component },
+    // official NAudio NuGet package (upstream: https://github.com/naudio/NAudio), MIT.
+    // Reached by Wonslate.UI/Audio/MicrophoneCapture.cs (M4 microphone capture, WaveInEvent).
+    Dep { name: "NAudio",                         license: "MIT",        kind: Kind::Component },
     // PyPI official project (upstream: https://github.com/OpenNmt/CTranslate2)
     Dep { name: "ctranslate2",                   license: "MIT",        kind: Kind::Component },
     // PyPI official project (upstream: https://github.com/google/sentencepiece)
