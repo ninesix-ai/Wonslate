@@ -644,6 +644,18 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     whole -- 2.4-2.8x earlier, **still not the <1 s line**, so the next lever is a smaller/faster TTS
     or a GPU, not "more streaming".
 
+32. **A provider setting that is accepted is not a provider that is used.** `Provider = "cuda"`
+    constructed fine and generated fine on this machine, but `onnxruntime_providers_cuda.dll` was in
+    neither the app directory nor PATH, `cublas64_12.dll` was absent, GPU memory stayed at 1448 MiB
+    (delta 0) while generating, and first/whole timings matched CPU to within noise (1616/4089 vs
+    1589/4063 ms). So the setting was **silently ignored**; no cuda switch was added (a dead switch
+    is worse than none -- D88). Proving an accelerator needs a side effect, not a lack of errors.
+    The same round scanned TTS threads on the real model: 2: 1823/4699 ms, 4: 1669/4257, 8:
+    1619/4179, 12: 1672/4203, 16: 1882/4689 -- the knee is physical cores, and oversubscription
+    regresses. `TtsThreads` is now `clamp(logical/2, 1, 8)` (ASR keeps its own 2, since it is not the
+    bottleneck), and the measured table lives in its doc comment so a future "optimization" cannot
+    quietly undo it.
+
 ## 4. Conventions and invariants
 
 **This file is not the source of truth for either.** `CONTRIBUTING.md` is: comment

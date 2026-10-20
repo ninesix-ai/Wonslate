@@ -22,6 +22,18 @@ public sealed class SherpaVoiceStages :
     private const int SampleRate = 16000;
     private const int NumThreads = 2;
 
+    /// <summary>
+    /// TTS worker threads: one per physical core (logical / 2), capped at 8.
+    ///
+    /// Measured 2026-10-20 on this 8C/16T machine with the real Kokoro int8 checkpoint (warm runs,
+    /// first chunk / whole sentence): 2 threads 1823/4699 ms, 4 threads 1669/4257 ms, 8 threads
+    /// 1619/4179 ms, 12 threads 1672/4203 ms, 16 threads 1882/4689 ms. 8 is the knee and 12/16
+    /// regress (oversubscription), so the cap is measured rather than guessed. ASR keeps
+    /// <see cref="NumThreads"/> -- it is not the bottleneck and should not compete with TTS.
+    /// </summary>
+    internal static int TtsThreads(int processorCount) =>
+        Math.Clamp(processorCount / 2, 1, 8);
+
     /// <summary>Kokoro Mandarin voices are indexed by integer sid; 52 handles mixed CJK/Latin best.</summary>
     private const int KokoroZhSid = 52;
     private const int KokoroEnSid = 50;
@@ -64,7 +76,7 @@ public sealed class SherpaVoiceStages :
         ttsConfig.Model.Kokoro.Lexicon =
             Path.Combine(paths.TtsDir, "lexicon-us-en.txt") + "," +
             Path.Combine(paths.TtsDir, "lexicon-zh.txt");
-        ttsConfig.Model.NumThreads = NumThreads;
+        ttsConfig.Model.NumThreads = TtsThreads(Environment.ProcessorCount);
         ttsConfig.Model.Provider = "cpu";
         _tts = new OfflineTts(ttsConfig);
     }
