@@ -239,6 +239,14 @@ python script/fetch_voice_models.py --only all
 
 失败与降级（如某段没有产出语音、麦克风被占用或不存在）会写入状态行与说明区，不会让程序崩溃。
 
+### 9.1 真机验收（M4，约 5 分钟；需本机有麦克风与语音模型）
+
+双击仓根的 `voice_acceptance.bat`（或 `python script/voice_acceptance.py`）。脚本会启动应用并逐项问你看到什么：是否已就绪、录音状态是否变化、ASR 是否是你的话、译文是否正确、能否听到译文语音、耗时行是否完整。
+
+**它不会替你判定——“空回车 / 跳过”一律算“没验证”，不是通过；只有每一项都明确答 `y` 才退出码 0。** 结果写成 `docs/evidence/voice-m4-acceptance-<UTC>.json`（内含应用与引擎 dll 的 sha256、UTC 时间、每项问题与你的回答；不写盘符）。若语音页签顶部提示缺模型，先跑 `python script/fetch_voice_models.py --only all` 再验。
+
+脚本里**不重复一份模型路径规则**：缺不缺模型由应用自己报（两套规则会各自漂移）。
+
 ## 10. 数据存放位置与隐私
 
 默认数据目录：Windows `%LOCALAPPDATA%\Wonslate`（可用 `WONSLATE_DATA_DIR` 覆盖，旧拼写 `LT_DATA_DIR` 优先）。

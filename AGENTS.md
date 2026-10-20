@@ -42,6 +42,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Make every convention name the thing that enforces it (D79: the license-header rule was carried by 121 of 133 source files while the 12 missing ones were all recent additions, because the convention lived only in prose and `CONTRIBUTING.md` never recorded it). Each row carries an evidence grade -- `planted` (a violation was fed to the named checker and it went red; the note must say what was planted), `pointer` (the checker exists and runs, but nobody has tested it against this rule), `asserted` (an acknowledged gap, printed as a count), `human` (undecidable by machine, reason required). Adding a bold item under Conventions/Invariants without a row here fails the gate, and so does a row pointing at a checker that does not exist | `python script/check_convention_coverage.py` [--self-test] |
 | Move model assets to a machine that never dials out (GA-13's offline-bundle half, §3.26). `pack` keys off the same `wonslate-origin.json` records §5.2 introduced -- a directory without one is skipped and *said*, never guessed at; `verify` re-reads the archive against its own manifest instead of trusting it, and refuses a bundle whose embedded record will not parse; `install` checks everything before writing anything, so a refusal never leaves a half-installed tree. Needs no network at any point, which is why it -- unlike `check_model_updates.py` -- can sit in the gate | `python script/offline_bundle.py pack --src DIR --out B.zip` / `... verify B.zip` / `... install B.zip --dest DIR [--force]` |
 | Assemble one offline deliverable that carries the app AND the models (GA-4 single-file + REQ-C1 模型随包, §3.27). `assemble` re-hashes every member against `wonslate-assembly.json` and re-runs `offline_bundle.verify` on the embedded bundle -- "complete" and "usable" are two checks; the `publish` seam runs a real `dotnet publish` single-file but must degrade to the plain build output and *say which precondition failed* (no flattering `single_file: true`). `safe_member_path` is imported from `offline_bundle`, not re-derived. No network, so it sits in the gate | `python script/pack_installer.py publish --app DIR --pub DIR` / `... assemble --app DIR [--models B.zip] --out D.zip` / `... verify D.zip` |
+| Walk the M4 microphone acceptance on a real machine (§3.30). The harness launches the app and asks one explicit question per observable (models ready, recording started/stopped, ASR text, translation, playback, timing line); **only every answer `yes` exits 0** -- a skipped or unanswered question is `incomplete`, never a pass (D74). It writes UTC-stamped evidence with the app/engine sha256 and *no machine path*, and refuses an unbuilt app or an existing evidence file. It deliberately does not re-implement `VoiceModelLocator` (the panel reports missing models; D64) | `voice_acceptance.bat` or `python script/voice_acceptance.py [--no-launch] [--answers FILE] [--out PATH]` |
 
 ## 3. Traps that have already cost someone a session
 
@@ -616,6 +617,18 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     Hardware-owning classes (`MicrophoneCapture`'s device callback) have no headless seam; that gap is
     covered by a one-off live probe (2 devices, 6338 bytes captured, peak 3703) and stated as such --
     the real "speak into the mic and get a translation" acceptance is the owner's, not a unit test's.
+
+30. **A human-acceptance harness must not be able to report a pass nobody gave.** M4's `script/voice_acceptance.py` asks one explicit question per observable and writes evidence, but its verdict
+    logic is the part that matters: only *every* question answered `yes` exits 0; a `skip` or an
+    unanswered question is `incomplete` (D74's rule applied to people rather than probes), a `no` is
+    `failed` and names the failed ids, and an unknown answer id is refused rather than ignored (a
+    typo'd key would otherwise leave the real question unanswered while looking answered). It also
+    refuses an unbuilt app and an existing evidence file (evidence is history, not scratch), stamps
+    the app and engine sha256 plus a UTC time, and writes no machine path. It must never decide the
+    product's behaviour for itself: the questions are observables, and the tool does not open the
+    microphone, the models or the engine. One thing it deliberately does *not* do is re-implement
+    `VoiceModelLocator`'s resolution -- the voice panel already reports missing models, and a second
+    copy in Python would be D64's shape again.
 
 ## 4. Conventions and invariants
 
