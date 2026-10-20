@@ -2,6 +2,7 @@
 // Copyright (c) 2026 ninesix-ai studio
 
 using System.IO;
+using System.Runtime.InteropServices;
 using SherpaOnnx;
 
 namespace Wonslate.Audio;
@@ -16,7 +17,7 @@ namespace Wonslate.Audio;
 /// their lifetime; the app creates them once and disposes them at shutdown.
 /// </summary>
 public sealed class SherpaVoiceStages :
-    ISpeechSegmenter, ISpeechRecognizer, ISpeechSynthesizer
+    ISpeechSegmenter, ISpeechRecognizer, ISpeechSynthesizer, IStreamingSpeechSynthesizer
 {
     private const int SampleRate = 16000;
     private const int NumThreads = 2;
@@ -105,6 +106,18 @@ public sealed class SherpaVoiceStages :
     }
 
     public (float[] Samples, int SampleRate) Synthesize(string text, string languageCode)
+        => SynthesizeStreaming(text, languageCode, (_, _) => { });
+
+    /// <summary>
+    /// M5: stream Kokoro's output. sherpa-onnx 1.13.8's GenerateWithConfig is *already* callback
+    /// based (docs/06 §7 pitfall 4); the old code simply ignored the callback and waited for the
+    /// return. Each callback carries **newly generated** samples (measured 2026-10-20: 28749 + 58755
+    /// = 87504, exactly the final length), so forwarding `samples[0..n]` is the chunk the UI can
+    /// start playing. The slice is copied because the native buffer behind `samples` is not ours to
+    /// keep.
+    /// </summary>
+    public (float[] Samples, int SampleRate) SynthesizeStreaming(
+        string text, string languageCode, Action<float[], int> onChunk)
     {
         var gen = new OfflineTtsGenerationConfig
         {
@@ -112,14 +125,27 @@ public sealed class SherpaVoiceStages :
             Speed = 1.0f,
             SilenceScale = 0.2f,
         };
-        // 1.13.8 has no overload without a callback (docs/06 §7 pitfall 4): returning
-        // 1 means "keep going"; the callback body has nothing else to do here.
-        OfflineTtsCallbackProgressWithArg keepGoing = (samples, n, progress, arg) => 1;
+        int rate = _tts.SampleRate;
+        var collected = new List<float>();
+        // The delegate's first argument is a native pointer to `n` float samples (reflection, 2026-10-20:
+        // IntPtr samples, int n, float progress, IntPtr arg -> int), NOT a managed array -- so the
+        // chunk has to be copied out before the native buffer is reused.
+        OfflineTtsCallbackProgressWithArg stream = (samples, n, progress, arg) =>
+        {
+            if (n > 0)
+            {
+                var chunk = new float[n];
+                Marshal.Copy(samples, chunk, 0, n);
+                collected.AddRange(chunk);
+                onChunk(chunk, rate);
+            }
+            return 1;   // keep generating
+        };
 
-        var audio = _tts.GenerateWithConfig(text, gen, keepGoing);
-        return audio is null || audio.Samples.Length == 0
-            ? (Array.Empty<float>(), 0)
-            : (audio.Samples, audio.SampleRate);
+        var audio = _tts.GenerateWithConfig(text, gen, stream);
+        if (audio is { Samples.Length: > 0 })
+            return (audio.Samples, audio.SampleRate);
+        return (collected.ToArray(), rate);
     }
 
     public void Dispose()

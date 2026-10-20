@@ -30,6 +30,7 @@ public sealed class VoiceViewModel : INotifyPropertyChanged
     private readonly Action<string> _playWav;
     private readonly Func<float[], int, string, bool>? _saveWav;
     private readonly Func<IAudioCapture> _captureFactory;
+    private readonly Func<IStreamingAudioPlayer> _streamingPlayerFactory;
 
     private VoicePipeline? _pipeline;
     private IAudioCapture? _capture;
@@ -50,7 +51,8 @@ public sealed class VoiceViewModel : INotifyPropertyChanged
         Func<string?>? pickFile = null,
         Action<string>? playWav = null,
         Func<float[], int, string, bool>? saveWav = null,
-        Func<IAudioCapture>? captureFactory = null)
+        Func<IAudioCapture>? captureFactory = null,
+        Func<IStreamingAudioPlayer>? streamingPlayerFactory = null)
     {
         _locateModels = locateModels ?? VoiceModelLocator.Resolve;
         _pipelineFactory = pipelineFactory;
@@ -58,6 +60,7 @@ public sealed class VoiceViewModel : INotifyPropertyChanged
         _playWav = playWav ?? (_ => { });
         _saveWav = saveWav;
         _captureFactory = captureFactory ?? (() => new MicrophoneCapture());
+        _streamingPlayerFactory = streamingPlayerFactory ?? (() => new StreamingAudioPlayer());
 
         var models = _locateModels();
         ModelsReady = models.IsComplete;
@@ -210,7 +213,42 @@ public sealed class VoiceViewModel : INotifyPropertyChanged
         Status = $"{sourceLabel}，正在识别与翻译…";
 
         var pipeline = _pipeline ??= (_pipelineFactory ?? BuildSherpaPipeline)();
-        var result = await Task.Run(() => pipeline.Run(samples, rate, options), ct);
+        // Streaming playback is created lazily on the first chunk: a non-streaming synthesizer (or a
+        // run that produces no audio) never touches an audio device at all.
+        IStreamingAudioPlayer? player = null;
+        Action<float[], int> onChunk = (chunk, chunkRate) =>
+        {
+            try
+            {
+                player ??= _streamingPlayerFactory();
+                player.Push(chunk, chunkRate);
+            }
+            catch (Exception)
+            {
+                // Best-effort: a missing or busy output device must not fail the transcription run.
+            }
+        };
+
+        VoiceResult result;
+        try
+        {
+            result = await Task.Run(() => pipeline.Run(samples, rate, options, onChunk), ct);
+        }
+        finally
+        {
+            if (player is not null)
+            {
+                try
+                {
+                    await Task.Run(() => player.CompleteAndWait(TimeSpan.FromSeconds(30)),
+                                   CancellationToken.None);
+                }
+                finally
+                {
+                    player.Dispose();
+                }
+            }
+        }
 
         RecognizedText = result.RecognizedText;
         TranslatedText = result.TranslatedText;

@@ -630,6 +630,20 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     `VoiceModelLocator`'s resolution -- the voice panel already reports missing models, and a second
     copy in Python would be D64's shape again.
 
+31. **"Streaming" was already on the wire; the timer was not.** sherpa-onnx 1.13.8's TTS
+    `GenerateWithConfig` has always taken a callback -- the old `Synthesize` just returned 1 from it and
+    waited for the whole buffer. M5 hands the callback's **new** samples to the UI, and two measured
+    facts now sit in the code: the first argument is a native `IntPtr` (reflection: `IntPtr samples,
+    int n, float progress, IntPtr arg -> int`), so chunks must be `Marshal.Copy`d before the callback
+    returns; and the first-audio timestamp needs its own `firstAudioSeen` flag, because the output
+    list is only appended **after** the synthesizer returns, so "buffer is empty" is true for every
+    chunk and the last chunk would overwrite the first one's time (the new test caught exactly that).
+    A non-streaming synthesizer keeps the old timing; the NAudio player is created lazily on the first
+    chunk, a dead output device degrades to silence instead of failing the run, and completion waits
+    on the buffer with a timeout. Real Kokoro baseline: first chunk 1.55-1.86 s against 4.38-4.89 s
+    whole -- 2.4-2.8x earlier, **still not the <1 s line**, so the next lever is a smaller/faster TTS
+    or a GPU, not "more streaming".
+
 ## 4. Conventions and invariants
 
 **This file is not the source of truth for either.** `CONTRIBUTING.md` is: comment

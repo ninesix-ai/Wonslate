@@ -62,6 +62,23 @@ public interface ISpeechSynthesizer : IDisposable
     (float[] Samples, int SampleRate) Synthesize(string text, string languageCode);
 }
 
+/// <summary>
+/// Optional streaming capability of a synthesizer (M5's first half).
+///
+/// When implemented, chunks are handed over as they are generated, so "first playable audio" is the
+/// first chunk rather than the whole utterance. The callback receives **newly generated** samples
+/// only -- measured on sherpa-onnx 1.13.8 + Kokoro on 2026-10-20: two callbacks of 28749 and 58755
+/// samples summed to exactly the 87504 returned by GenerateWithConfig, at progress 0.5 and 1.0. A
+/// synthesizer that is not streaming keeps the old behaviour and its first-audio point is synthesis
+/// completion; the pipeline handles both.
+/// </summary>
+public interface IStreamingSpeechSynthesizer : ISpeechSynthesizer
+{
+    /// <summary>Generate speech, calling <paramref name="onChunk"/> with each new chunk as it appears.</summary>
+    (float[] Samples, int SampleRate) SynthesizeStreaming(
+        string text, string languageCode, Action<float[], int> onChunk);
+}
+
 /// <summary>Translates one utterance through the engine (Rust FFI in production).</summary>
 public interface IVoiceTranslator
 {
@@ -124,7 +141,8 @@ public sealed class VoicePipeline
         _clockMs = clockMs ?? (() => Environment.TickCount64);
     }
 
-    public VoiceResult Run(float[] samples, int sampleRate, VoiceOptions options)
+    public VoiceResult Run(float[] samples, int sampleRate, VoiceOptions options,
+                           Action<float[], int>? onAudioChunk = null)
     {
         var notes = new List<string>();
         var startedAt = _clockMs();
@@ -143,6 +161,11 @@ public sealed class VoicePipeline
         var translated = new List<string>();
         var audio = new List<float>();
         double asrMs = 0, translateMs = 0, ttsMs = 0, firstAudioMs = 0;
+        // A flag, not `audio.Count == 0`: the whole buffer is appended only after the synthesizer
+        // returns, so during streaming callbacks the list is still empty for EVERY chunk -- using
+        // its count would let the last chunk overwrite the first one's timestamp (caught by
+        // FirstAudioIsTheFirstChunk_NotTheEndOfSynthesis).
+        bool firstAudioSeen = false;
         int outputRate = sampleRate;
 
         for (int i = 0; i < segments.Count; i++)
@@ -172,8 +195,41 @@ public sealed class VoicePipeline
             translated.Add(tr.Text);
 
             t = _clockMs();
-            var (voice, rate) = _synthesizer.Synthesize(tr.Text, options.TargetLang);
-            ttsMs += _clockMs() - t;
+            float[] voice;
+            int rate;
+            if (_synthesizer is IStreamingSpeechSynthesizer streaming)
+            {
+                // First *chunk*, not the whole utterance: on the real Kokoro checkpoint the first
+                // callback arrives well before GenerateWithConfig returns (measured 1.86 s vs
+                // 4.89 s for a sentence), and that gap is what streaming buys. The final buffer is
+                // still returned and collected below, so the result is unchanged.
+                var streamed = streaming.SynthesizeStreaming(tr.Text, options.TargetLang,
+                    (chunk, chunkRate) =>
+                    {
+                        if (chunk.Length == 0) return;
+                        if (!firstAudioSeen)
+                        {
+                            firstAudioSeen = true;
+                            firstAudioMs = _clockMs() - startedAt;
+                        }
+                        onAudioChunk?.Invoke(chunk, chunkRate);
+                    });
+                ttsMs += _clockMs() - t;
+                voice = streamed.Samples;
+                rate = streamed.SampleRate;
+            }
+            else
+            {
+                var whole = _synthesizer.Synthesize(tr.Text, options.TargetLang);
+                ttsMs += _clockMs() - t;
+                voice = whole.Samples;
+                rate = whole.SampleRate;
+                if (voice.Length > 0 && !firstAudioSeen)
+                {
+                    firstAudioSeen = true;
+                    firstAudioMs = _clockMs() - startedAt;
+                }
+            }
 
             if (voice.Length == 0)
             {
@@ -181,11 +237,6 @@ public sealed class VoicePipeline
                 continue;
             }
             outputRate = rate;
-            if (audio.Count == 0)
-            {
-                // First playable audio: what a streaming implementation must beat.
-                firstAudioMs = _clockMs() - startedAt;
-            }
             audio.AddRange(voice);
         }
 
