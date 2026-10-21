@@ -1,0 +1,93 @@
+{
+  "format": 1,
+  "generated_at": "2026-10-21T00:46:40.774031+00:00",
+  "app": {
+    "name": "Wonslate.exe",
+    "sha256": "a8fe9b4edcb931d85596fccc470ed0a274efbf015a297d24e2be4d3a9859a5d0"
+  },
+  "engine_lib": {
+    "name": "translator_engine.dll",
+    "sha256": "ca8aadb219467ebaf854a8764035307620294f23d7ec8730d1c6e222e6c317c3"
+  },
+  "questions": [
+    {
+      "id": "models_ready",
+      "text": "语音页签顶部显示“语音模型已就绪”（而不是列出缺失模型）"
+    },
+    {
+      "id": "record_started",
+      "text": "点“开始录音”后，状态行变为“正在录音…说完点‘停止并翻译’”"
+    },
+    {
+      "id": "record_stopped",
+      "text": "点“停止并翻译”后，状态行显示录音时长；若设备不是 16 kHz，还写明“… Hz → 16 kHz”"
+    },
+    {
+      "id": "asr_text",
+      "text": "“识别文本（ASR）”显示了你刚才说出的中文内容（意思一致即可，不必逐字）"
+    },
+    {
+      "id": "translation",
+      "text": "“译文”是目标语言，且意思与你说的一致"
+    },
+    {
+      "id": "playback",
+      "text": "点“播放译文”能听到目标语言的语音"
+    },
+    {
+      "id": "timings",
+      "text": "耗时行显示了 VAD / ASR / 翻译 / TTS / 首段可播 / 合计 六个数字"
+    },
+    {
+      "id": "no_unexpected_notes",
+      "text": "说明区没有意料之外的降级信息（有就如实答 no，并在备注里写清）"
+    }
+  ],
+  "answers": {
+    "models_ready": {
+      "text": "语音页签顶部显示“语音模型已就绪”（而不是列出缺失模型）",
+      "result": "yes",
+      "note": ""
+    },
+    "record_started": {
+      "text": "点“开始录音”后，状态行变为“正在录音…说完点‘停止并翻译’”",
+      "result": "yes",
+      "note": ""
+    },
+    "record_stopped": {
+      "text": "点“停止并翻译”后，状态行显示录音时长；若设备不是 16 kHz，还写明“… Hz → 16 kHz”",
+      "result": "yes",
+      "note": ""
+    },
+    "asr_text": {
+      "text": "“识别文本（ASR）”显示了你刚才说出的中文内容（意思一致即可，不必逐字）",
+      "result": "yes",
+      "note": ""
+    },
+    "translation": {
+      "text": "“译文”是目标语言，且意思与你说的一致",
+      "result": "yes",
+      "note": ""
+    },
+    "playback": {
+      "text": "点“播放译文”能听到目标语言的语音",
+      "result": "yes",
+      "note": ""
+    },
+    "timings": {
+      "text": "耗时行显示了 VAD / ASR / 翻译 / TTS / 首段可播 / 合计 六个数字",
+      "result": "yes",
+      "note": ""
+    },
+    "no_unexpected_notes": {
+      "text": "说明区没有意料之外的降级信息（有就如实答 no，并在备注里写清）",
+      "result": "yes",
+      "note": ""
+    }
+  },
+  "failed": [],
+  "skipped": [],
+  "unanswered": [],
+  "notes": "",
+  "verdict": "passed"
+}
