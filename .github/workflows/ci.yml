@@ -63,6 +63,8 @@ jobs:
       WONSLATE_DATA_DIR: ${{ github.workspace }}/.ci-data
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # DCO needs the pushed/PR range, not just the tip
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -104,10 +106,22 @@ jobs:
           python tests/test_voice_acceptance.py
           python tests/test_xaml_lint.py
           python tests/test_pre_commit_hook.py
+          python tests/test_check_dco.py
           python tests/test_glossary_hygiene.py
           python tests/test_glossary_hygiene_rules.py
           python tests/test_component_licenses.py
           python tests/test_source_lint.py
+      - name: DCO sign-off (new commits only)
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          else
+            RANGE="HEAD^..HEAD"
+          fi
+          python script/check_dco.py --range "$RANGE"
 
   dotnet:
     name: .NET WPF (build + test)

@@ -47,8 +47,33 @@ Prereqs: Rust 1.98+, .NET SDK 10.0+. The native engine (`translator_engine.dll`/
 ## Local signing (development only)
 `python script/misc/sign_wonslate.py` creates a self-signed code-signing certificate in the *current user's* store and trusts its public part in the user Trusted Publisher + Root stores; when run from an **elevated** shell it also imports it into the **machine-wide** stores, which widens trust for every user on that box. That trade-off is intentional for reproducible local smoke tests and the private key never leaves the certificate store. Never rely on this for distributed builds -- those require a real code-signing certificate (free options for open source exist, e.g. Sigstore).
 
+## Developer Certificate of Origin (DCO)
+
+Every commit must carry a `Signed-off-by` line certifying the [DCO 1.1](https://developercertificate.org/):
+
+```
+git commit -s -m "feat(scope): ..."
+```
+
+`-s` appends `Signed-off-by: Your Name <you@example.com>` from your git identity. For commits already
+made, use `git commit --amend -s --no-edit` (tip) or `git rebase --signoff <base>` (a series).
+
+`python script/check_dco.py --range <A..B>` checks every non-merge commit in the range; CI runs it on
+the pushed range (or the PR's `base..head`). The check is **incremental on purpose**: history before
+2026-10-21 predates the policy and is not retroactively rewritten (rewriting published history is a
+bigger risk than the gap), but every commit from then on must be signed. A malformed line
+(`Signed-off-by: Name` with no address, or the wrong case) does not count, and merge commits are
+skipped.
+
+We use the DCO rather than a CLA: there is no separate signing portal or legal entity to stand up,
+and the statement travels with the commit itself.
+
 ## Pull requests
-Fill in the PR template, ensure `build.py` compiles and relevant tests pass, and open a PR against `main`.
+Fill in the PR template, ensure `build.py` compiles and relevant tests pass, make sure every commit
+is signed off (see above), and open a PR against `main`.
 
 ## License
-By contributing, you agree that your contributions are licensed under the project's [Apache-2.0](LICENSE) license.
+By contributing, you agree that your contributions are licensed under the project's [Apache-2.0](LICENSE)
+license, and that you have the right to submit them under that license (the DCO sign-off above is
+the record of that statement). The project's name and logo are governed separately by
+[TRADEMARKS.md](TRADEMARKS.md).

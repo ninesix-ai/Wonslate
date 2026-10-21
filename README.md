@@ -112,6 +112,9 @@ Wonslate is privacy-first: translation data never leaves the device. If you beli
 
 Copyright (c) 2026 ninesix-ai studio
 
+The Wonslate and 万邦译 names and logos are governed separately by [TRADEMARKS.md](TRADEMARKS.md);
+Apache-2.0 §6 does not grant trademark rights.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at

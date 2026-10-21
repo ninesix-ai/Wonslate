@@ -43,6 +43,7 @@ Everything runs from the repo root through `script/build.py`. `build.bat` and
 | Move model assets to a machine that never dials out (GA-13's offline-bundle half, §3.26). `pack` keys off the same `wonslate-origin.json` records §5.2 introduced -- a directory without one is skipped and *said*, never guessed at; `verify` re-reads the archive against its own manifest instead of trusting it, and refuses a bundle whose embedded record will not parse; `install` checks everything before writing anything, so a refusal never leaves a half-installed tree. Needs no network at any point, which is why it -- unlike `check_model_updates.py` -- can sit in the gate | `python script/offline_bundle.py pack --src DIR --out B.zip` / `... verify B.zip` / `... install B.zip --dest DIR [--force]` |
 | Assemble one offline deliverable that carries the app AND the models (GA-4 single-file + REQ-C1 模型随包, §3.27). `assemble` re-hashes every member against `wonslate-assembly.json` and re-runs `offline_bundle.verify` on the embedded bundle -- "complete" and "usable" are two checks; the `publish` seam runs a real `dotnet publish` single-file but must degrade to the plain build output and *say which precondition failed* (no flattering `single_file: true`). `safe_member_path` is imported from `offline_bundle`, not re-derived. No network, so it sits in the gate | `python script/pack_installer.py publish --app DIR --pub DIR` / `... assemble --app DIR [--models B.zip] --out D.zip` / `... verify D.zip` |
 | Walk the M4 microphone acceptance on a real machine (§3.30). The harness launches the app and asks one explicit question per observable (models ready, recording started/stopped, ASR text, translation, playback, timing line); **only every answer `yes` exits 0** -- a skipped or unanswered question is `incomplete`, never a pass (D74). It writes UTC-stamped evidence with the app/engine sha256 and *no machine path*, and refuses an unbuilt app or an existing evidence file. It deliberately does not re-implement `VoiceModelLocator` (the panel reports missing models; D64) | `voice_acceptance.bat` or `python script/voice_acceptance.py [--no-launch] [--answers FILE] [--out PATH]` |
+| Require the DCO sign-off on every new commit (§3.33). Every non-merge commit in the range must carry a well-formed `Signed-off-by: Name <email>`; a malformed line does not count, merges are skipped, and an unresolvable range is exit 2 (never a silent pass). Incremental by design: history before 2026-10-21 is exempt (rewriting published history is the bigger risk), and CI passes the pushed range or the PR's `base..head` | `python script/check_dco.py --range A..B` |
 
 ## 3. Traps that have already cost someone a session
 
@@ -655,6 +656,16 @@ Every one of these was hit in practice. The `D` numbers point into the ledgers.
     regresses. `TtsThreads` is now `clamp(logical/2, 1, 8)` (ASR keeps its own 2, since it is not the
     bottleneck), and the measured table lives in its doc comment so a future "optimization" cannot
     quietly undo it.
+
+33. **A contribution policy that exists only in prose is not a policy.** GA-6's DCO half had been
+    carried as "not done" for months because `CONTRIBUTING.md` never mentioned sign-off. The fix is
+    three-sided: the policy (DCO 1.1, `git commit -s`), a checker (`script/check_dco.py`), and CI
+    running it on the range that was actually pushed or proposed. Two details are deliberate: the
+    check is **incremental** (history before 2026-10-21 has no sign-offs and is not rewritten -- that
+    would be a bigger risk than the gap), and a malformed trailer does not count while merge commits
+    are skipped. A range that cannot be resolved exits 2 rather than passing: the failure mode this
+    repo keeps meeting is "the guard matched nothing, so everything looked fine". DCO instead of a
+    CLA because there is no signing portal or legal entity to stand up.
 
 ## 4. Conventions and invariants
 

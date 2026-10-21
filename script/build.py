@@ -204,6 +204,7 @@ def run_ffi_smoke() -> int:
                  "test_offline_bundle.py",
                  "test_pack_installer.py",
                  "test_voice_acceptance.py",
+                 "test_check_dco.py",
                  "test_xaml_lint.py",
                  "test_pre_commit_hook.py",
                  "test_glossary_hygiene.py",
