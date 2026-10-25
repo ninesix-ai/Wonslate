@@ -60,7 +60,7 @@
     <!-- M4 microphone capture. MIT (registered in translator-engine/src/license_gate.rs).
          WaveInEvent at 16 kHz mono needs no resampling on the common path; PcmResampler still
          guards a device that reports another rate. -->
-    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="NAudio" Version="3.3.0" />
   </ItemGroup>
 
 </Project>
